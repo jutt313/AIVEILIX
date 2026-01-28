@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from functools import lru_cache
 import os
 from dotenv import load_dotenv
@@ -32,7 +33,7 @@ class Settings(BaseSettings):
     app_secret_key: str = "change-me-in-production"
 
     # Server
-    backend_port: int = 7223
+    backend_port: int = Field(default=7223, env="PORT")  # Render sets PORT automatically
     backend_url: str = "http://localhost:7223"  # Public base URL for MCP/OAuth full URLs
     frontend_url: str = "http://localhost:6677"
     cors_extra_origins: str = ""  # Comma-separated extra origins (e.g. for OAuth tools)

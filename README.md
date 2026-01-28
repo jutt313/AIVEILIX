@@ -71,16 +71,28 @@ FRONTEND_URL=http://localhost:6677
 
 ## 🚢 Deployment
 
-### Backend (Railway)
+### Backend (Render)
 
-1. Create account at [Railway.app](https://railway.app)
-2. New Project → Deploy from GitHub
-3. Select this repository
-4. Set root directory to `/backend` (or use `railway.json`)
-5. Add environment variables from `.env.example`
+1. Create account at [Render.com](https://render.com)
+2. New → Web Service
+3. Connect GitHub repository `jutt313/AIVEILIX`
+4. Render will auto-detect `render.yaml` or manually configure:
+   - **Root Directory**: `backend`
+   - **Environment**: Python 3
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python run.py`
+5. Add all environment variables from `.env.example`:
+   - Supabase credentials (URL, anon key, service role key, database URL)
+   - AI API keys (DeepSeek, OpenAI, Gemini)
+   - Google Search API keys (optional)
+   - Set `APP_ENV=production`
+   - Set `BACKEND_URL` to your Render URL (e.g., `https://aiveilix-backend.onrender.com`)
+   - Set `FRONTEND_URL` to your Vercel URL
 6. Deploy!
 
-Railway will auto-deploy on every push to `main`.
+Render will auto-deploy on every push to `main`.
+
+**Note**: Render automatically sets the `PORT` environment variable - the backend will use it automatically.
 
 ### Frontend (Vercel)
 
@@ -89,7 +101,7 @@ Railway will auto-deploy on every push to `main`.
 3. Select this repository
 4. Set root directory to `/frontend`
 5. Add environment variables:
-   - `VITE_API_URL` = Your Railway backend URL (e.g., `https://your-app.railway.app`)
+   - `VITE_API_URL` = Your Render backend URL (e.g., `https://aiveilix-backend.onrender.com`)
    - `VITE_SUPABASE_URL` = Your Supabase URL
    - `VITE_SUPABASE_ANON_KEY` = Your Supabase anon key
 6. Deploy!
