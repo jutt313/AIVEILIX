@@ -2,14 +2,24 @@
 
 An intelligent document vault system where users can upload documents (including images, PDFs, code files), organize them in "buckets" (vaults), and interact with their documents using AI-powered chat with semantic search capabilities.
 
-## 🚀 Quick Start
+## 🚀 Tech Stack
 
-### Prerequisites
+- **Backend**: FastAPI (Python 3.14) on port 7223
+- **Frontend**: React 18 + Vite on port 6677
+- **Database**: PostgreSQL + pgvector (via Supabase)
+- **AI**: DeepSeek (chat), OpenAI (embeddings + vision), Google Gemini (fallback)
+- **Styling**: TailwindCSS 4
+- **Authentication**: Supabase Auth (JWT tokens)
+- **Storage**: Supabase Storage (file uploads)
+
+## 📋 Prerequisites
+
 - Python 3.14+
 - Node.js 18+
-- PostgreSQL (via Supabase)
-- OpenAI API key (for embeddings + vision)
-- DeepSeek API key (for chat)
+- Supabase account
+- API keys: DeepSeek, OpenAI, Google Search (optional)
+
+## 🛠️ Local Development
 
 ### Backend Setup
 
@@ -33,37 +43,101 @@ npm run dev
 
 Frontend runs on `http://localhost:6677`
 
-## 📦 Deployment
+### Environment Variables
 
-### Railway
+Copy `.env.example` to `.env` and fill in your values:
 
-1. Connect GitHub repository
-2. Create new service for backend
-3. Set environment variables from `.env.example`
-4. Deploy!
+```env
+# Supabase
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+DATABASE_URL=postgresql://postgres:password@db.your-project.supabase.co:5432/postgres
 
-### Render
+# AI APIs
+DEEPSEEK_API_KEY=sk-...
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...  # Optional
 
-1. Connect GitHub repository
-2. Create Web Service for backend
-3. Create Static Site for frontend (point to `frontend/dist`)
-4. Set environment variables
+# Google Search (optional)
+GOOGLE_SEARCH_API_KEY=...
+GOOGLE_SEARCH_CX=...
 
-## 🔧 Environment Variables
+# App
+APP_ENV=development
+BACKEND_PORT=7223
+FRONTEND_URL=http://localhost:6677
+```
 
-See `.env.example` for all required environment variables.
+## 🚢 Deployment
+
+### Backend (Railway)
+
+1. Create account at [Railway.app](https://railway.app)
+2. New Project → Deploy from GitHub
+3. Select this repository
+4. Set root directory to `/backend` (or use `railway.json`)
+5. Add environment variables from `.env.example`
+6. Deploy!
+
+Railway will auto-deploy on every push to `main`.
+
+### Frontend (Vercel)
+
+1. Create account at [Vercel.com](https://vercel.com)
+2. New Project → Import from GitHub
+3. Select this repository
+4. Set root directory to `/frontend`
+5. Add environment variables:
+   - `VITE_API_URL` = Your Railway backend URL (e.g., `https://your-app.railway.app`)
+   - `VITE_SUPABASE_URL` = Your Supabase URL
+   - `VITE_SUPABASE_ANON_KEY` = Your Supabase anon key
+6. Deploy!
+
+Vercel will auto-deploy on every push to `main`.
+
+### Database Setup
+
+1. Create Supabase project
+2. Enable pgvector extension: `CREATE EXTENSION vector;`
+3. Run `supabase/schema.sql` in SQL editor
+4. Run migrations in order from `supabase/migrations/`
+5. Create storage bucket named "files" (private)
+6. Add storage RLS policies
+
+## 📁 Project Structure
+
+```
+AIveilix/
+├── backend/           # FastAPI backend
+│   ├── app/
+│   │   ├── routers/   # API endpoints
+│   │   ├── services/  # Business logic
+│   │   └── models/    # Pydantic models
+│   └── run.py         # Entry point
+├── frontend/          # React frontend
+│   ├── src/
+│   │   ├── pages/     # Page components
+│   │   ├── components/ # Reusable components
+│   │   └── services/   # API client
+│   └── vite.config.js
+├── supabase/          # Database schema & migrations
+└── .env.example       # Environment template
+```
+
+## 🔑 Key Features
+
+- **File Processing**: Images (GPT-4 Vision), PDFs, DOCX, CSV, 50+ code types
+- **Semantic Search**: 3072-dim embeddings with pgvector
+- **AI Chat**: DeepSeek-powered chat with document context
+- **MCP Protocol**: ChatGPT/Cursor integration
+- **OAuth2**: Secure API access
+- **Notifications**: Real-time user notifications
 
 ## 📚 Documentation
 
 See `CLAUDE.md` for comprehensive architecture documentation.
 
-## 🛠️ Tech Stack
-
-- **Backend**: FastAPI, Python 3.14, PostgreSQL + pgvector
-- **Frontend**: React 18, Vite, TailwindCSS 4
-- **AI**: DeepSeek (chat), OpenAI (embeddings + vision)
-- **Database**: Supabase (PostgreSQL + Storage)
-
-## 📄 License
+## 📝 License
 
 MIT
