@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: aiveilix-backend
+    env: python
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && python run.py
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: BACKEND_PORT
+        value: 7223
+
+  - type: web
+    name: aiveilix-frontend
+    env: node
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npx vite preview --port 6677 --host
+    envVars:
+      - key: VITE_API_URL
+        value: https://aiveilix-backend.onrender.com
