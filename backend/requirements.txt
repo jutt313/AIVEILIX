@@ -1,0 +1,43 @@
+# AIveilix Backend Dependencies
+
+# Core Framework
+fastapi
+uvicorn[standard]
+
+# Database
+supabase
+asyncpg
+sqlalchemy
+
+# Auth & Security
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+
+# AI / LLM
+google-generativeai
+openai
+
+# File Processing
+python-docx
+PyMuPDF  # Better PDF extraction (replaces PyPDF2)
+python-magic
+Pillow  # For image processing
+
+# Utils
+pydantic[email]
+pydantic-settings
+python-dotenv
+httpx
+tenacity
+slowapi
+
+# MCP Protocol
+mcp
+
+# OAuth2
+authlib
+
+# Background Tasks (v1 uses FastAPI BackgroundTasks)
+# celery
+# redis
