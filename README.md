@@ -71,42 +71,31 @@ FRONTEND_URL=http://localhost:6677
 
 ## 🚢 Deployment
 
-### Backend (Render)
+### Backend + Frontend (Render)
+
+Both backend and frontend are defined in `render.yaml`. Deploy once from Render:
 
 1. Create account at [Render.com](https://render.com)
-2. New → Web Service
-3. Connect GitHub repository `jutt313/AIVEILIX`
-4. Render will auto-detect `render.yaml` or manually configure:
-   - **Root Directory**: `backend`
-   - **Environment**: Python 3
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `python run.py`
-5. Add all environment variables from `.env.example`:
-   - Supabase credentials (URL, anon key, service role key, database URL)
-   - AI API keys (DeepSeek, OpenAI, Gemini)
-   - Google Search API keys (optional)
-   - Set `APP_ENV=production`
-   - Set `BACKEND_URL` to your Render URL (e.g., `https://aiveilix-backend.onrender.com`)
-   - Set `FRONTEND_URL` to your Vercel URL
+2. New → **Blueprint** (or connect repo and use "Apply render.yaml")
+3. Connect GitHub repository and select this repo
+4. Render creates two services from `render.yaml`:
+   - **aiveilix-backend** (Web Service, Starter plan) – API
+   - **aiveilix-frontend** (Static Site, free) – React app
+5. When prompted, set environment variables:
+   - **Backend**: All from `.env.example` (Supabase, API keys, etc.). Set `APP_ENV=production`, `FRONTEND_URL=https://aiveilix-frontend.onrender.com`
+   - **Frontend**: Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (VITE_API_URL and VITE_APP_URL are in the Blueprint)
 6. Deploy!
 
-Render will auto-deploy on every push to `main`.
+Both services auto-deploy on push to `main`. Frontend: `https://aiveilix-frontend.onrender.com`, Backend: `https://aiveilix-backend.onrender.com`.
 
-**Note**: Render automatically sets the `PORT` environment variable - the backend will use it automatically.
+**Note**: Backend uses Render’s `PORT` automatically. Backend is on **Starter** plan ($7/mo); frontend static site is **free**.
 
-### Frontend (Vercel)
+### Remove from Vercel (if you used it before)
 
-1. Create account at [Vercel.com](https://vercel.com)
-2. New Project → Import from GitHub
-3. Select this repository
-4. Set root directory to `/frontend`
-5. Add environment variables:
-   - `VITE_API_URL` = Your Render backend URL (e.g., `https://aiveilix-backend.onrender.com`)
-   - `VITE_SUPABASE_URL` = Your Supabase URL
-   - `VITE_SUPABASE_ANON_KEY` = Your Supabase anon key
-6. Deploy!
-
-Vercel will auto-deploy on every push to `main`.
+1. Go to [Vercel Dashboard](https://vercel.com/dashboard)
+2. Open the AIveilix (or your project) deployment
+3. **Settings** → **General** → scroll to **Delete Project** and delete, or **Settings** → **Git** → disconnect the repo
+4. No need to delete the repo on GitHub; just stop using Vercel for this app.
 
 ### Database Setup
 

@@ -25,7 +25,7 @@ app = FastAPI(
 _cors_origins = [
     settings.frontend_url,
     "http://localhost:6677",
-    "https://aiveilix.vercel.app",  # Production frontend (Vercel)
+    "https://aiveilix-frontend.onrender.com",  # Production frontend (Render)
     "https://chat.openai.com",  # ChatGPT OAuth
     "https://chatgpt.com",  # ChatGPT new domain
 ]
