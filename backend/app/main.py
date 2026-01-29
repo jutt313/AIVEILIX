@@ -26,6 +26,7 @@ _cors_origins = [
     settings.frontend_url,
     "http://localhost:6677",
     "https://aiveilix-frontend.onrender.com",  # Production frontend (Render)
+    "https://aiveilix-1.onrender.com",  # Render static site (AIVEILIX-1)
     "https://chat.openai.com",  # ChatGPT OAuth
     "https://chatgpt.com",  # ChatGPT new domain
 ]
