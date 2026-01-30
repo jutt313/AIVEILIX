@@ -7,6 +7,7 @@ import Input from './Input'
 import Button from './Button'
 import CreateAPIKeyModal from './CreateAPIKeyModal'
 import CreateOAuthClientModal from './CreateOAuthClientModal'
+import CreateCredentialModal from './CreateCredentialModal'
 
 export default function ProfileModal({ isOpen, onClose }) {
   const { user, logout } = useAuth()
@@ -44,8 +45,8 @@ export default function ProfileModal({ isOpen, onClose }) {
   const [oauthClients, setOAuthClients] = useState([])
   const [oauthClientsLoading, setOAuthClientsLoading] = useState(false)
   
-  // Credential type selection dropdown
-  const [showCredentialDropdown, setShowCredentialDropdown] = useState(false)
+  // Unified credential modal
+  const [showCreateCredentialModal, setShowCreateCredentialModal] = useState(false)
   const [credentialView, setCredentialView] = useState('api-keys') // 'api-keys' or 'oauth'
 
   // Load API keys, OAuth clients, and buckets when API Keys tab is active
@@ -141,13 +142,22 @@ export default function ProfileModal({ isOpen, onClose }) {
     if (!confirm('Are you sure you want to revoke this OAuth client? This action cannot be undone.')) {
       return
     }
-    
+
     try {
       await oauthAPI.delete(clientId)
       loadOAuthClients() // Refresh list
     } catch (error) {
       alert(error.response?.data?.detail || 'Failed to revoke OAuth client')
     }
+  }
+
+  const handleCreateCredential = async ({ name, type, redirectUri, scopes, allowedBuckets }) => {
+    if (type === 'api-key') {
+      await handleCreateAPIKey(name, scopes, allowedBuckets)
+    } else if (type === 'oauth') {
+      await handleCreateOAuthClient(name, redirectUri, scopes)
+    }
+    setShowCreateCredentialModal(false)
   }
 
   const copyToClipboard = (text) => {
@@ -159,7 +169,7 @@ export default function ProfileModal({ isOpen, onClose }) {
 
   const tabs = [
     { id: 'profile', label: 'Profile' },
-    { id: 'api-keys', label: 'API Keys' },
+    { id: 'api-keys', label: 'Credentials' },
     { id: 'subscription', label: 'Subscription' }
   ]
 
@@ -189,10 +199,14 @@ export default function ProfileModal({ isOpen, onClose }) {
         setConfirmPassword('')
         alert('Password changed successfully')
       } else {
-        setPasswordError(response.data.message || 'Failed to change password')
+        const msg = response.data.message || 'Failed to change password'
+        setPasswordError(msg)
+        console.error('[Profile] Change password failed:', msg)
       }
     } catch (error) {
-      setPasswordError(error.response?.data?.detail || 'Failed to change password')
+      const msg = error.response?.data?.detail || 'Failed to change password'
+      setPasswordError(msg)
+      console.error('[Profile] Change password error:', error?.response?.data ?? error?.message ?? error)
     } finally {
       setPasswordLoading(false)
     }
@@ -247,64 +261,22 @@ export default function ProfileModal({ isOpen, onClose }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold dark:text-dark-text text-light-text">
-            Authentication & API Access
+            Credentials
           </h3>
           <p className="text-sm dark:text-dark-text/70 text-light-text/70">
-            Manage API keys and OAuth clients for programmatic access
+            Manage API keys and OAuth clients for external integrations
           </p>
         </div>
-        <div className="relative">
-          <Button
-            onClick={() => setShowCredentialDropdown(!showCredentialDropdown)}
-            className="!w-auto px-4"
-          >
-            Create Credential
-            <svg 
-              className={`ml-2 w-4 h-4 transition-transform ${showCredentialDropdown ? 'rotate-180' : ''}`}
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </Button>
-          
-          {showCredentialDropdown && (
-            <>
-              <div 
-                className="fixed inset-0 z-10" 
-                onClick={() => setShowCredentialDropdown(false)}
-              ></div>
-              <div className="absolute z-20 right-0 mt-2 w-48 rounded-xl bg-white/95 dark:bg-black/95 backdrop-blur-xl border border-white/10 shadow-lg">
-                <button
-                  onClick={() => {
-                    setShowCreateAPIKeyModal(true)
-                    setShowCredentialDropdown(false)
-                  }}
-                  className="w-full px-4 py-3 text-left hover:bg-white/10 transition-colors dark:text-dark-text text-light-text rounded-t-xl"
-                >
-                  <div className="font-medium">API Key</div>
-                  <div className="text-xs dark:text-dark-text/60 text-light-text/60">For direct API access</div>
-                </button>
-                <div className="border-t border-white/10"></div>
-                <button
-                  onClick={() => {
-                    setShowCreateOAuthModal(true)
-                    setShowCredentialDropdown(false)
-                  }}
-                  className="w-full px-4 py-3 text-left hover:bg-white/10 transition-colors dark:text-dark-text text-light-text rounded-b-xl"
-                >
-                  <div className="font-medium">OAuth Client</div>
-                  <div className="text-xs dark:text-dark-text/60 text-light-text/60">For ChatGPT & integrations</div>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        <Button
+          onClick={() => setShowCreateCredentialModal(true)}
+          className="!w-auto px-3 py-2 text-sm"
+        >
+          Create Credential
+        </Button>
       </div>
 
       {/* View Toggle */}
-      <div className="flex gap-2 mb-4 border-b border-white/10">
+      <div className="flex gap-2 mb-4 border-b dark:border-white/10 border-black/10">
         <button
           onClick={() => setCredentialView('api-keys')}
           className={`px-4 py-2 font-medium transition-colors relative ${
@@ -315,7 +287,7 @@ export default function ProfileModal({ isOpen, onClose }) {
         >
           API Keys
           {credentialView === 'api-keys' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-dark-accent"></span>
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 dark:bg-dark-accent bg-light-accent"></span>
           )}
         </button>
         <button
@@ -328,7 +300,7 @@ export default function ProfileModal({ isOpen, onClose }) {
         >
           OAuth Clients
           {credentialView === 'oauth' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-dark-accent"></span>
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 dark:bg-dark-accent bg-light-accent"></span>
           )}
         </button>
       </div>
@@ -339,7 +311,7 @@ export default function ProfileModal({ isOpen, onClose }) {
 
       {apiKeysLoading ? (
         <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-dark-accent mx-auto"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 dark:border-dark-accent border-light-accent mx-auto"></div>
         </div>
       ) : apiKeys.length === 0 ? (
         <div className="text-center py-12 dark:text-dark-text/70 text-light-text/70">
@@ -356,7 +328,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           {apiKeys.map((key) => (
             <div
               key={key.id}
-              className="flex items-center justify-between p-4 rounded-xl bg-white/5 dark:bg-black/10 border border-white/10"
+              className="flex items-center justify-between p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 mb-2">
@@ -401,7 +373,7 @@ export default function ProfileModal({ isOpen, onClose }) {
         <>
           {oauthClientsLoading ? (
             <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-dark-accent mx-auto"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 dark:border-dark-accent border-light-accent mx-auto"></div>
             </div>
           ) : oauthClients.length === 0 ? (
             <div className="text-center py-12 dark:text-dark-text/70 text-light-text/70">
@@ -418,7 +390,7 @@ export default function ProfileModal({ isOpen, onClose }) {
               {oauthClients.map((client) => (
                 <div
                   key={client.client_id}
-                  className="flex items-center justify-between p-4 rounded-xl bg-white/5 dark:bg-black/10 border border-white/10"
+                  className="flex items-center justify-between p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
@@ -444,7 +416,7 @@ export default function ProfileModal({ isOpen, onClose }) {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {client.scopes && client.scopes.map((scope) => (
-                        <span key={scope} className="px-2 py-0.5 text-xs rounded bg-dark-accent/20 text-dark-accent">
+                        <span key={scope} className="px-2 py-0.5 text-xs rounded dark:bg-dark-accent/20 dark:text-dark-accent bg-light-accent/20 text-light-accent">
                           {scope}
                         </span>
                       ))}
@@ -470,14 +442,14 @@ export default function ProfileModal({ isOpen, onClose }) {
       {/* Avatar Section */}
       <div className="flex items-center gap-6">
         <div className="relative">
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-dark-accent to-emerald-400 flex items-center justify-center text-3xl font-bold text-dark-bg">
+          <div className="w-24 h-24 rounded-full bg-gradient-to-br dark:from-dark-accent from-light-accent to-emerald-400 flex items-center justify-center text-3xl font-bold dark:text-dark-bg text-white">
             {user?.full_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
           </div>
           <button
-            className="absolute bottom-0 right-0 p-2 bg-dark-accent rounded-full hover:bg-emerald-400 transition-colors"
+            className="absolute bottom-0 right-0 p-2 dark:bg-dark-accent bg-light-accent rounded-full hover:bg-emerald-400 transition-colors"
             title="Change avatar"
           >
-            <svg className="w-4 h-4 text-dark-bg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 dark:text-dark-bg text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
@@ -510,7 +482,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           type="email"
           value={email}
           disabled
-          className="w-full px-4 py-3 rounded-xl bg-white/5 dark:bg-black/10 border border-white/10 dark:border-white/5 dark:text-dark-text/50 text-light-text/50 cursor-not-allowed"
+          className="w-full px-4 py-3 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/5 border-black/10 border dark:text-dark-text/50 text-light-text/50 cursor-not-allowed"
         />
         <p className="mt-1 text-xs dark:text-dark-text/50 text-light-text/50">
           Email cannot be changed
@@ -518,10 +490,15 @@ export default function ProfileModal({ isOpen, onClose }) {
       </div>
 
       {/* Password Change */}
-      <div className="border-t border-white/10 pt-6">
+      <div className="border-t dark:border-white/10 border-black/10 pt-6">
         <h3 className="text-lg font-semibold dark:text-dark-text text-light-text mb-4">
           Change Password
         </h3>
+        {passwordError && (
+          <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm" role="alert">
+            {passwordError}
+          </div>
+        )}
         <form onSubmit={handlePasswordChange}>
           <Input
             label="Current Password"
@@ -529,6 +506,7 @@ export default function ProfileModal({ isOpen, onClose }) {
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             placeholder="Enter current password"
+            autoComplete="current-password"
           />
           <Input
             label="New Password"
@@ -537,6 +515,7 @@ export default function ProfileModal({ isOpen, onClose }) {
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="Enter new password"
             error={passwordError}
+            autoComplete="new-password"
           />
           <Input
             label="Confirm New Password"
@@ -544,6 +523,7 @@ export default function ProfileModal({ isOpen, onClose }) {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Confirm new password"
+            autoComplete="new-password"
           />
           <Button type="submit" className="mt-4" loading={passwordLoading}>
             Change Password
@@ -552,11 +532,11 @@ export default function ProfileModal({ isOpen, onClose }) {
       </div>
 
       {/* Theme Toggle */}
-      <div className="border-t border-white/10 pt-6">
+      <div className="border-t dark:border-white/10 border-black/10 pt-6">
         <h3 className="text-lg font-semibold dark:text-dark-text text-light-text mb-4">
           Appearance
         </h3>
-        <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 dark:bg-black/10 border border-white/10">
+        <div className="flex items-center justify-between p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
           <div>
             <p className="font-medium dark:text-dark-text text-light-text">Theme</p>
             <p className="text-sm dark:text-dark-text/70 text-light-text/70">
@@ -565,7 +545,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           </div>
           <button
             onClick={toggleTheme}
-            className="px-4 py-2 rounded-lg bg-white/10 dark:bg-white/5 hover:bg-white/20 transition-colors dark:text-dark-text text-light-text"
+            className="px-4 py-2 rounded-lg dark:bg-white/5 bg-black/5 dark:hover:bg-white/20 hover:bg-black/10 transition-colors dark:text-dark-text text-light-text"
           >
             {isDark ? '🌙 Dark' : '☀️ Light'}
           </button>
@@ -610,8 +590,8 @@ export default function ProfileModal({ isOpen, onClose }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-        <div className="w-[900px] h-[700px] rounded-3xl backdrop-blur-xl border border-white/10 dark:bg-white/5 bg-black/5 p-8 overflow-y-auto flex flex-col">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 dark:bg-black/50 bg-black/30 backdrop-blur-sm">
+        <div className="w-[900px] h-[700px] rounded-3xl backdrop-blur-xl dark:border-white/10 border-black/10 dark:bg-white/5 bg-white/80 shadow-xl p-8 overflow-y-auto flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold dark:text-dark-text text-light-text">
@@ -619,7 +599,7 @@ export default function ProfileModal({ isOpen, onClose }) {
             </h2>
             <button
               onClick={onClose}
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors dark:text-dark-text/70 text-light-text/70"
+              className="p-2 rounded-lg dark:hover:bg-white/10 hover:bg-black/10 transition-colors dark:text-dark-text/70 text-light-text/70"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -628,7 +608,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-2 mb-6 border-b border-white/10">
+          <div className="flex gap-2 mb-6 border-b dark:border-white/10 border-black/10">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -641,7 +621,7 @@ export default function ProfileModal({ isOpen, onClose }) {
               >
                 {tab.label}
                 {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-dark-accent"></span>
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 dark:bg-dark-accent bg-light-accent"></span>
                 )}
               </button>
             ))}
@@ -660,7 +640,15 @@ export default function ProfileModal({ isOpen, onClose }) {
         </div>
       </div>
 
-      {/* Create API Key Modal */}
+      {/* Unified Create Credential Modal */}
+      <CreateCredentialModal
+        isOpen={showCreateCredentialModal}
+        onClose={() => setShowCreateCredentialModal(false)}
+        onCreate={handleCreateCredential}
+        buckets={buckets}
+      />
+
+      {/* Create API Key Modal (for legacy/fallback) */}
       <CreateAPIKeyModal
         isOpen={showCreateAPIKeyModal}
         onClose={() => setShowCreateAPIKeyModal(false)}
@@ -668,7 +656,7 @@ export default function ProfileModal({ isOpen, onClose }) {
         buckets={buckets}
       />
 
-      {/* Create OAuth Client Modal */}
+      {/* Create OAuth Client Modal (for legacy/fallback) */}
       <CreateOAuthClientModal
         isOpen={showCreateOAuthModal}
         onClose={() => setShowCreateOAuthModal(false)}
@@ -677,22 +665,22 @@ export default function ProfileModal({ isOpen, onClose }) {
 
       {/* API Key Display Modal (show full key once) */}
       {showAPIKeyDisplay && newAPIKey && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl backdrop-blur-xl border border-dark-accent/30 dark:bg-white/5 bg-black/5 p-8">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 dark:bg-black/70 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl backdrop-blur-xl dark:border-dark-accent/30 border-light-accent/30 dark:bg-white/5 bg-white shadow-xl p-8">
             <h3 className="text-xl font-bold dark:text-dark-accent text-light-accent mb-2">
               API Key Created Successfully
             </h3>
             <p className="text-sm dark:text-dark-text/70 text-light-text/70 mb-4">
               Please copy your API key now. You won't be able to see it again!
             </p>
-            <div className="mb-4 p-4 rounded-xl bg-white/5 dark:bg-black/10 border border-white/10">
+            <div className="mb-4 p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
               <div className="flex items-center justify-between gap-3">
-                <code className="flex-1 text-sm dark:text-dark-text text-light-text break-all font-mono">
-                  {newAPIKey}
+                <code className="flex-1 text-sm dark:text-dark-text text-light-text font-mono">
+                  {newAPIKey.substring(0, 20)}...{newAPIKey.substring(newAPIKey.length - 10)}
                 </code>
                 <button
                   onClick={() => copyToClipboard(newAPIKey)}
-                  className="px-4 py-2 rounded-lg bg-dark-accent hover:bg-emerald-400 text-dark-bg font-medium transition-colors"
+                  className="px-4 py-2 rounded-lg dark:bg-dark-accent bg-light-accent hover:bg-emerald-400 dark:text-dark-bg text-white font-medium transition-colors whitespace-nowrap"
                 >
                   Copy
                 </button>
@@ -712,46 +700,46 @@ export default function ProfileModal({ isOpen, onClose }) {
 
       {/* OAuth Client Display Modal (show client_id and secret once) */}
       {showOAuthDisplay && newOAuthClient && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl backdrop-blur-xl border border-dark-accent/30 dark:bg-white/5 bg-black/5 p-8">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 dark:bg-black/70 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl backdrop-blur-xl dark:border-dark-accent/30 border-light-accent/30 dark:bg-white/5 bg-white shadow-xl p-8">
             <h3 className="text-xl font-bold dark:text-dark-accent text-light-accent mb-2">
               OAuth Client Created Successfully
             </h3>
             <p className="text-sm dark:text-dark-text/70 text-light-text/70 mb-4">
               Please save your Client ID and Client Secret now. The secret won't be shown again!
             </p>
-            
+
             <div className="mb-4 space-y-3">
-              <div className="p-4 rounded-xl bg-white/5 dark:bg-black/10 border border-white/10">
+              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
                 <label className="block text-xs font-medium mb-2 dark:text-dark-text/70 text-light-text/70">
                   Client ID
                 </label>
                 <div className="flex items-center justify-between gap-3">
-                  <code className="flex-1 text-sm dark:text-dark-text text-light-text break-all font-mono">
-                    {newOAuthClient.client_id}
+                  <code className="flex-1 text-sm dark:text-dark-text text-light-text font-mono">
+                    {newOAuthClient.client_id.substring(0, 20)}...{newOAuthClient.client_id.substring(newOAuthClient.client_id.length - 10)}
                   </code>
                   <button
                     onClick={() => copyToClipboard(newOAuthClient.client_id)}
-                    className="px-4 py-2 rounded-lg bg-dark-accent hover:bg-emerald-400 text-dark-bg font-medium transition-colors whitespace-nowrap"
+                    className="px-4 py-2 rounded-lg dark:bg-dark-accent bg-light-accent hover:bg-emerald-400 dark:text-dark-bg text-white font-medium transition-colors whitespace-nowrap"
                   >
-                    Copy ID
+                    Copy
                   </button>
                 </div>
               </div>
-              
-              <div className="p-4 rounded-xl bg-white/5 dark:bg-black/10 border border-white/10">
+
+              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
                 <label className="block text-xs font-medium mb-2 dark:text-dark-text/70 text-light-text/70">
                   Client Secret
                 </label>
                 <div className="flex items-center justify-between gap-3">
-                  <code className="flex-1 text-sm dark:text-dark-text text-light-text break-all font-mono">
-                    {newOAuthClient.client_secret}
+                  <code className="flex-1 text-sm dark:text-dark-text text-light-text font-mono">
+                    {newOAuthClient.client_secret.substring(0, 20)}...{newOAuthClient.client_secret.substring(newOAuthClient.client_secret.length - 10)}
                   </code>
                   <button
                     onClick={() => copyToClipboard(newOAuthClient.client_secret)}
-                    className="px-4 py-2 rounded-lg bg-dark-accent hover:bg-emerald-400 text-dark-bg font-medium transition-colors whitespace-nowrap"
+                    className="px-4 py-2 rounded-lg dark:bg-dark-accent bg-light-accent hover:bg-emerald-400 dark:text-dark-bg text-white font-medium transition-colors whitespace-nowrap"
                   >
-                    Copy Secret
+                    Copy
                   </button>
                 </div>
               </div>
@@ -771,8 +759,8 @@ export default function ProfileModal({ isOpen, onClose }) {
 
       {/* Password Confirmation Modal */}
       {showPasswordConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl backdrop-blur-xl border border-red-500/20 dark:bg-white/5 bg-black/5 p-6">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 dark:bg-black/70 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl backdrop-blur-xl border border-red-500/20 dark:bg-white/5 bg-white shadow-xl p-6">
             <h3 className="text-xl font-bold text-red-400 mb-2">
               Confirm {dangerAction === 'delete-account' ? 'Account Deletion' : 'Delete All Buckets'}
             </h3>

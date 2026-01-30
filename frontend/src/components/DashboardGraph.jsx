@@ -6,6 +6,9 @@ export default function DashboardGraph({ data, onDateRangeChange, startDate, end
   const { isDark } = useTheme()
   const axisColor = isDark ? 'rgba(230, 241, 245, 0.6)' : 'rgba(6, 42, 51, 0.6)'
   const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(31, 224, 165, 0.2)'
+
+  // Different colors for dark/light mode
+  const bucketsColor = isDark ? '#10B981' : '#0B3C49' // Emerald for dark, dark blue for light
   
   // Show empty state if no data
   if (!data || data.length === 0) {
@@ -18,9 +21,9 @@ export default function DashboardGraph({ data, onDateRangeChange, startDate, end
             Activity Overview
           </h3>
           {onDateRangeChange && (
-            <DateRangePicker 
+            <DateRangePicker
               onDateRangeChange={onDateRangeChange}
-              defaultDays={30}
+              defaultDays={7}
             />
           )}
         </div>
@@ -42,9 +45,9 @@ export default function DashboardGraph({ data, onDateRangeChange, startDate, end
           Activity Overview
         </h3>
         {onDateRangeChange && (
-          <DateRangePicker 
+          <DateRangePicker
             onDateRangeChange={onDateRangeChange}
-            defaultDays={30}
+            defaultDays={7}
           />
         )}
       </div>
@@ -52,12 +55,12 @@ export default function DashboardGraph({ data, onDateRangeChange, startDate, end
         <AreaChart data={data}>
           <defs>
             <linearGradient id="colorFiles" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#2DFFB7" stopOpacity={0.8}/>
-              <stop offset="95%" stopColor="#2DFFB7" stopOpacity={0}/>
+              <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
+              <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
             </linearGradient>
             <linearGradient id="colorBuckets" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#0B3C49" stopOpacity={0.8}/>
-              <stop offset="95%" stopColor="#0B3C49" stopOpacity={0}/>
+              <stop offset="5%" stopColor={bucketsColor} stopOpacity={0.8}/>
+              <stop offset="95%" stopColor={bucketsColor} stopOpacity={0}/>
             </linearGradient>
             <linearGradient id="colorStorage" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#1FE0A5" stopOpacity={0.8}/>
@@ -90,8 +93,8 @@ export default function DashboardGraph({ data, onDateRangeChange, startDate, end
             }}
           />
           <Legend wrapperStyle={{ color: isDark ? '#E6F1F5' : '#062A33' }} />
-          <Area type="monotone" dataKey="files" stackId="1" stroke="#2DFFB7" fill="url(#colorFiles)" name="Files" />
-          <Area type="monotone" dataKey="buckets" stackId="2" stroke="#0B3C49" fill="url(#colorBuckets)" name="Buckets" />
+          <Area type="monotone" dataKey="files" stackId="1" stroke="#3B82F6" fill="url(#colorFiles)" name="Files" />
+          <Area type="monotone" dataKey="buckets" stackId="2" stroke={bucketsColor} fill="url(#colorBuckets)" name="Buckets" />
           <Area type="monotone" dataKey="storage" stroke="#1FE0A5" fill="url(#colorStorage)" name="Storage (MB)" />
         </AreaChart>
       </ResponsiveContainer>

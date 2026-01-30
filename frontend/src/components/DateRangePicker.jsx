@@ -8,15 +8,23 @@ export default function DateRangePicker({ onDateRangeChange, defaultDays = 30 })
   const [endDate, setEndDate] = useState('')
   const pickerRef = useRef(null)
 
-  // Set default dates (30 days ago to today)
+  // Set default dates and trigger initial load
   useEffect(() => {
     const end = new Date()
     const start = new Date()
     start.setDate(start.getDate() - defaultDays)
-    
-    setEndDate(end.toISOString().split('T')[0])
-    setStartDate(start.toISOString().split('T')[0])
-  }, [defaultDays])
+
+    const startStr = start.toISOString().split('T')[0]
+    const endStr = end.toISOString().split('T')[0]
+
+    setEndDate(endStr)
+    setStartDate(startStr)
+
+    // Trigger initial date range change
+    if (onDateRangeChange) {
+      onDateRangeChange(startStr, endStr)
+    }
+  }, [defaultDays, onDateRangeChange])
 
   // Close picker when clicking outside
   useEffect(() => {
