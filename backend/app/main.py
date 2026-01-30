@@ -25,8 +25,6 @@ app = FastAPI(
 _cors_origins = [
     settings.frontend_url,
     "http://localhost:6677",
-    "https://aiveilix.com",  # Production domain
-    "https://www.aiveilix.com",  # www subdomain
     "https://aiveilix-frontend.onrender.com",  # Production frontend (Render)
     "https://aiveilix-1.onrender.com",  # Render static site (AIVEILIX-1)
     "https://chat.openai.com",  # ChatGPT OAuth
@@ -43,31 +41,6 @@ app.add_middleware(
 )
 
 
-# Detailed request/response logging middleware
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all requests and responses with detailed error tracking"""
-    logger.info(f"⬇️  {request.method} {request.url.path}")
-    logger.info(f"   Origin: {request.headers.get('origin', 'None')}")
-    logger.info(f"   User-Agent: {request.headers.get('user-agent', 'None')[:50]}")
-
-    try:
-        response = await call_next(request)
-        logger.info(f"⬆️  {request.method} {request.url.path} → {response.status_code}")
-        return response
-    except Exception as e:
-        logger.error(f"❌ {request.method} {request.url.path} → ERROR: {str(e)}")
-        logger.error(traceback.format_exc())
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "Internal server error",
-                "error": str(e),
-                "path": str(request.url.path)
-            }
-        )
-
-
 @app.get("/")
 async def root():
     return {"message": "AIveilix API", "status": "running"}
@@ -76,19 +49,6 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy", "env": settings.app_env}
-
-
-@app.get("/debug/routes")
-async def debug_routes():
-    """Debug endpoint to list all registered routes"""
-    routes = []
-    for route in app.routes:
-        if hasattr(route, "path"):
-            routes.append({
-                "path": route.path,
-                "methods": list(route.methods) if hasattr(route, "methods") else []
-            })
-    return {"routes": routes}
 
 
 # ==================== OAuth Discovery Endpoints ====================

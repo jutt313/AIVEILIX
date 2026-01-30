@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from app.models.files import ChatRequest, ChatResponse
 from app.services.supabase import get_supabase_auth, get_supabase
@@ -11,10 +12,91 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 import uuid
 import logging
 import traceback
+import json
 
 router = APIRouter()
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+def build_source_inventory(all_files, summaries_by_file, chunks_by_file, web_results=None):
+    """Build source inventory that AI can reference by ID"""
+    inventory = {"sources": {}, "inventory_text": ""}
+
+    lines = ["[AVAILABLE SOURCES - Reference by ID when citing]\n"]
+
+    # Add file analyses
+    if summaries_by_file:
+        lines.append("FILE ANALYSES:")
+        for file_id, summary in summaries_by_file.items():
+            file_name = all_files.get(file_id, {}).get("name", "Unknown")
+            source_id = f"analysis_{file_id}"
+            inventory["sources"][source_id] = {
+                "file_name": file_name,
+                "summary_id": str(summary.get("id")),
+                "type": "analysis"
+            }
+            lines.append(f"- {source_id}: \"{file_name}\" (file analysis)")
+
+    # Add chunks
+    if chunks_by_file:
+        lines.append("\nFILE CHUNKS:")
+        for file_id, chunks in chunks_by_file.items():
+            file_name = all_files.get(file_id, {}).get("name", "Unknown")
+            for chunk in chunks[:3]:  # Limit to first 3 chunks per file
+                chunk_id = chunk.get("id")
+                source_id = f"chunk_{chunk_id}"
+                inventory["sources"][source_id] = {
+                    "file_name": file_name,
+                    "chunk_id": str(chunk_id),
+                    "type": "chunk"
+                }
+                lines.append(f"- {source_id}: \"{file_name}\" (excerpt)")
+
+    # Add web results
+    if web_results:
+        lines.append("\nWEB RESULTS:")
+        for idx, result in enumerate(web_results[:5]):
+            source_id = f"web_{idx}"
+            inventory["sources"][source_id] = {
+                "type": "web_search",
+                "title": result.get("title", "Web Result"),
+                "url": result.get("link", ""),
+                "snippet": result.get("snippet", "")[:100]
+            }
+            lines.append(f"- {source_id}: \"{result.get('title')}\" ({result.get('link')})")
+
+    inventory["inventory_text"] = "\n".join(lines)
+    return inventory
+
+
+def parse_ai_response_with_citations(ai_response: str, source_inventory: dict):
+    """Parse AI response to extract message and citations"""
+    import json
+    import re
+
+    # Try JSON parsing first
+    try:
+        json_match = re.search(r'\{[\s\S]*"message"[\s\S]*"cited_sources"[\s\S]*\}', ai_response)
+        if json_match:
+            data = json.loads(json_match.group())
+            message = data.get("message", ai_response)
+            citation_ids = [c.get("id") for c in data.get("cited_sources", []) if c.get("id")]
+
+            # Map IDs to metadata
+            sources = []
+            for cid in citation_ids:
+                if cid in source_inventory["sources"]:
+                    sources.append(source_inventory["sources"][cid])
+                else:
+                    logger.warning(f"AI cited invalid source: {cid}")
+
+            return message, sources
+    except Exception as e:
+        logger.warning(f"JSON parsing failed: {e}, using fallback")
+
+    # Fallback: return full response, empty sources
+    return ai_response, []
 
 # Initialize DeepSeek client (OpenAI-compatible)
 deepseek_client = None
@@ -25,30 +107,39 @@ if settings.deepseek_api_key:
     )
 
 # Basic system prompt (now includes web search capability)
-SYSTEM_PROMPT = """You are AIveilix, an AI assistant that helps users understand and work with their knowledge buckets. 
+SYSTEM_PROMPT = """You are AIveilix, an AI assistant that helps users understand and work with their knowledge buckets.
 You have access to all the documents and files the user has uploaded to their bucket.
 You can also search the web when the user needs current information or information not in their documents.
 
 When answering questions, always:
 1. Use information from the uploaded documents when relevant
-2. Cite which documents or sections you're referencing
-3. If web search results are provided, you may use them and cite the source URL
-4. Be concise but thorough
-5. If you don't know something, say so rather than guessing
+2. Be concise but thorough
+3. If you don't know something, say so rather than guessing
 
-CRITICAL FORMATTING RULES - YOU MUST FOLLOW THESE:
+CRITICAL FORMATTING RULES:
 - DO NOT use ### headers
 - DO NOT use ** for bold text
-- DO NOT use excessive markdown symbols
 - Write in plain, conversational language
-- Format responses as simple paragraphs
-- Only use basic formatting when absolutely essential
-Your responses should read like natural conversation, not formatted documents.
 
-The user can ask you questions about their documents, request summaries, ask you to help organize their knowledge, or search the web for external information."""
+CITATION REQUIREMENTS - YOU MUST FOLLOW THIS FORMAT:
+Respond with VALID JSON in this EXACT format:
+
+{
+  "message": "your natural language response here",
+  "cited_sources": [
+    {"id": "analysis_abc123"},
+    {"id": "web_0"}
+  ]
+}
+
+CITATION RULES:
+- Only cite sources you ACTUALLY used in your answer
+- Use exact source IDs from the [AVAILABLE SOURCES] list provided in context
+- If you don't use any sources, return empty array: "cited_sources": []
+- Do not invent source IDs"""
 
 
-@router.post("/{bucket_id}/chat", response_model=ChatResponse)
+@router.post("/{bucket_id}/chat")
 async def chat_with_bucket(
     bucket_id: str,
     request: ChatRequest,
@@ -102,17 +193,21 @@ async def chat_with_bucket(
             if file_status == "ready":
                 processed_files.append(file_name)
             else:
-                status_msg = file.get("status_message", "Not processed")
+                # For pending/processing files, we can still read raw content from storage
+                status_msg = file.get("status_message", "")
+                if file_status in ["pending", "processing"]:
+                    status_msg = "Still processing, but raw content is available"
+                elif not status_msg:
+                    status_msg = "Not processed"
                 unprocessed_files.append({
                     "name": file_name,
                     "status": file_status,
-                    "message": status_msg[:100] if status_msg else "Not processed"
+                    "message": status_msg[:100] if status_msg else "Processing"
                 })
         
         # Prepare context combining summaries and chunks, plus file inventory
         context_parts = []
-        sources = []
-        
+
         # Add file inventory at the beginning so AI knows about ALL files
         file_inventory = f"[File Inventory - Total: {len(all_files)} files]\n"
         if processed_files:
@@ -132,13 +227,7 @@ async def chat_with_bucket(
             if file_id in summaries_by_file:
                 summary = summaries_by_file[file_id]
                 analysis_content = summary.get("content", "")
-                summary_id = summary.get("id")
                 context_parts.append(f"[Analysis: {file_name}]\n{analysis_content}")
-                sources.append({
-                    "file_name": file_name,
-                    "summary_id": str(summary_id),
-                    "type": "analysis"
-                })
             
             # Add raw chunks if available
             has_chunks = file_id in chunks_by_file
@@ -148,17 +237,11 @@ async def chat_with_bucket(
                 total_chunk_chars = 0
                 for chunk in chunks_by_file[file_id]:
                     content = chunk.get("content", "")
-                    chunk_id = chunk.get("id")
                     chunk_contents.append(content[:1000])  # Limit each chunk
                     total_chunk_chars += len(content)
-                    sources.append({
-                        "file_name": file_name,
-                        "chunk_id": str(chunk_id),
-                        "type": "chunk"
-                    })
                 raw_content = "\n".join(chunk_contents)
                 context_parts.append(f"[Raw Content: {file_name}]\n{raw_content}")
-                
+
                 # INTELLIGENT FALLBACK: If chunks seem insufficient (too small), fetch full file
                 # This helps when user asks detailed questions about specific content
                 if total_chunk_chars < 500 and storage_path:  # Less than 500 chars? Probably truncated
@@ -167,10 +250,6 @@ async def chat_with_bucket(
                     if full_content and len(full_content) > total_chunk_chars:
                         logger.info(f"  ✅ Full file fetched: {len(full_content)} chars (was {total_chunk_chars})")
                         context_parts.append(f"[FULL CONTENT: {file_name}]\n{full_content[:10000]}")  # Cap at 10k chars
-                        sources.append({
-                            "file_name": file_name,
-                            "type": "full_file"
-                        })
             elif storage_path:
                 # No chunks at all? Try to fetch full file directly
                 logger.info(f"📥 No chunks found for '{file_name}'. Attempting to fetch full file...")
@@ -178,10 +257,6 @@ async def chat_with_bucket(
                 if full_content:
                     logger.info(f"  ✅ Full file fetched: {len(full_content)} chars")
                     context_parts.append(f"[FULL CONTENT: {file_name}]\n{full_content[:10000]}")  # Cap at 10k chars
-                    sources.append({
-                        "file_name": file_name,
-                        "type": "full_file"
-                    })
         
         # Combine file inventory with content
         if context_parts:
@@ -191,20 +266,21 @@ async def chat_with_bucket(
         
         # Check if web search would be helpful and perform it
         web_search_context = ""
-        if should_search_web(request.message):
-            logger.info(f"Performing web search for: {request.message[:50]}...")
+        search_results = None
+        web_search_triggered = should_search_web(request.message)
+        logger.info(f"🔍 Web search check: {web_search_triggered} for message: '{request.message[:80]}'")
+
+        if web_search_triggered:
+            logger.info(f"🌐 TRIGGERING WEB SEARCH for: {request.message[:100]}")
             try:
                 search_results = await search_web(request.message, num_results=5)
+                logger.info(f"🌐 Web search returned {len(search_results) if search_results else 0} results")
+
                 if search_results:
                     web_search_context = format_search_results_for_context(search_results)
-                    sources.append({
-                        "type": "web_search",
-                        "query": request.message,
-                        "results_count": len(search_results)
-                    })
-                    logger.info(f"Web search returned {len(search_results)} results")
+                    logger.info(f"✅ Web search context prepared with {len(search_results)} results")
             except Exception as e:
-                logger.warning(f"Web search failed: {e}")
+                logger.error(f"❌ Web search failed: {e}")
         
         # Create conversation if new
         conversation_id = request.conversation_id
@@ -246,17 +322,28 @@ async def chat_with_bucket(
         
         model_used = "deepseek-chat"
         
+        # Build source inventory
+        search_results_for_inventory = search_results if web_search_context else None
+        source_inventory = build_source_inventory(
+            all_files={f["id"]: {"name": f["name"]} for f in all_files},
+            summaries_by_file=summaries_by_file,
+            chunks_by_file=chunks_by_file,
+            web_results=search_results_for_inventory
+        )
+
         # Build messages array with system prompt, documents context, web search, conversation history, and current message
         context_message = f"""User's Knowledge Bucket: {bucket_res.data['name']}
 
+{source_inventory['inventory_text']}
+
 Available Documents:
 {full_context}"""
-        
+
         # Add web search results if available
         if web_search_context:
             context_message += f"\n\n{web_search_context}"
-        
-        context_message += "\n\nContinue the conversation below. Answer based on the documents above. If web search results are provided, you may also use them and cite the source URL."
+
+        context_message += "\n\nContinue the conversation below. Answer based on the available sources above."
         
         ai_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -269,42 +356,67 @@ Available Documents:
         # Add current user message
         ai_messages.append({"role": "user", "content": request.message})
         
-        try:
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=ai_messages,
-                temperature=0.7,
-            )
-            ai_response = response.choices[0].message.content
-        except Exception as e:
-            error_str = str(e).lower()
-            if "quota" in error_str or "rate limit" in error_str or "429" in error_str:
-                raise HTTPException(
-                    status_code=429,
-                    detail="API quota exceeded. Please wait a few minutes and try again."
+        async def generate_stream():
+            try:
+                full_response = ""
+
+                # Stream from DeepSeek
+                stream = deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=ai_messages,
+                    temperature=0.7,
+                    stream=True
                 )
-            logger.error(f"DeepSeek API error: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"AI service error: {str(e)}"
-            )
-        
-        # Save assistant message
-        supabase.table("messages").insert({
-            "id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "conversation_id": conversation_id,
-            "role": "assistant",
-            "content": ai_response,
-            "model_used": model_used,
-            "sources": sources[:10]  # Limit to top 10 sources
-        }).execute()
-        
-        return ChatResponse(
-            message=ai_response,
-            sources=sources[:10],
-            conversation_id=conversation_id
-        )
+
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        full_response += content
+                        # Send chunk to frontend
+                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+
+                # Parse full response for citations (try JSON parse, fallback to raw)
+                try:
+                    # Try to extract JSON from response
+                    json_match = __import__('re').search(r'\{[\s\S]*"message"[\s\S]*"cited_sources"[\s\S]*\}', full_response)
+                    if json_match:
+                        data = json.loads(json_match.group())
+                        message_text = data.get("message", full_response)
+                        citation_ids = [c.get("id") for c in data.get("cited_sources", []) if c.get("id")]
+                        cited_sources = []
+                        for cid in citation_ids:
+                            if cid in source_inventory["sources"]:
+                                cited_sources.append(source_inventory["sources"][cid])
+                    else:
+                        message_text = full_response
+                        cited_sources = []
+                except:
+                    message_text = full_response
+                    cited_sources = []
+
+                # Save to database
+                supabase.table("messages").insert({
+                    "id": str(uuid.uuid4()),
+                    "user_id": user_id,
+                    "conversation_id": conversation_id,
+                    "role": "assistant",
+                    "content": message_text,
+                    "model_used": model_used,
+                    "sources": cited_sources[:10]
+                }).execute()
+
+                # Send sources and conversation ID at the end
+                yield f"data: {json.dumps({'type': 'done', 'sources': cited_sources[:10], 'conversation_id': conversation_id})}\n\n"
+
+            except Exception as e:
+                error_str = str(e).lower()
+                if "quota" in error_str or "rate limit" in error_str or "429" in error_str:
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'API quota exceeded'})}\n\n"
+                else:
+                    logger.error(f"DeepSeek API error: {str(e)}")
+                    yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+        return StreamingResponse(generate_stream(), media_type="text/event-stream")
         
     except HTTPException:
         raise
@@ -324,7 +436,7 @@ async def get_conversations(
 ):
     """Get all conversations for a bucket"""
     try:
-        supabase = get_supabase_auth()
+        supabase = get_supabase()
         
         # Verify bucket belongs to user
         try:
@@ -332,7 +444,7 @@ async def get_conversations(
         except PostgrestAPIError:
             raise HTTPException(status_code=404, detail="Bucket not found")
         
-        convs_res = supabase.table("conversations").select("*").eq("bucket_id", bucket_id).order("updated_at", desc=True).execute()
+        convs_res = supabase.table("conversations").select("*").eq("bucket_id", bucket_id).eq("user_id", user_id).order("updated_at", desc=True).execute()
         
         return {"conversations": convs_res.data}
         

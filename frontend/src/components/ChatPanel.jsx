@@ -14,6 +14,7 @@ export default function ChatPanel({
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingMessage, setLoadingMessage] = useState('Thinking...')
   const [conversationId, setConversationId] = useState(externalConversationId)
   const [showUploadMenu, setShowUploadMenu] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -22,6 +23,8 @@ export default function ChatPanel({
   const uploadMenuRef = useRef(null)
   const fileInputRef = useRef(null)
   const folderInputRef = useRef(null)
+  const isCreatingConversation = useRef(false)
+  const abortControllerRef = useRef(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -31,15 +34,30 @@ export default function ChatPanel({
     scrollToBottom()
   }, [messages])
 
+  // Cleanup: abort any pending request on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
+
   // Update conversation ID when external prop changes
   useEffect(() => {
-    setConversationId(externalConversationId)
-    
-    // Load messages for the selected conversation
-    if (externalConversationId) {
+    // Skip if we're just creating a new conversation internally
+    if (isCreatingConversation.current) {
+      isCreatingConversation.current = false
+      return
+    }
+
+    // Only reload if switching to a DIFFERENT conversation (not just setting ID on new chat)
+    if (externalConversationId && externalConversationId !== conversationId) {
+      setConversationId(externalConversationId)
       loadConversationMessages(externalConversationId)
-    } else {
-      // New chat - clear messages
+    } else if (!externalConversationId && conversationId) {
+      // New chat selected - clear everything
+      setConversationId(null)
       setMessages([])
     }
   }, [externalConversationId])
@@ -151,6 +169,17 @@ export default function ChatPanel({
     }
   }
 
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      setLoading(false)
+
+      // Remove the user message since we're canceling
+      setMessages(prev => prev.slice(0, -1))
+    }
+  }
+
   const handleSend = async (e) => {
     e.preventDefault()
     if ((!input.trim() && selectedFiles.length === 0) || loading) return
@@ -161,7 +190,7 @@ export default function ChatPanel({
       const fileRefs = selectedFiles.map(f => `@${f.name}`).join(' ')
       userMessage = fileRefs + (userMessage ? ` ${userMessage}` : '')
     }
-    
+
     setInput('')
     // Clear selected files after sending
     if (onSelectedFilesChange) {
@@ -171,7 +200,7 @@ export default function ChatPanel({
     if (textareaRef.current) {
       textareaRef.current.style.height = '24px'
     }
-    
+
     const newUserMessage = {
       role: 'user',
       content: userMessage,
@@ -180,35 +209,91 @@ export default function ChatPanel({
     setMessages(prev => [...prev, newUserMessage])
     setLoading(true)
 
+    // Determine loading message based on query
+    const queryLower = userMessage.toLowerCase()
+    const searchKeywords = ['search', 'look up', 'find', 'what is', 'who is', 'how to', 'current', 'latest', 'today', 'recent', 'news', 'weather', 'price']
+    const isSearchQuery = searchKeywords.some(keyword => queryLower.includes(keyword))
+
+    if (isSearchQuery) {
+      // Extract topic (first 3 words, skip common words)
+      const words = userMessage.split(' ').filter(w => !['the', 'a', 'an', 'is', 'what', 'who', 'how', 'to', 'search', 'find', 'look', 'up'].includes(w.toLowerCase()))
+      const topic = words.slice(0, 3).join(' ')
+      setLoadingMessage(`Searching ${topic || 'web'}...`)
+    } else {
+      setLoadingMessage('Thinking...')
+    }
+
+    // Create AbortController for this request
+    abortControllerRef.current = new AbortController()
+
+    // Add empty assistant message that will be updated as chunks arrive
+    const assistantMsgIndex = messages.length + 1 // After user message
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: '',
+      sources: [],
+      timestamp: new Date()
+    }])
+
     try {
-      const response = await chatAPI.sendMessage(bucketId, userMessage, conversationId)
+      const response = await chatAPI.sendMessage(
+        bucketId,
+        userMessage,
+        conversationId,
+        abortControllerRef.current.signal,
+        (chunk) => {
+          // Update message content as chunks arrive
+          setMessages(prev => {
+            const newMessages = [...prev]
+            if (newMessages[assistantMsgIndex]) {
+              newMessages[assistantMsgIndex].content += chunk
+            }
+            return newMessages
+          })
+        }
+      )
       const data = response.data
 
-      const assistantMessage = {
-        role: 'assistant',
-        content: data.message,
-        sources: data.sources,
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, assistantMessage])
-      
-      // Update conversation ID and notify parent if new conversation was created
-      if (data.conversation_id !== conversationId) {
+      // Update final message with sources
+      setMessages(prev => {
+        const newMessages = [...prev]
+        if (newMessages[assistantMsgIndex]) {
+          newMessages[assistantMsgIndex].sources = data.sources
+        }
+        return newMessages
+      })
+
+      console.log('📦 Assistant message sources:', data.sources)
+
+      // Update conversation ID if new conversation was created
+      if (data.conversation_id && data.conversation_id !== conversationId) {
+        isCreatingConversation.current = true
         setConversationId(data.conversation_id)
         if (onConversationCreated) {
           onConversationCreated(data.conversation_id)
         }
       }
     } catch (error) {
-      console.error('Chat error:', error)
-      const errorMessage = {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
-        error: true,
-        timestamp: new Date()
+      // Don't show error if request was aborted by user
+      if (error.name === 'AbortError' || error.message.includes('aborted')) {
+        console.log('Request canceled by user')
+        // Remove the empty assistant message
+        setMessages(prev => prev.slice(0, -1))
+        return
       }
-      setMessages(prev => [...prev, errorMessage])
+
+      console.error('Chat error:', error)
+      // Update last message with error
+      setMessages(prev => {
+        const newMessages = [...prev]
+        if (newMessages[assistantMsgIndex]) {
+          newMessages[assistantMsgIndex].content = 'Sorry, I encountered an error. Please try again.'
+          newMessages[assistantMsgIndex].error = true
+        }
+        return newMessages
+      })
     } finally {
+      abortControllerRef.current = null
       setLoading(false)
     }
   }
@@ -236,26 +321,52 @@ export default function ChatPanel({
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[85%] rounded-lg p-4 ${
+                className={`max-w-[85%] rounded-3xl px-4 py-2 ${
                   msg.role === 'user'
                     ? isDark
                       ? 'bg-[#2DFFB7]/20 text-dark-text border border-[#2DFFB7]'
                       : 'bg-[#1FE0A5]/20 text-[#062A33] border border-[#1FE0A5]'
-                    : isDark 
-                      ? 'text-dark-text' 
+                    : isDark
+                      ? 'text-dark-text'
                       : 'text-[#062A33]'
                 }`}
               >
-                <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                <div className="whitespace-pre-wrap leading-relaxed space-y-4">
+                  {msg.content.split('\n\n').map((paragraph, i) => (
+                    <p key={i}>{paragraph}</p>
+                  ))}
+                </div>
                 {msg.sources && msg.sources.length > 0 && (
                   <div className={`mt-3 pt-3 border-t ${isDark ? 'border-white/10' : 'border-[#1FE0A5]/20'}`}>
                     <p className="text-xs opacity-70 mb-2">Sources:</p>
                     <div className="flex flex-wrap gap-1.5">
-                      {msg.sources.slice(0, 3).map((source, i) => (
-                        <span key={i} className={`text-xs px-2 py-1 rounded ${isDark ? 'bg-white/10' : 'bg-[#1FE0A5]/10 text-[#0B3C49]'}`}>
-                          {source.file_name}
-                        </span>
-                      ))}
+                      {msg.sources.map((source, i) => {
+                        // Handle different source types
+                        if (source.type === 'web_search') {
+                          return (
+                            <a
+                              key={i}
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`text-xs px-2 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1 ${isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-500/10 text-blue-600'}`}
+                              title={source.snippet || source.title}
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                              </svg>
+                              {source.title.length > 30 ? source.title.substring(0, 30) + '...' : source.title}
+                            </a>
+                          )
+                        } else {
+                          // File source
+                          return (
+                            <span key={i} className={`text-xs px-2 py-1 rounded ${isDark ? 'bg-white/10' : 'bg-[#1FE0A5]/10 text-[#0B3C49]'}`}>
+                              {source.file_name || 'Document'}
+                            </span>
+                          )
+                        }
+                      })}
                     </div>
                   </div>
                 )}
@@ -268,7 +379,7 @@ export default function ChatPanel({
             <div className="rounded-lg p-4">
               <div className="flex items-center gap-2">
                 <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-dark-accent"></div>
-                <span className={`text-sm ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`}>Thinking...</span>
+                <span className={`text-sm ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`}>{loadingMessage}</span>
               </div>
             </div>
           </div>
@@ -414,15 +525,22 @@ export default function ChatPanel({
               }}
             />
 
-            {/* Send Icon (right) - Stays at bottom */}
+            {/* Send/Stop Button - Transforms while loading */}
             <button
-              type="submit"
-              disabled={(!input.trim() && selectedFiles.length === 0) || loading}
-              className="flex-shrink-0 w-8 h-8 rounded-full bg-dark-accent text-white hover:bg-dark-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-              title="Send message"
+              type={loading ? "button" : "submit"}
+              onClick={loading ? handleStop : undefined}
+              disabled={!loading && (!input.trim() && selectedFiles.length === 0)}
+              className={`flex-shrink-0 w-8 h-8 rounded-full text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${
+                loading
+                  ? 'bg-red-500 hover:bg-red-600'
+                  : 'bg-dark-accent hover:bg-dark-accent/90'
+              }`}
+              title={loading ? "Stop generation" : "Send message"}
             >
               {loading ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
               ) : (
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />

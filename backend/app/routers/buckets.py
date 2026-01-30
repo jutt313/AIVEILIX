@@ -302,49 +302,42 @@ async def get_activity_stats(
             end_date_obj = datetime.now()
             start_date_obj = end_date_obj - timedelta(days=30)
         
-        # Get ALL buckets for user (not just in date range)
-        all_buckets_response = supabase.table("buckets").select(
+        # Get all buckets for user with created_at
+        buckets_response = supabase.table("buckets").select(
             "created_at, file_count, total_size_bytes"
-        ).eq("user_id", user_id).execute()
-
-        all_buckets = all_buckets_response.data if all_buckets_response.data else []
-
-        # Count buckets/files/storage created BEFORE the start date (initial cumulative)
-        cumulative_buckets = 0
-        cumulative_files = 0
-        cumulative_storage = 0.0
-
-        # Map of daily additions within the date range
+        ).eq("user_id", user_id).gte(
+            "created_at", start_date_obj.isoformat()
+        ).lte(
+            "created_at", end_date_obj.isoformat()
+        ).execute()
+        
+        buckets_data = buckets_response.data if buckets_response.data else []
+        
+        # Initialize date buckets for the date range
         activity_map = defaultdict(lambda: {"files": 0, "buckets": 0, "storage": 0.0})
-
-        # Process all buckets
-        for bucket in all_buckets:
+        
+        # Process buckets - group by date
+        for bucket in buckets_data:
             created_at = datetime.fromisoformat(bucket["created_at"].replace('Z', '+00:00'))
-            bucket_date = created_at.date()
-
-            if bucket_date < start_date_obj.date():
-                # Before date range - add to initial cumulative
-                cumulative_buckets += 1
-                cumulative_files += bucket.get("file_count", 0)
-                cumulative_storage += bucket.get("total_size_bytes", 0) / (1024 * 1024)
-            elif bucket_date <= end_date_obj.date():
-                # Within date range - add to daily map
-                date_key = bucket_date.isoformat()
-                activity_map[date_key]["buckets"] += 1
-                activity_map[date_key]["files"] += bucket.get("file_count", 0)
-                activity_map[date_key]["storage"] += bucket.get("total_size_bytes", 0) / (1024 * 1024)
-
+            date_key = created_at.date().isoformat()
+            activity_map[date_key]["buckets"] += 1
+            activity_map[date_key]["files"] += bucket.get("file_count", 0)
+            activity_map[date_key]["storage"] += bucket.get("total_size_bytes", 0) / (1024 * 1024)  # Convert to MB
+        
         # Generate all dates in range and calculate cumulative values
         current_date = start_date_obj.date()
         end_date = end_date_obj.date()
+        cumulative_files = 0
+        cumulative_buckets = 0
+        cumulative_storage = 0.0
         
         activity_data = []
         
         while current_date <= end_date:
             date_key = current_date.isoformat()
             daily_data = activity_map.get(date_key, {"files": 0, "buckets": 0, "storage": 0.0})
-
-            # Add daily additions to cumulative
+            
+            # Add to cumulative
             cumulative_buckets += daily_data["buckets"]
             cumulative_files += daily_data["files"]
             cumulative_storage += daily_data["storage"]

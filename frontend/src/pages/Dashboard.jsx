@@ -31,7 +31,7 @@ export default function Dashboard() {
       const [statsRes, bucketsRes, activityRes] = await Promise.all([
         bucketsAPI.getStats(),
         bucketsAPI.list(),
-        bucketsAPI.getActivity(7).catch(() => ({ data: { data: [] } })) // Default 7 days
+        bucketsAPI.getActivity(30).catch(() => ({ data: { data: [] } })) // Fallback if endpoint fails
       ])
       console.log('📊 Stats response:', statsRes.data)
       console.log('🪣 Buckets response:', bucketsRes.data)

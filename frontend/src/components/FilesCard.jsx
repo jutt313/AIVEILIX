@@ -17,6 +17,26 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
   }
 
+  // Status indicator component
+  const StatusIndicator = ({ status }) => {
+    if (status === 'ready') {
+      return (
+        <span className="text-green-500 text-xs" title="Ready">✓</span>
+      )
+    }
+    if (status === 'pending' || status === 'processing') {
+      return (
+        <span className="text-yellow-500 text-xs animate-pulse" title="Processing...">⏳</span>
+      )
+    }
+    if (status === 'failed') {
+      return (
+        <span className="text-red-500 text-xs" title="Failed">✗</span>
+      )
+    }
+    return null
+  }
+
   const handleDeleteFile = async (fileId, e) => {
     e.stopPropagation()
     if (!window.confirm('Delete this file?')) return
@@ -226,8 +246,8 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
                       </svg>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm truncate ${
-                        selected 
+                      <p className={`text-sm truncate flex items-center gap-1.5 ${
+                        selected
                           ? isDark
                             ? 'text-dark-accent font-medium'
                             : 'text-light-accent font-medium'
@@ -235,6 +255,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
                             ? 'text-dark-text'
                             : 'text-[#062A33]'
                       }`}>
+                        <StatusIndicator status={file.status} />
                         {file.name}
                       </p>
                       <p className={`text-xs ${
@@ -378,8 +399,8 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
                       </svg>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm truncate font-medium ${
-                        selected 
+                      <p className={`text-sm truncate font-medium flex items-center gap-1.5 ${
+                        selected
                           ? isDark
                             ? 'text-dark-accent'
                             : 'text-light-accent'
@@ -387,6 +408,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
                             ? 'text-dark-text'
                             : 'text-[#062A33]'
                       }`}>
+                        <StatusIndicator status={file.status} />
                         {file.name}
                       </p>
                       <p className={`text-xs ${

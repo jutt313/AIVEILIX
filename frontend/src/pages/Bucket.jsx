@@ -21,6 +21,23 @@ export default function Bucket() {
     loadData()
   }, [id])
 
+  // Poll for file status updates when there are pending/processing files
+  useEffect(() => {
+    const hasPendingFiles = files.some(f => f.status === 'pending' || f.status === 'processing')
+
+    if (!hasPendingFiles) return
+
+    const pollInterval = setInterval(() => {
+      filesAPI.list(id).then(res => {
+        setFiles(res.data.files || [])
+      }).catch(err => {
+        console.error('Polling error:', err)
+      })
+    }, 3000) // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval)
+  }, [id, files])
+
   const loadData = async () => {
     try {
       setLoading(true)

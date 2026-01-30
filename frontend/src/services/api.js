@@ -111,8 +111,60 @@ export const filesAPI = {
 }
 
 export const chatAPI = {
-  sendMessage: (bucketId, message, conversationId) => 
-    api.post(`/api/buckets/${bucketId}/chat`, { message, conversation_id: conversationId }),
+  sendMessage: async (bucketId, message, conversationId, abortSignal = null, onChunk = null) => {
+    const token = localStorage.getItem('access_token')
+    const response = await fetch(`${API_URL}/api/buckets/${bucketId}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ message, conversation_id: conversationId }),
+      signal: abortSignal
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let fullMessage = ''
+    let sources = []
+    let finalConversationId = conversationId
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value)
+      const lines = chunk.split('\n')
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = JSON.parse(line.slice(6))
+
+          if (data.type === 'content') {
+            fullMessage += data.content
+            if (onChunk) onChunk(data.content)
+          } else if (data.type === 'done') {
+            sources = data.sources || []
+            finalConversationId = data.conversation_id || conversationId
+          } else if (data.type === 'error') {
+            throw new Error(data.error)
+          }
+        }
+      }
+    }
+
+    return {
+      data: {
+        message: fullMessage,
+        sources,
+        conversation_id: finalConversationId
+      }
+    }
+  },
   getConversations: (bucketId) => api.get(`/api/buckets/${bucketId}/conversations`),
   getMessages: (conversationId) => api.get(`/api/buckets/conversations/${conversationId}/messages`),
 }

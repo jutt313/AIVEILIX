@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Header, Form, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Header, Form, Query, BackgroundTasks
 from typing import Optional, List, Dict
 from app.models.files import FileResponse, FilesListResponse, FileUploadResponse, SummaryUpdateRequest, SearchResponse, SearchResult
 from app.models.buckets import BucketResponse
@@ -23,228 +23,219 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
-async def process_file_async(
+def process_file_background(
     file_id: str,
-    temp_file_path: str,
+    storage_path: str,
     filename: str,
     mime_type: str,
     user_id: str,
-    bucket_id: str,
-    supabase,
-    skip_ai_summary: bool = True  # Skip AI summary by default for speed
-) -> Dict:
-    """Async helper function to process a single file (extract text, create chunks, optionally generate analysis)"""
+    bucket_id: str
+) -> None:
+    """
+    Background task to process a file after upload.
+    Fetches file from Supabase Storage, extracts text, creates chunks with embeddings.
+    This runs in background so upload returns instantly.
+    """
     logger.info("=" * 80)
-    logger.info(f"📄 Processing file: {filename}")
+    logger.info(f"🔄 BACKGROUND PROCESSING STARTED: {filename}")
     logger.info(f"   File ID: {file_id}")
+    logger.info(f"   Storage Path: {storage_path}")
     logger.info(f"   MIME Type: {mime_type}")
-    logger.info(f"   Skip AI Summary: {skip_ai_summary}")
-    
+
+    # Get fresh supabase client for background task
+    supabase = get_supabase()
+
     try:
-        # Extract text
-        logger.info(f"  1️⃣  Extracting text from {filename}...")
-        text_data = extract_text_from_file(temp_file_path, mime_type)
-        text = text_data["text"]
-        metadata = text_data["metadata"]
-        
-        logger.info(f"  ✅ Text extracted: {len(text)} chars, {metadata.get('word_count', 0)} words")
-        
-        # Only process if we got text content
-        if not text or len(text.strip()) == 0:
-            logger.error(f"  ❌ No text content extracted from {filename}")
-            raise Exception("No text content extracted from file")
-        
-        # Create chunks
-        logger.info(f"  2️⃣  Creating text chunks...")
-        chunks = chunk_text(text)
-        logger.info(f"  ✅ Created {len(chunks)} chunks")
-        
-        # Generate embeddings in BATCH (much faster than one-by-one)
-        logger.info(f"  3️⃣  Generating embeddings for {len(chunks)} chunks...")
-        chunk_texts = [chunk["content"] for chunk in chunks]
-        embeddings = generate_embeddings_batch(chunk_texts)
-        
-        # Store chunks with embeddings
-        logger.info(f"  4️⃣  Storing chunks in database...")
-        chunk_records = []
-        for i, chunk in enumerate(chunks):
-            chunk_record = {
-                "id": str(uuid.uuid4()),
-                "user_id": user_id,
-                "bucket_id": bucket_id,
-                "file_id": file_id,
-                "content": chunk["content"],
-                "content_hash": hashlib.md5(chunk["content"].encode()).hexdigest(),
-                "chunk_index": chunk["chunk_index"],
-                "start_offset": chunk["start_offset"],
-                "end_offset": chunk["end_offset"],
-                "token_count": chunk["token_count"]
-            }
-            # Only add embedding if it was generated
-            if embeddings[i]:
-                chunk_record["embedding"] = embeddings[i]
-            chunk_records.append(chunk_record)
-        
-        # Batch insert chunks
-        if chunk_records:
-            supabase.table("chunks").insert(chunk_records).execute()
-            logger.info(f"  ✅ Stored {len(chunk_records)} chunks")
-        
-        # Generate AI summary only if requested (lazy loading)
-        if not skip_ai_summary:
-            logger.info(f"  5️⃣  Generating AI summary...")
-            analysis_data = analyze_file_comprehensive(text, filename)
-            if analysis_data.get("summary"):
-                summary_record = {
+        # Update status to processing
+        supabase.table("files").update({
+            "status": "processing"
+        }).eq("id", file_id).execute()
+
+        # Download file from storage
+        logger.info(f"  1️⃣  Downloading file from storage...")
+        file_data = supabase.storage.from_("files").download(storage_path)
+
+        if not file_data:
+            raise Exception("Failed to download file from storage")
+
+        # Save to temp file for processing
+        file_ext = os.path.splitext(storage_path)[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+            temp_file.write(file_data)
+            temp_file_path = temp_file.name
+
+        logger.info(f"  ✅ Downloaded ({len(file_data)} bytes)")
+
+        try:
+            # Extract text
+            logger.info(f"  2️⃣  Extracting text from {filename}...")
+            text_data = extract_text_from_file(temp_file_path, mime_type)
+            text = text_data["text"]
+            metadata = text_data["metadata"]
+
+            logger.info(f"  ✅ Text extracted: {len(text)} chars, {metadata.get('word_count', 0)} words")
+
+            # Only process if we got text content
+            if not text or len(text.strip()) == 0:
+                logger.error(f"  ❌ No text content extracted from {filename}")
+                raise Exception("No text content extracted from file")
+
+            # Create chunks
+            logger.info(f"  3️⃣  Creating text chunks...")
+            chunks = chunk_text(text)
+            logger.info(f"  ✅ Created {len(chunks)} chunks")
+
+            # Generate embeddings in BATCH (much faster than one-by-one)
+            logger.info(f"  4️⃣  Generating embeddings for {len(chunks)} chunks...")
+            chunk_texts = [chunk["content"] for chunk in chunks]
+            embeddings = generate_embeddings_batch(chunk_texts)
+
+            # Store chunks with embeddings
+            logger.info(f"  5️⃣  Storing chunks in database...")
+            chunk_records = []
+            for i, chunk in enumerate(chunks):
+                chunk_record = {
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
                     "bucket_id": bucket_id,
                     "file_id": file_id,
-                    "summary_type": "file",
-                    "title": filename,
-                    "content": analysis_data["summary"],
-                    "model_used": analysis_data.get("model_used")
+                    "content": chunk["content"],
+                    "content_hash": hashlib.md5(chunk["content"].encode()).hexdigest(),
+                    "chunk_index": chunk["chunk_index"],
+                    "start_offset": chunk["start_offset"],
+                    "end_offset": chunk["end_offset"],
+                    "token_count": chunk["token_count"]
                 }
-                supabase.table("summaries").insert(summary_record).execute()
-                logger.info(f"  ✅ AI summary generated and stored")
-        else:
-            logger.info(f"  ⏭️  Skipping AI summary (will generate on-demand)")
-        
-        # Update file status to ready
-        logger.info(f"  6️⃣  Updating file status to 'ready'...")
-        supabase.table("files").update({
-            "status": "ready",
-            "processed_at": "now()",
-            "page_count": metadata.get("page_count"),
-            "word_count": metadata.get("word_count")
-        }).eq("id", file_id).execute()
-        
-        logger.info(f"✅ File processed successfully: {filename}")
-        logger.info("=" * 80)
-        
-        # Create file processed notification
-        create_file_processed_notification(user_id, filename, bucket_id, file_id)
-        
-        return {
-            "file_id": file_id,
-            "status": "ready",
-            "metadata": metadata
-        }
+                # Only add embedding if it was generated
+                if embeddings[i]:
+                    chunk_record["embedding"] = embeddings[i]
+                chunk_records.append(chunk_record)
+
+            # Batch insert chunks
+            if chunk_records:
+                supabase.table("chunks").insert(chunk_records).execute()
+                logger.info(f"  ✅ Stored {len(chunk_records)} chunks")
+
+            # Update file status to ready
+            logger.info(f"  6️⃣  Updating file status to 'ready'...")
+            supabase.table("files").update({
+                "status": "ready",
+                "processed_at": "now()",
+                "page_count": metadata.get("page_count"),
+                "word_count": metadata.get("word_count")
+            }).eq("id", file_id).execute()
+
+            logger.info(f"✅ BACKGROUND PROCESSING COMPLETE: {filename}")
+            logger.info("=" * 80)
+
+            # Create file processed notification
+            create_file_processed_notification(user_id, filename, bucket_id, file_id)
+
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+
     except Exception as e:
         error_message = str(e)
         logger.error("=" * 80)
-        logger.error(f"❌ File processing FAILED for {filename} (file_id: {file_id})")
+        logger.error(f"❌ BACKGROUND PROCESSING FAILED: {filename} (file_id: {file_id})")
         logger.error(f"   Error: {error_message}")
         logger.error(f"   Traceback:", exc_info=True)
         logger.error("=" * 80)
-        
+
         # Update file status to failed with error tracking
-        supabase.table("files").update({
-            "status": "failed",
-            "status_message": f"Processing failed: {error_message[:200]}",
-            "processed_at": "now()"
-        }).eq("id", file_id).execute()
-        
-        return {
-            "file_id": file_id,
-            "status": "failed",
-            "error": error_message
-        }
+        try:
+            supabase.table("files").update({
+                "status": "failed",
+                "status_message": f"Processing failed: {error_message[:200]}",
+                "processed_at": "now()"
+            }).eq("id", file_id).execute()
+        except Exception as update_error:
+            logger.error(f"Failed to update file status: {update_error}")
 
 
 @router.post("/{bucket_id}/upload", response_model=FileUploadResponse)
 async def upload_file(
     bucket_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     folder_path: Optional[str] = Form(None),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Upload a file to a bucket - handles any file type, marks as failed if processing fails"""
+    """
+    Upload a file to a bucket - INSTANT RESPONSE.
+
+    File is saved to storage immediately, processing happens in background.
+    Chat AI can read unprocessed files directly from storage.
+    """
     try:
         # Use service role for bucket verification to avoid RLS propagation delays
         supabase = get_supabase()
-        
+
         # Verify bucket belongs to user
         try:
             bucket_res = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", user_id).single().execute()
         except PostgrestAPIError:
             raise HTTPException(status_code=404, detail="Bucket not found")
-        
-        # Save file temporarily
+
+        # Read file content
+        content = await file.read()
         file_ext = Path(file.filename).suffix
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
-        file_id = None
-        storage_path = None
-        
-        try:
-            content = await file.read()
-            temp_file.write(content)
-            temp_file.close()
-            
-            # Store file in Supabase Storage first (always save the file)
-            storage_path = f"{user_id}/{bucket_id}/{uuid.uuid4()}{file_ext}"
-            with open(temp_file.name, 'rb') as f:
-                supabase.storage.from_("files").upload(storage_path, f.read())
-            
-            # Extract just the filename (remove folder path if present in filename)
-            filename = file.filename
-            if '/' in filename:
-                filename = filename.split('/')[-1]
-            
-            # Create file record with pending status
-            file_record = {
-                "id": str(uuid.uuid4()),
-                "user_id": user_id,
-                "bucket_id": bucket_id,
-                "name": filename,
-                "original_name": filename,
-                "mime_type": file.content_type,
-                "size_bytes": len(content),
-                "storage_path": storage_path,
-                "status": "processing"
-            }
-            
-            # Add folder_path if provided
-            if folder_path:
-                file_record["folder_path"] = folder_path
-            
-            file_res = supabase.table("files").insert(file_record).execute()
-            file_id = file_res.data[0]["id"]
-            
-            # Create file uploaded notification
-            create_file_uploaded_notification(user_id, filename, bucket_id, file_id)
-            
-            # Process the file using async helper
-            process_result = await process_file_async(
-                file_id=file_id,
-                temp_file_path=temp_file.name,
-                filename=file.filename,
-                mime_type=file.content_type,
-                user_id=user_id,
-                bucket_id=bucket_id,
-                supabase=supabase
-            )
-            
-            if process_result["status"] == "ready":
-                return FileUploadResponse(
-                    id=file_id,
-                    name=file.filename,
-                    status="ready",
-                    message="File uploaded and processed successfully"
-                )
-            else:
-                return FileUploadResponse(
-                    id=file_id,
-                    name=file.filename,
-                    status="failed",
-                    message=f"File uploaded but processing failed: {process_result.get('error', 'Unknown error')}"
-                )
-            
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_file.name):
-                os.unlink(temp_file.name)
-                
+
+        # Store file in Supabase Storage (this is fast)
+        storage_path = f"{user_id}/{bucket_id}/{uuid.uuid4()}{file_ext}"
+        supabase.storage.from_("files").upload(storage_path, content)
+
+        # Extract just the filename (remove folder path if present in filename)
+        filename = file.filename
+        if '/' in filename:
+            filename = filename.split('/')[-1]
+
+        # Create file record with "pending" status - INSTANT
+        file_id = str(uuid.uuid4())
+        file_record = {
+            "id": file_id,
+            "user_id": user_id,
+            "bucket_id": bucket_id,
+            "name": filename,
+            "original_name": filename,
+            "mime_type": file.content_type,
+            "size_bytes": len(content),
+            "storage_path": storage_path,
+            "status": "pending"  # Will be "processing" then "ready" after background task
+        }
+
+        # Add folder_path if provided
+        if folder_path:
+            file_record["folder_path"] = folder_path
+
+        supabase.table("files").insert(file_record).execute()
+
+        # Create file uploaded notification
+        create_file_uploaded_notification(user_id, filename, bucket_id, file_id)
+
+        # Add background task for processing - DOES NOT BLOCK RESPONSE
+        background_tasks.add_task(
+            process_file_background,
+            file_id=file_id,
+            storage_path=storage_path,
+            filename=filename,
+            mime_type=file.content_type,
+            user_id=user_id,
+            bucket_id=bucket_id
+        )
+
+        logger.info(f"⚡ INSTANT UPLOAD: {filename} (processing in background)")
+
+        # Return immediately - user sees file instantly
+        return FileUploadResponse(
+            id=file_id,
+            name=filename,
+            status="pending",
+            message="File uploaded! Processing in background. You can chat about it now."
+        )
+
     except HTTPException:
         raise
     except Exception as e:
