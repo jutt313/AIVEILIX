@@ -8,6 +8,7 @@ import { Sun, Moon, Search, Book, Shield, Server, Box, MessageSquare, Terminal, 
 import introductionMarkdown from '../../../Introduction.md?raw';
 import userGuidesMarkdown from '../../../UserGuides.md?raw';
 import integrationsMarkdown from '../../../Integrations_MCP.md?raw';
+import apiReferenceMarkdown from '../../../APIReference.md?raw';
 import SignupPageGif from './SignupPageGif';
 import LoginPageGif from './LoginPageGif';
 import ForgotPasswordGif from './ForgotPasswordGif';
@@ -388,6 +389,15 @@ const Doc = () => {
                                     <div className="space-y-10">
                                         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                                             {integrationsMarkdown}
+                                        </ReactMarkdown>
+                                    </div>
+                                </section>
+
+                                {/* --- API Reference (Markdown) --- */}
+                                <section className="scroll-mt-16">
+                                    <div className="space-y-10">
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                            {apiReferenceMarkdown}
                                         </ReactMarkdown>
                                     </div>
                                 </section>
