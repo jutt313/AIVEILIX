@@ -73,7 +73,45 @@
 
   </head>
   <body class="dark">
-    <div id="root"></div>
+    <!-- Fallback content for crawlers and no-JS users -->
+    <noscript>
+      <div style="font-family: system-ui; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.6;">
+        <h1>AIveilix - AI-Powered Knowledge Management Platform</h1>
+        <p>Upload documents once, access everywhere. AIveilix integrates seamlessly with Cursor, ChatGPT, and Claude Desktop through the Model Context Protocol (MCP).</p>
+
+        <h2>Key Features</h2>
+        <ul>
+          <li><strong>Universal MCP Integration:</strong> Connect with Cursor IDE, ChatGPT, Claude Desktop, Zed Editor, and VS Code</li>
+          <li><strong>Semantic Search:</strong> 3072-dimension vector embeddings powered by OpenAI</li>
+          <li><strong>AI Chat:</strong> DeepSeek Reasoner with extended thinking capabilities</li>
+          <li><strong>50+ File Types:</strong> Support for documents, images, PDFs, code files, CSV, and more</li>
+          <li><strong>Free Plan Available:</strong> Get started with 100 files and 500MB storage</li>
+        </ul>
+
+        <h2>Quick Links</h2>
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/doc">Documentation</a></li>
+          <li><a href="/pricing">Pricing</a></li>
+          <li><a href="/login">Login</a></li>
+          <li><a href="/signup">Sign Up</a></li>
+        </ul>
+
+        <p><strong>Please enable JavaScript to use the full AIveilix application.</strong></p>
+      </div>
+    </noscript>
+
+    <!-- React root - JavaScript will render here -->
+    <div id="root">
+      <!-- Pre-rendered content will be injected here during build -->
+      <div style="display: none;">
+        <h1>AIveilix - AI-Powered Knowledge Management Platform</h1>
+        <p>Upload documents once, access everywhere. Integrate with Cursor, ChatGPT, Claude Desktop via MCP protocol. Semantic search, AI chat, 50+ file types supported.</p>
+        <p>Features: Universal MCP Integration, 3072-dimension vector embeddings, DeepSeek AI chat, comprehensive file support, free plan with 100 files and 500MB storage.</p>
+        <p>Navigation: Home, Documentation, Pricing, API Reference, Integrations, Login, Sign Up</p>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

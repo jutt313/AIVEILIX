@@ -51,8 +51,8 @@ Allow: /tokusho
 Allow: /login
 Allow: /signup
 
-# Sitemap location (add this when you create one)
-# Sitemap: https://aiveilix.com/sitemap.xml
+# Sitemap location
+Sitemap: https://aiveilix.com/sitemap.xml
 
 # Crawl delay (be nice to servers)
 Crawl-delay: 1
