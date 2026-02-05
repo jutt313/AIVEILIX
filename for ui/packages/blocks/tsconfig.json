@@ -1,0 +1,32 @@
+{
+  "extends": "@repo/typescript-config/react-library.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "jsx": "react-jsx",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "module": "esnext",
+    "target": "es2020",
+    "allowJs": false,
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "#*": ["./src/*"],
+      "@/components/ui/*": ["../../apps/ui-layout/components/ui/*"],
+      "@/components/website/ui/*": [
+        "../../apps/ui-layout/components/website/ui/*"
+      ],
+      "@/lib/*": ["../../apps/ui-layout/lib/*"],
+      "@/hooks/*": ["../../apps/ui-layout/hooks/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -21,23 +21,6 @@ export default function Bucket() {
     loadData()
   }, [id])
 
-  // Poll for file status updates when there are pending/processing files
-  useEffect(() => {
-    const hasPendingFiles = files.some(f => f.status === 'pending' || f.status === 'processing')
-
-    if (!hasPendingFiles) return
-
-    const pollInterval = setInterval(() => {
-      filesAPI.list(id).then(res => {
-        setFiles(res.data.files || [])
-      }).catch(err => {
-        console.error('Polling error:', err)
-      })
-    }, 3000) // Poll every 3 seconds
-
-    return () => clearInterval(pollInterval)
-  }, [id, files])
-
   const loadData = async () => {
     try {
       setLoading(true)
@@ -87,7 +70,7 @@ export default function Bucket() {
       />
       
       {/* Main Content */}
-      <div className="relative h-screen flex gap-4 p-4">
+      <div className="relative h-screen flex gap-4 pt-[7px] pb-[7px] px-4">
       {/* Conversations Sidebar - Left (includes bucket info, new chat, conversations) */}
       <div className="flex-shrink-0">
         <ConversationsSidebar

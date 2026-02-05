@@ -1,0 +1,161 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Timeline Animation",
+  description:
+    "A timeline animation built with Framer Motion that animates sections one after another as they enter the viewport. Supports an animationNum prop to control when each item in the timeline animates.",
+  keywords: [
+    "Timeline animation React",
+    "Framer Motion timeline",
+    "Scroll timeline animation",
+    "Sequential section animation",
+    "Animated timeline component",
+    "Framer Motion animationNum",
+    "Scroll triggered timeline",
+    "Staggered timeline animation",
+    "React timeline animation",
+    "Step by step animation",
+    "Interactive timeline UI",
+    "Framer Motion sequential reveal",
+    "Section by section animation",
+    "Viewport timeline animation",
+    "Modern timeline component",
+    "Sequential content reveal React",
+    "Animated vertical timeline",
+    "React storytelling timeline",
+    "Scroll-based animation timeline",
+    "Framer Motion UI timeline",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Timeline Animation | UI Layouts",
+    description:
+      "A Framer Motion timeline animation component for React. Animates timeline items sequentially as you scroll, with full control using the animationNum prop.",
+    url: "https://ui-layouts.com/components/timeline-animation",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Timeline Animation | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "React timeline animation using Framer Motion. Animates sections one after another with scroll, controllable via animationNum.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+
+<ComponentCodePreview name='timeline-animation-default' hasReTrigger responsive />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add timeline-animation
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/timeline-animation.json'
+      ```
+   </CodeWithTabs>
+  </TabsContent>
+  
+<TabsContent value="manual" manualType>
+
+```bash
+npm install motion
+```
+
+<CodeSnippets name="timeline-animation" />
+
+</TabsContent>
+</Tabs>
+
+## Usage Examples
+
+### Default Animation
+
+```tsx
+const timelineRef = useRef<HTMLDivElement>(null);
+
+<TimelineAnimation as='h2' animationNum={1} ref={timelineRef}>
+  Default fade/slide animation 
+</TimelineAnimation>
+```
+
+### Custom Variants
+
+```tsx
+const timelineRef = useRef<HTMLDivElement>(null);
+
+const revealVariants = {
+  hidden: { opacity: 0, scale: 0.8 },
+  visible: { opacity: 1, scale: 1, transition: { duration: 0.5 } },
+};
+
+<TimelineAnimation as='button' ref={timelineRef} animationNum={2} customVariants={revealVariants}>
+  Custom animation
+</TimelineAnimation>;
+```
+
+### Using `<a>` Link
+
+```tsx
+const timelineRef = useRef<HTMLDivElement>(null);
+
+<TimelineAnimation
+  as='a'
+  href='https://pro.ui-layouts.com/test'
+  animationNum={3}
+  customVariants={revealVariants}
+  ref={timelineRef}
+  className='group rounded-lg border p-4'
+>
+  Clickable card
+</TimelineAnimation>
+```
+
+## Props
+
+| Prop           | Type                                                   | Default                                                     | Description                                                                            |
+| -------------- | ------------------------------------------------------ | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| children       | `React.ReactNode`                                      | —                                                           | The content to be displayed within the timeline.                                       |
+| as             | `keyof HTMLElementTagNameMap`                          | `"div"`                                                     | The HTML element to render (`div`, `a`, `section`, etc.).                              |
+| animationNum   | `number`                                               | —                                                           | A number used to stagger animations for multiple items.                                |
+| viewport       | `{ amount?: number; margin?: string; once?: boolean }` | `{ amount: 0.3, margin: "0px 0px -120px 0px", once: true }` | Controls when the animation triggers in the viewport.                                  |
+| customVariants | `Variants`                                             | —                                                           | Optional set of custom Framer Motion variants for `hidden` and `visible` animations.   |
+| className      | `string`                                               | —                                                           | Optional CSS classes to style the timeline element.                                    |
+| delay          | `boolean`                                              | —                                                           | Optional delay properties for adding delay animation between timeline.                 |
+| ...props       | `ComponentPropsWithoutRef<T>`                          | —                                                           | All other native HTML props for the element (e.g., `href`, `target`, `rel` for `<a>`). |

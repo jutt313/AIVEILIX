@@ -1,0 +1,122 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Scroll Text Marquee",
+  description:
+    "A scroll-controlled text marquee for React with unidirectional and bidirectional modes. The marquee speed and direction adjust dynamically based on scroll position for an interactive text effect.",
+  keywords: [
+    "Text marquee React",
+    "Scroll controlled marquee",
+    "Bidirectional text marquee",
+    "Unidirectional marquee",
+    "React scrolling text",
+    "Dynamic marquee effect",
+    "Marquee with scroll",
+    "Interactive text animation",
+    "Back and forth marquee",
+    "Text scroller React",
+    "Scroll based text movement",
+    "Looping text animation",
+    "Responsive marquee UI",
+    "React bidirectional text",
+    "Continuous text scroll",
+    "Headline ticker React",
+    "News ticker component",
+    "Animated text marquee",
+    "React scroll animation",
+    "UI layouts marquee effect",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Text Marquee | UI Layouts",
+    description:
+      "A React marquee component with scroll-controlled direction. Supports unidirectional and bidirectional animations that move forward or backward based on scroll position.",
+    url: "https://ui-layouts.com/components/scroll-text-marquee",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Text Marquee | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "Scroll-based text marquee for React. Direction changes dynamically with scroll, supporting both unidirectional and bidirectional animations.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+
+## UniDirectional
+
+<ComponentCodePreview name='scroll-text-marquee-unidirectional' hasReTrigger />
+
+## Bidirectional
+
+<ComponentCodePreview name='scroll-text-marquee-bidirectional' hasReTrigger />
+
+## Installation
+
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add text-marquee
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/text-marquee.json'
+      ```
+
+   </CodeWithTabs>
+  </TabsContent>
+  
+<TabsContent value="manual" manualType>
+
+```bash
+npm install motion @motionone/utils
+```
+
+<CodeSnippets name="scroll-text-marque" />
+
+</TabsContent>
+</Tabs>
+
+## Props
+
+| Prop            | Type    | Default | Description                                          |
+| --------------- | ------- | ------- | ---------------------------------------------------- |
+| children        | string  |         | The content to be animated with a parallax effect.   |
+| baseVelocity    | number  | `-5`    | The base velocity for the parallax effect.           |
+| clasname        | string  |         | Optional CSS class for styling the component.        |
+| scrollDependent | boolean | `false` | Whether the animation should depend on scroll.       |
+| delay           | number  | `0`     | Delay before the animation starts (in milliseconds). |

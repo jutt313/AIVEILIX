@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify your email</title>
+</head>
+
+<body
+    style="margin:0;padding:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background-color:#0A1215;color:#FFF">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#0A1215">
+        <tr>
+            <td align="center" style="padding:20px 0">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600"
+                    style="max-width:600px;background-color:#0F1A1E">
+                    <tr>
+                        <td
+                            style="background:linear-gradient(135deg,#0B3C49 0%,#062A33 100%);padding:40px 20px;text-align:center">
+                            <img src="{{logo_url}}" alt="AIveilix" style="max-width:180px;height:auto">
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:40px 30px;background-color:#0F1A1E">
+                            <h1 style="color:#2DFFB7;font-size:28px;font-weight:700;margin:0 0 20px 0">Welcome to
+                                AIveilix!</h1>
+                            <p style="color:rgba(255,255,255,0.86);font-size:16px;line-height:1.6;margin:0 0 16px 0">
+                                Hi {{user_name}},
+                            </p>
+                            <p style="color:rgba(255,255,255,0.86);font-size:16px;line-height:1.6;margin:0 0 16px 0">
+                                Thanks for signing up! Please verify your email address to activate your account and
+                                start building your AI-powered knowledge vault.
+                            </p>
+                            <div style="text-align:center;margin:30px 0">
+                                <a href="{{verification_link}}"
+                                    style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#2DFFB7 0%,#1FE0A5 100%);color:#050B0D!important;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px">
+                                    Verify Email Address
+                                </a>
+                            </div>
+                            <p style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.6;margin:20px 0 0 0">
+                                Or copy and paste this link into your browser:<br>
+                                <a href="{{verification_link}}"
+                                    style="color:#1FE0A5;word-break:break-all">{{verification_link}}</a>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td
+                            style="padding:30px 20px;text-align:center;background-color:#050B0D;border-top:1px solid rgba(45,255,183,0.1)">
+                            <p style="color:rgba(255,255,255,0.6);font-size:14px;margin:8px 0">
+                                <strong>AIveilix</strong> - Your AI-Powered Knowledge Vault
+                            </p>
+                            <p style="color:rgba(255,255,255,0.6);font-size:14px;margin:8px 0">
+                                © 2026 AIveilix Inc. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+
+</html>

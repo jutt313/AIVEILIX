@@ -31,12 +31,19 @@ python-dotenv
 httpx
 tenacity
 slowapi
+jinja2
+
+# Error Tracking & Monitoring
+sentry-sdk[fastapi]
 
 # MCP Protocol
 mcp
 
 # OAuth2
 authlib
+
+# Payments
+stripe
 
 # Background Tasks (v1 uses FastAPI BackgroundTasks)
 # celery

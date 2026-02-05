@@ -1,0 +1,175 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Animated Globe",
+  description: "An interactive 3D animated globe component built with the Cobe library, featuring customizable styling and smooth rotations. Perfect for creating engaging geographic visualizations, data presentations, and modern interactive globe experiences.",
+  keywords: [
+    "Animated globe component",
+    "Cobe library globe",
+    "Interactive 3D globe",
+    "React globe component",
+    "3D globe visualization",
+    "Cobe globe library",
+    "Interactive globe widget",
+    "Globe animation component",
+    "3D Earth component",
+    "WebGL globe component",
+    "Interactive world map",
+    "Globe data visualization",
+    "3D globe renderer",
+    "Rotating globe component",
+    "Geographic visualization",
+    "Interactive earth globe",
+    "Globe with animations",
+    "Custom globe component",
+    "3D interactive globe",
+    "Globe visualization tool",
+    "React Cobe globe",
+    "World globe component",
+    "Interactive planet component",
+    "Globe UI component",
+    "3D globe effects",
+    "Geographic globe component",
+    "Modern globe design",
+    "Responsive globe component",
+    "Globe component library",
+    "Tailwind globe component"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Animated Globe Component | UI Layouts",
+    description: "An interactive 3D animated globe component built with the Cobe library, featuring customizable styling and smooth rotations for engaging geographic visualizations.",
+    url: "https://ui-layouts.com/components/globe",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Animated Globe Component | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description: "Interactive 3D animated globe built with Cobe library, featuring customizable styling and smooth rotations for engaging visualizations.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+> To Get the sparkle code Please Click That Link [here](https://www.ui-layouts.com/components/sparkles)
+
+<ComponentCodePreview name='card-globe-default' hasReTrigger responsive />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add globe
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/globe.json'
+      ```
+   </CodeWithTabs>
+  </TabsContent>
+  
+  <TabsContent value="manual" manualType>
+```bash
+npm install cobe
+```
+
+<CodeSnippets name="globe" />
+
+</TabsContent>
+</Tabs>
+
+## Props
+
+| Prop          | Type                     | Default                 | Description                                                |
+| ------------- | ------------------------ | ----------------------- | ---------------------------------------------------------- |
+| className     | string                   | undefined               | Optional CSS class for styling the Earth component.        |
+| theta         | number                   | 0.25                    | Controls the rotational angle of the Earth.                |
+| dark          | number                   | 1                       | Controls the darkness level of the Earth.                  |
+| scale         | number                   | 1.1                     | Controls the scaling factor of the Earth.                  |
+| diffuse       | number                   | 1.2                     | Controls the diffuse light intensity of the Earth.         |
+| mapSamples    | number                   | 40000                   | The number of samples used for the map texture.            |
+| mapBrightness | number                   | 6                       | The brightness of the map texture.                         |
+| baseColor     | [number, number, number] | [0.4, 0.6509, 1]        | The base color of the Earth as an RGB array.               |
+| markerColor   | [number, number, number] | [1, 0, 0]               | The color of the markers on the Earth as an RGB array.     |
+| glowColor     | [number, number, number] | [0.2745, 0.5765, 0.898] | The color of the glow effect on the Earth as an RGB array. |
+
+## Example
+
+### Light Globe
+
+<ComponentCodePreview name='card-globe-white' hasReTrigger responsive  />
+
+### Sparkles Globe
+
+<IframeComponentPrieview name='sparkles-globe' hasReTrigger responsive >
+
+```tsx
+import React from 'react';
+import { Sparkles } from '@/components/ui/sparkles';
+import Earth from '@/components/ui/globe';
+
+function index() {
+  return (
+    <>
+      <div className='h-screen overflow-hidden bg-black text-white'>
+        <article className='grid gap-4 text-center relative z-10 pt-10'>
+          <span className='inline-block text-sm border p-1 px-3 w-fit mx-auto rounded-full border-[#3273ff] bg-[#0f1c35]'>
+            Get Access
+          </span>
+          <h1 className='text-4xl  font-semibold bg-linear-to-b from-[#edeffd] to-[#7b9cda] bg-clip-text text-transparent leading-[100%] tracking-tighter'>
+            Design with a Global
+            <br />
+            Perspective, Innovate with Ease.
+          </h1>
+          <Earth />
+        </article>
+
+        <div className='relative -mt-32 h-80 w-screen overflow-hidden mask-[radial-gradient(50%_50%,white,transparent)] before:absolute before:inset-0 before:bg-[radial-gradient(circle_at_bottom_center,#3273ff,transparent_90%)] before:opacity-40 after:absolute after:-left-1/2 after:top-1/2 after:aspect-[1/0.7] after:w-[200%] after:rounded-[10%] after:border-t after:border-[#163474] after:bg-[#08132b]'>
+          <SparklesGblobe
+            density={1200}
+            className='absolute inset-x-0 bottom-0 h-full w-full '
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+export default index;
+```
+
+> To Get the sparkle code Please Click That Link [here](https://www.ui-layouts.com/components/sparkles)
+
+</IframeComponentPrieview>

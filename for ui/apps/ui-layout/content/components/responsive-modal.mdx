@@ -1,0 +1,132 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Responsive Modal",
+  description:
+    "A responsive Modal component built with Vaul and Framer Motion. Opens like an app drawer on mobile devices and functions as a dialog or sliding panel on desktop.",
+  keywords: [
+    "Modal component",
+    "Responsive Modal React",
+    "Vaul Modal",
+    "Framer Motion drawer",
+    "React sliding panel",
+    "Mobile app drawer UI",
+    "React dialog drawer",
+    "Animated drawer component",
+    "Vaul motion drawer",
+    "Responsive sidebar React",
+    "Drawer with animation",
+    "React UI drawer",
+    "Dialog with slide animation",
+    "App style drawer",
+    "React bottom drawer",
+    "Framer Motion UI component",
+    "Accessible drawer React",
+    "Responsive navigation drawer",
+    "Interactive drawer UI",
+    "React motion drawer",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Modal | UI Layouts",
+    description:
+      "A responsive Modal built with Vaul and Framer Motion. Mobile-first design with app-modal behavior and smooth transitions for desktop dialogs.",
+    url: "https://ui-layouts.com/components/responsive-modal",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Drawer | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "Responsive drawer component using Vaul and Framer Motion. Works as an app drawer on mobile and a dialog/drawer on desktop.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+
+<ComponentCodePreview name='responsive-modal-default' hasReTrigger responsive />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+  <TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+    <TabsTrigger value="cli">CLI</TabsTrigger>
+    <TabsTrigger value="manual">Manual</TabsTrigger>
+  </TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add responsive-modal
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/responsive-modal.json'
+      ```
+   </CodeWithTabs>
+  </TabsContent>
+
+
+<TabsContent value="manual" manualType>
+```bash
+npm install motion vaul
+```
+
+<CodeSnippets name="responsive-modal" />
+
+</TabsContent>
+</Tabs>
+
+
+Please add this property in your layout.tsx or app.tsx
+
+```tsx
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang='en'>
+      <body className={poppins.className}>
+        <div vaul-drawer-wrapper=''>{children}</div>
+      </body>
+    </html>
+  );
+}
+```
+
+## Props
+
+| Prop           | Type      | Description                                                        |
+| -------------- | --------- | :----------------------------------------------------------------- |
+| open           | boolean   | The content to be displayed within the AuroraBackground component. |
+| setOpen        | boolean   | this is an function to close and open the drawer                   |
+| triggerContent | ReactNode | This will use for default click without an using state             |
+

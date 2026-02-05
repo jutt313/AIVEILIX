@@ -13,27 +13,27 @@ from app.services.supabase import get_supabase_auth, get_supabase
 from app.routers.buckets import get_current_user_id
 from app.config import get_settings
 from app.utils.error_logger import log_error, get_correlation_id
+from app.services import email_service
 import logging
 import traceback
-
 router = APIRouter()
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
 @router.post("/signup", response_model=AuthResponse)
-async def signup(request: SignupRequest, http_request: Request):
+async def signup(signup_request: SignupRequest, request: Request):
     """Create a new user account"""
-    correlation_id = get_correlation_id(http_request)
+    correlation_id = get_correlation_id(request)
     try:
         supabase = get_supabase_auth()
         
         response = supabase.auth.sign_up({
-            "email": request.email,
-            "password": request.password,
+            "email": signup_request.email,
+            "password": signup_request.password,
             "options": {
                 "data": {
-                    "full_name": request.full_name or ""
+                    "full_name": signup_request.full_name or ""
                 }
             }
         })
@@ -45,7 +45,7 @@ async def signup(request: SignupRequest, http_request: Request):
                 user={
                     "id": str(response.user.id),
                     "email": response.user.email,
-                    "full_name": request.full_name
+                    "full_name": signup_request.full_name
                 }
             )
         else:
@@ -63,15 +63,15 @@ async def signup(request: SignupRequest, http_request: Request):
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(request: LoginRequest, http_request: Request):
+async def login(login_request: LoginRequest, request: Request):
     """Login with email and password"""
-    correlation_id = get_correlation_id(http_request)
+    correlation_id = get_correlation_id(request)
     try:
         supabase = get_supabase_auth()
         
         response = supabase.auth.sign_in_with_password({
-            "email": request.email,
-            "password": request.password
+            "email": login_request.email,
+            "password": login_request.password
         })
         
         if response.user and response.session:
@@ -110,13 +110,35 @@ async def forgot_password(request: ForgotPasswordRequest, http_request: Request)
     try:
         supabase = get_supabase_auth()
         
-        # Reset password with redirect to frontend
-        supabase.auth.reset_password_for_email(
-            request.email,
-            {
-                "redirect_to": f"{settings.frontend_url}/reset-password"
-            }
-        )
+        # Custom Password Reset Flow
+        # 1. Generate recovery link using Admin client
+        supabase_admin = get_supabase()
+        try:
+             # Generates link but doesn't send email (if configured correctly, or we ignore Supabase one)
+             # actually generate_link always returns link, doesn't send email usually (invite does)
+             link_res = supabase_admin.auth.admin.generate_link({
+                 "type": "recovery",
+                 "email": request.email,
+                 "options": {
+                     "redirect_to": f"{settings.frontend_url}/reset-password"
+                 }
+             })
+             
+             if link_res and link_res.properties and link_res.properties.action_link:
+                 # 2. Send custom email
+                 email_service.send_password_reset_email(
+                     to_email=request.email,
+                     reset_link=link_res.properties.action_link
+                 )
+        except Exception as admin_err:
+             # Fallback to standard flow if admin fails (or user not found?)
+             logger.warning(f"Failed to generate custom link: {admin_err}")
+             supabase.auth.reset_password_for_email(
+                 request.email,
+                 {
+                     "redirect_to": f"{settings.frontend_url}/reset-password"
+                 }
+             )
         
         return AuthResponse(
             success=True,

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>{{subject}}</title>
+    <style>
+        /* Reset */
+        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        
+        /* Base Styles */
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100% !important;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background-color: #0A1215;
+            color: #FFFFFF;
+        }
+        
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #0F1A1E;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #0B3C49 0%, #062A33 100%);
+            padding: 40px 20px;
+            text-align: center;
+        }
+        
+        .logo {
+            max-width: 180px;
+            height: auto;
+        }
+        
+        /* Content */
+        .content {
+            padding: 40px 30px;
+            background-color: #0F1A1E;
+        }
+        
+        h1 {
+            color: #2DFFB7;
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 20px 0;
+            line-height: 1.3;
+        }
+        
+        p {
+            color: rgba(255, 255, 255, 0.86);
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 0 0 16px 0;
+        }
+        
+        /* Button */
+        .button {
+            display: inline-block;
+            padding: 14px 32px;
+            background: linear-gradient(135deg, #2DFFB7 0%, #1FE0A5 100%);
+            color: #050B0D !important;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            margin: 20px 0;
+            transition: transform 0.2s;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        
+        /* Info Box */
+        .info-box {
+            background-color: rgba(45, 255, 183, 0.1);
+            border-left: 4px solid #2DFFB7;
+            padding: 16px 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        /* Footer */
+        .footer {
+            padding: 30px 20px;
+            text-align: center;
+            background-color: #050B0D;
+            border-top: 1px solid rgba(45, 255, 183, 0.1);
+        }
+        
+        .footer p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            margin: 8px 0;
+        }
+        
+        .footer a {
+            color: #1FE0A5;
+            text-decoration: none;
+        }
+        
+        /* Responsive */
+        @media only screen and (max-width: 600px) {
+            .content {
+                padding: 30px 20px !important;
+            }
+            h1 {
+                font-size: 24px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #0A1215;">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" class="email-container">
+                    <!-- Header -->
+                    <tr>
+                        <td class="header">
+                            <img src="{{logo_url}}" alt="AIveilix" class="logo">
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td class="content">
+                            {% block content %}{% endblock %}
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td class="footer">
+                            <p style="margin-bottom: 12px;">
+                                <strong>AIveilix</strong> - Your AI-Powered Knowledge Vault
+                            </p>
+                            <p>
+                                <a href="{{app_url}}/dashboard">Dashboard</a> · 
+                                <a href="{{app_url}}/docs">Documentation</a> · 
+                                <a href="mailto:support@aiveilix.com">Support</a>
+                            </p>
+                            <p style="margin-top: 20px;">
+                                © 2026 AIveilix Inc. All rights reserved.
+                            </p>
+                            <p style="font-size: 12px; color: rgba(255, 255, 255, 0.4);">
+                                You're receiving this email because you have an AIveilix account.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

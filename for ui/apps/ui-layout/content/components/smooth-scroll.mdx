@@ -1,0 +1,129 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Smooth Scroll",
+  description:
+    "A smooth scroll stacking card effect built with React and Framer Motion. Creates an engaging layered animation where cards overlap and transition fluidly as the user scrolls.",
+  keywords: [
+    "Smooth scroll effect",
+    "Stacking cards animation",
+    "React smooth scroll",
+    "Framer Motion scroll",
+    "Scroll animation component",
+    "Layered card transition",
+    "Animated card scroll",
+    "Scroll reveal cards",
+    "Interactive scroll effect",
+    "Modern scroll UI",
+    "Card stacking UI",
+    "Scroll-triggered animation",
+    "React scroll component",
+    "Framer Motion stacking cards",
+    "Fluid card transitions",
+    "Scroll animation React",
+    "Overlapping card effect",
+    "Responsive scroll animation",
+    "Engaging scroll UI",
+    "Interactive layered animation",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Smooth Scroll | UI Layouts",
+    description:
+      "A scroll-based stacking card effect built with React and Framer Motion. Cards layer, overlap, and transition smoothly for a dynamic user experience.",
+    url: "https://ui-layouts.com/components/smooth-scroll",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Smooth Scroll | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "Smooth scroll stacking card animation for React using Framer Motion. Overlapping cards with fluid transitions for modern UI design.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+
+> you can check this doc [react lenis](https://github.com/darkroomengineering/lenis/tree/main/packages/react)
+
+<IframeComponentPrieview name='smooth-scroll' hasReTrigger isFitheight responsive >
+
+```tsx
+'use client';
+import { ReactLenis } from 'lenis/react';
+export default function index(): JSX.Element {
+  return (
+    <ReactLenis root>
+      <main>
+        <article>
+          <section className='text-white  h-screen  w-full bg-slate-950  grid place-content-center sticky top-0'>
+            <div className='absolute bottom-0 left-0 right-0 top-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-size-[54px_54px] mask-[radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]'></div>
+
+            <h1 className='2xl:text-7xl text-6xl px-8 font-semibold text-center tracking-tight leading-[120%]'>
+              I Know What Exactly you're <br /> Looking For! Scroll Please 👇
+            </h1>
+          </section>
+
+          <section className='bg-gray-300 text-black grid place-content-center h-screen sticky top-0 rounded-tr-2xl rounded-tl-2xl overflow-hidden'>
+            <div className='absolute bottom-0 left-0 right-0 top-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-size-[54px_54px] mask-[radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]'></div>
+            <h1 className='2xl:text-7xl text-4xl px-8 font-semibold text-center tracking-tight leading-[120%]'>
+              If you don't like this then I'm sorry, <br /> create your own and
+              make it open source 💼
+            </h1>
+          </section>
+          <section className='text-white  h-screen  w-full bg-slate-950  grid place-content-center sticky top-0'>
+            <div className='absolute bottom-0 left-0 right-0 top-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-size-[54px_54px] mask-[radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]'></div>
+            <h1 className='2xl:text-7xl text-5xl px-8 font-semibold text-center tracking-tight leading-[120%]'>
+              Thanks To Scroll.
+              <br /> Now Scroll Up Again☝️🏿
+            </h1>
+          </section>
+        </article>
+      </main>
+    </ReactLenis>
+  );
+}
+```
+
+</IframeComponentPrieview>
+
+## Installation
+
+```bash
+npm install lenis/react
+```
+
+We use lenis for smooth scrolling:
+
+```tsx
+'use client';
+import { ReactLenis } from 'lenis/react';
+export default function HorizontalScroll(): JSX.Element {
+  return <ReactLenis root>{/* content */}</ReactLenis>;
+}
+```

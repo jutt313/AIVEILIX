@@ -1,0 +1,178 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Swapy",
+  description:
+    "A framework-agnostic drag-to-swap tool powered by Swapy. Convert any layout into an interactive drag-and-drop swap experience with just a few lines of code.",
+  keywords: [
+    "Swapy drag and drop",
+    "Drag to swap UI",
+    "React Swapy component",
+    "Drag and drop swapping",
+    "Framework agnostic swap tool",
+    "Swapy layout swap",
+    "Interactive drag to swap",
+    "Swap elements React",
+    "Drag swap component",
+    "Swapy drag swap UI",
+    "Layout swap interaction",
+    "Drag reorder elements",
+    "framer motion drag and drop",
+    "framer motion drag swap",
+    "React drag swap",
+    "Swapy UI library",
+    "Drag and swap tool",
+    "Interactive swap effect",
+    "Frontend drag swap",
+    "UI layouts drag swap",
+    "Swap on drag React",
+    "Swapy integration",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Swapy | UI Layouts",
+    description:
+      "An interactive drag-to-swap tool built with Swapy. Framework-agnostic and easy to use — make any layout draggable and swappable with minimal code.",
+    url: "https://ui-layouts.com/components/swapy",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Swapy | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "Drag-to-swap component powered by Swapy. Convert any layout into an interactive swap experience with just a few lines of code.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+<ComponentCodePreview name='default-swapy' isFitheight />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add swapy
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/swapy.json'
+      ```
+
+   </CodeWithTabs>
+  </TabsContent>
+  
+  <TabsContent value="manual" manualType>
+
+```bash
+npm install swapy
+```
+<CodeSnippets name="swapy" />
+
+</TabsContent>
+</Tabs>
+
+## Structure
+
+```tsx
+<SwapyLayout id='swapy'>
+  <SwapySlot id='slot-1'>
+    <SwapyItem id='item-1'>
+      <DragHandle />
+      Item 1
+    </SwapyItem>
+    <SwapyItem id='item-2'>
+      <DragHandle />
+      Item 2
+    </SwapyItem>
+    <SwapyItem id='item-3'>
+      <DragHandle />
+      Item 3
+    </SwapyItem>
+  </SwapySlot>
+</SwapyLayout>
+```
+
+## Props
+
+`SwapyLayout` Props
+
+| Props       | Type                                                                                                                                                             | Default | Description                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------- |
+| `id`        | `string`                                                                                                                                                         | —       | A unique identifier for the layout container.                    |
+| `enable`    | `boolean`                                                                                                                                                        | —       | Whether to enable drag-and-drop (currently unused in logic).     |
+| `onSwap`    | `(event: { newSlotItemMap: { asArray: SlotItemMapArray } }) => void`                                                                                             | —       | Callback fired when an item is swapped.                          |
+| `config`    | `Partial<{ animation: "dynamic" \| "spring" \| "none"; continuousMode: boolean; manualSwap: boolean; swapMode: "hover" \| "drop"; autoScrollOnDrag: boolean; }>` | `{}`    | Configuration object for swapy behavior.                         |
+| `className` | `string`                                                                                                                                                         | —       | Additional class names to apply to the layout container.         |
+| `children`  | `React.ReactNode`                                                                                                                                                | —       | Child components (usually `SwapySlot`s containing `SwapyItem`s). |
+
+`SwapyItem` Props
+
+| Prop              | Type              | Default | Description                                                                 |
+| ----------------- | ----------------- | ------- | --------------------------------------------------------------------------- |
+| `id`              | `string`          | —       | Unique identifier for the draggable item.                                   |
+| `className`       | `string`          | —       | Additional class names.                                                     |
+| `children`        | `React.ReactNode` | —       | Content to render inside the draggable item.                                |
+| `dragItemOpacity` | `number` (10–100) | `100`   | Tailwind opacity value applied when item is being dragged (e.g., 50 = 50%). |
+
+`SwapySlot` Props
+
+| Prop        | Type              | Default | Description                                   |
+| ----------- | ----------------- | ------- | --------------------------------------------- |
+| `id`        | `string`          | —       | Unique identifier for the slot (drop target). |
+| `className` | `string`          | —       | Additional class names.                       |
+| `children`  | `React.ReactNode` | —       | Content to render inside the slot.            |
+
+`DragHandle` Props
+
+| Prop        | Type     | Default | Description                          |
+| ----------- | -------- | ------- | ------------------------------------ |
+| `className` | `string` | —       | Optional class names for the handle. |
+
+
+## Examples
+
+
+### Handle
+
+<ComponentCodePreview name='swapy-handle' isFitheight />
+
+### Opacity
+
+<ComponentCodePreview name='opacity-swapy' isFitheight />
+
+### Raws
+
+<ComponentCodePreview name='swapy-without-components' isFitheight />

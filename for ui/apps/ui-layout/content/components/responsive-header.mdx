@@ -1,0 +1,199 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Responsive Header",
+  description:
+    "A responsive header component for React that supports drag-to-close gestures on mobile devices and functions as a dialog or drawer on desktop. Built with accessibility, responsiveness, and smooth animations in mind.",
+  keywords: [
+    "Responsive header React",
+    "React header component",
+    "Drag to close header",
+    "Mobile header drawer",
+    "Desktop header dialog",
+    "Framer Motion header",
+    "React navigation header",
+    "Responsive drawer header",
+    "Animated header UI",
+    "React responsive navbar",
+    "Header with drawer behavior",
+    "Mobile-first header component",
+    "React header with motion",
+    "Interactive header React",
+    "Dialog style header",
+    "React drag close component",
+    "Accessible header UI",
+    "Responsive navigation bar",
+    "React motion header",
+    "UI layouts header component",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Responsive Header | UI Layouts",
+    description:
+      "A responsive header with drag-to-close support on mobile and dialog/drawer functionality on desktop. Built with React and Framer Motion for smooth interactions.",
+    url: "https://ui-layouts.com/components/responsive-header",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Responsive Header | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "A responsive React header with drag-to-close gestures on mobile and dialog/drawer functionality on desktop. Smooth, accessible, and modern.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+
+## Header
+
+<ComponentCodePreview name='responsive-header-default' hasReTrigger responsive />
+
+## Installation
+
+```bash
+npm install motion vaul
+```
+
+please add this property in your layout.js or app.js
+
+```tsx
+'use client';
+
+import { MenuIcon } from 'lucide-react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
+import { Drawer as VaulHeader } from 'vaul';
+
+interface DrawerContextProps {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}
+
+const DrawerContext = createContext<DrawerContextProps | undefined>(undefined);
+
+const useSidebarDrawer = () => {
+  const context = useContext(DrawerContext);
+  if (!context) {
+    throw new Error('useDrawer must be used within a DrawerProvider');
+  }
+  return context;
+};
+
+interface DrawerSidebarProps {
+  children: ReactNode;
+  open?: boolean;
+  setOpen?: (open: boolean) => void;
+  drawerBtn?: any | null;
+}
+
+export function HeaderDrawer({
+  children,
+  open: controlledOpen,
+  setOpen: controlledSetOpen,
+  drawerBtn,
+}: DrawerSidebarProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen =
+    controlledSetOpen !== undefined ? controlledSetOpen : setInternalOpen;
+
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 768px)');
+    const handleMediaChange = (event: MediaQueryListEvent) => {
+      setIsDesktop(event.matches);
+    };
+
+    setIsDesktop(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleMediaChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleMediaChange);
+    };
+  }, []);
+  console.log(drawerBtn);
+
+  return (
+    <DrawerContext.Provider value={{ open, setOpen }}>
+      <>
+        <VaulHeader.Root
+          open={open}
+          direction='top'
+          onOpenChange={setOpen}
+          dismissible={isDesktop ? false : true}
+        >
+          {drawerBtn && (
+            <VaulHeader.Trigger asChild>{drawerBtn()}</VaulHeader.Trigger>
+          )}
+          <VaulHeader.Portal>
+            <VaulHeader.Overlay className='fixed inset-0 dark:bg-black/40 bg-white/50 backdrop-blur-xs z-50  ' />
+            <VaulHeader.Content className='dark:bg-gray-900 bg-white  border-b z-50 w-full h-fit py-3 fixed top-0 left-0'>
+              {children}
+            </VaulHeader.Content>
+          </VaulHeader.Portal>
+        </VaulHeader.Root>
+      </>
+    </DrawerContext.Provider>
+  );
+}
+
+export function DrawerContent({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
+```
+
+you can use state or default button to control the dialog
+
+```jsx
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  return (
+    <>
+        <HeaderDrawer
+           open={headerOpen}
+           setOpen={setHeaderOpen}
+           drawerBtn={()=> { return <button><MenuIcon/></button>
+           }}>
+          <DrawerContent>
+          </DrawerContent>
+        </HeaderDrawer>
+   )
+```
+
+## Props
+
+| Prop        | Type     | Description                                                                                    |
+| ----------- | -------- | :--------------------------------------------------------------------------------------------- |
+| `open`      | boolean  | The content to be displayed within the AuroraBackground component.                             |
+| `setOpen`   | boolean  | this is an function to close and open the drawer                                               |
+| `drawerBtn` | function | this is an function for default button, when you don't to use state then you can use drawerBtn |

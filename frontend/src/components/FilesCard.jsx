@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { filesAPI } from '../services/api'
-import FilePreviewModal from './FilePreviewModal'
 
 export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect, selectedFiles = [] }) {
   const { isDark } = useTheme()
   const [expandedFolders, setExpandedFolders] = useState(new Set())
-  const [previewFile, setPreviewFile] = useState(null)
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   const formatSize = (bytes) => {
@@ -17,25 +15,6 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
   }
 
-  // Status indicator component
-  const StatusIndicator = ({ status }) => {
-    if (status === 'ready') {
-      return (
-        <span className="text-green-500 text-xs" title="Ready">✓</span>
-      )
-    }
-    if (status === 'pending' || status === 'processing') {
-      return (
-        <span className="text-yellow-500 text-xs animate-pulse" title="Processing...">⏳</span>
-      )
-    }
-    if (status === 'failed') {
-      return (
-        <span className="text-red-500 text-xs" title="Failed">✗</span>
-      )
-    }
-    return null
-  }
 
   const handleDeleteFile = async (fileId, e) => {
     e.stopPropagation()
@@ -76,9 +55,9 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
 
   const handleFolderSelect = (folderFiles) => {
     if (!onFileSelect) return
-    
+
     const allSelected = isFolderSelected(folderFiles)
-    
+
     if (allSelected) {
       folderFiles.forEach(file => {
         onFileSelect(file)
@@ -102,7 +81,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
         const parts = file.folder_path.split('/')
         let current = tree
         let currentPath = ''
-        
+
         parts.forEach((part, index) => {
           currentPath = currentPath ? `${currentPath}/${part}` : part
           if (!current.children[part]) {
@@ -115,7 +94,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
           }
           current = current.children[part]
         })
-        
+
         current.files.push(file)
       } else {
         rootFiles.push(file)
@@ -132,7 +111,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
     const folderSelected = isFolderSelected(folder.files)
     const childFolders = Object.values(folder.children)
     const hasChildren = childFolders.length > 0 || folder.files.length > 0
-    
+
     const allFilesInFolder = [
       ...folder.files,
       ...childFolders.flatMap(child => getAllFilesInFolder(child))
@@ -142,15 +121,14 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
       <div className="space-y-1">
         {/* Folder Header */}
         <div
-          className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
-            folderSelected 
-              ? isDark
-                ? 'bg-dark-accent/20 border border-dark-accent/50'
-                : 'bg-[#1FE0A5]/20 border border-[#1FE0A5]/50'
-              : isDark
-                ? 'hover:bg-white/5'
-                : 'hover:bg-black/5'
-          }`}
+          className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${folderSelected
+            ? isDark
+              ? 'bg-dark-accent/20 border border-dark-accent/50'
+              : 'bg-[#1FE0A5]/20 border border-[#1FE0A5]/50'
+            : isDark
+              ? 'hover:bg-white/5'
+              : 'hover:bg-black/5'
+            }`}
           style={{ marginLeft: `${level * 16}px` }}
         >
           <div
@@ -184,20 +162,18 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
               </svg>
             )}
           </div>
-          <div 
+          <div
             onClick={() => handleFolderSelect(allFilesInFolder)}
             className="flex items-center gap-2 flex-1"
           >
-            <span className={`text-sm font-medium ${
-              folderSelected 
-                ? isDark ? 'text-dark-accent' : 'text-light-accent'
-                : isDark ? 'text-dark-text' : 'text-[#062A33]'
-            }`}>
+            <span className={`text-sm font-medium ${folderSelected
+              ? isDark ? 'text-dark-accent' : 'text-light-accent'
+              : isDark ? 'text-dark-text' : 'text-[#062A33]'
+              }`}>
               {folder.name}
             </span>
-            <span className={`text-xs ml-auto ${
-              isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
-            }`}>
+            <span className={`text-xs ml-auto ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+              }`}>
               {allFilesInFolder.length} file{allFilesInFolder.length !== 1 ? 's' : ''}
             </span>
           </div>
@@ -210,7 +186,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
             {childFolders.map(childFolder => (
               <FolderNode key={childFolder.path} folder={childFolder} level={level + 1} />
             ))}
-            
+
             {/* Files in this folder */}
             {folder.files.map((file) => {
               const selected = isSelected(file.id)
@@ -218,72 +194,48 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
                 <div
                   key={file.id}
                   onClick={() => handleFileClick(file)}
-                  className={`group flex items-center justify-between p-2 rounded-lg transition-colors cursor-pointer ${
-                    selected 
-                      ? isDark
-                        ? 'bg-dark-accent/20 border border-dark-accent/50'
-                        : 'bg-[#1FE0A5]/20 border border-[#1FE0A5]/50'
-                      : isDark
-                        ? 'hover:bg-white/5'
-                        : 'hover:bg-black/5'
-                  }`}
+                  className={`group flex items-center justify-between p-2 rounded-lg transition-colors cursor-pointer ${selected
+                    ? isDark
+                      ? 'bg-dark-accent/20 border border-dark-accent/50'
+                      : 'bg-[#1FE0A5]/20 border border-[#1FE0A5]/50'
+                    : isDark
+                      ? 'hover:bg-white/5'
+                      : 'hover:bg-black/5'
+                    }`}
                   style={{ marginLeft: `${(level + 1) * 16}px` }}
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     {selected ? (
-                      <div className={`w-4 h-4 flex-shrink-0 rounded-full flex items-center justify-center ${
-                        isDark ? 'bg-dark-accent' : 'bg-light-accent'
-                      }`}>
+                      <div className={`w-4 h-4 flex-shrink-0 rounded-full flex items-center justify-center ${isDark ? 'bg-dark-accent' : 'bg-light-accent'
+                        }`}>
                         <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                         </svg>
                       </div>
                     ) : (
-                      <svg className={`w-4 h-4 flex-shrink-0 ${
-                        isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
-                      }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className={`w-4 h-4 flex-shrink-0 ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                        }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm truncate flex items-center gap-1.5 ${
-                        selected
-                          ? isDark
-                            ? 'text-dark-accent font-medium'
-                            : 'text-light-accent font-medium'
-                          : isDark
-                            ? 'text-dark-text'
-                            : 'text-[#062A33]'
-                      }`}>
-                        <StatusIndicator status={file.status} />
+                      <p className={`text-sm truncate ${selected
+                        ? isDark
+                          ? 'text-dark-accent font-medium'
+                          : 'text-light-accent font-medium'
+                        : isDark
+                          ? 'text-dark-text'
+                          : 'text-[#062A33]'
+                        }`}>
                         {file.name}
                       </p>
-                      <p className={`text-xs ${
-                        isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
-                      }`}>
+                      <p className={`text-xs ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                        }`}>
                         {formatSize(file.size_bytes)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    {/* Preview button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPreviewFile(file)
-                      }}
-                      className={`opacity-0 group-hover:opacity-100 p-1 rounded transition-all ${
-                        isDark 
-                          ? 'hover:bg-white/10 text-dark-text/70' 
-                          : 'hover:bg-black/10 text-[#062A33]/70'
-                      }`}
-                      title="Preview file"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    </button>
                     {/* Delete button */}
                     <button
                       onClick={(e) => handleDeleteFile(file.id, e)}
@@ -317,29 +269,25 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
   const rootFolders = Object.values(tree.children).sort((a, b) => a.name.localeCompare(b.name))
 
   return (
-    <div className={`h-full rounded-2xl backdrop-blur-xl dark:bg-white/5 bg-black/5 p-6 flex flex-col transition-all duration-300 ${
-      isCollapsed ? 'w-16' : 'w-80'
-    }`}>
+    <div className={`h-full rounded-2xl backdrop-blur-xl flex flex-col transition-all duration-300 ${isDark ? 'bg-white/5' : 'bg-black/5'
+      } ${isCollapsed ? 'w-16' : 'w-80'}`}>
       {/* Header with collapse button */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="p-4 flex items-center justify-between">
         {!isCollapsed && (
-          <h3 className={`text-lg font-semibold ${
-            isDark ? 'text-dark-text' : 'text-[#062A33]'
-          }`}>Files & Folders</h3>
+          <h3 className={`font-semibold ${isDark ? 'text-dark-text' : 'text-[#062A33]'
+            }`}>Files & Folders</h3>
         )}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className={`p-1.5 rounded transition-colors ml-auto ${
-            isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'
-          }`}
+          className={`p-1.5 rounded transition-colors ml-auto ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'
+            }`}
           title={isCollapsed ? 'Expand' : 'Collapse'}
         >
-          <svg 
-            className={`w-5 h-5 transition-transform ${
-              isCollapsed ? 'rotate-180' : ''
-            } ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`}
-            fill="none" 
-            stroke="currentColor" 
+          <svg
+            className={`w-5 h-5 transition-transform ${isCollapsed ? 'rotate-180' : ''
+              } ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`}
+            fill="none"
+            stroke="currentColor"
             viewBox="0 0 24 24"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
@@ -349,120 +297,88 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
 
       {/* Files List - Only show when not collapsed */}
       {!isCollapsed && (
-      <div className="flex-1 overflow-y-auto">
-        {files.length === 0 ? (
-          <div className="text-center py-12">
-            <p className={`text-sm ${
-              isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
-            }`}>
-              No files yet
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {/* Root Folders (recursive tree) */}
-            {rootFolders.map(folder => (
-              <FolderNode key={folder.path} folder={folder} level={0} />
-            ))}
-            
-            {/* Root Files (files without folder_path) */}
-            {rootFiles.map((file) => {
-              const selected = isSelected(file.id)
-              return (
-                <div
-                  key={file.id}
-                  onClick={() => handleFileClick(file)}
-                  className={`group flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${
-                    selected 
+        <div className="flex-1 overflow-y-auto px-3">
+          {files.length === 0 ? (
+            <div className="text-center py-12">
+              <p className={`text-sm ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                }`}>
+                No files yet
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {/* Root Folders (recursive tree) */}
+              {rootFolders.map(folder => (
+                <FolderNode key={folder.path} folder={folder} level={0} />
+              ))}
+
+              {/* Root Files (files without folder_path) */}
+              {rootFiles.map((file) => {
+                const selected = isSelected(file.id)
+                return (
+                  <div
+                    key={file.id}
+                    onClick={() => handleFileClick(file)}
+                    className={`group flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${selected
                       ? isDark
                         ? 'bg-dark-accent/20 border border-dark-accent/50'
                         : 'bg-[#1FE0A5]/20 border border-[#1FE0A5]/50'
                       : isDark
                         ? 'hover:bg-white/5'
                         : 'hover:bg-black/5'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    {selected ? (
-                      <div className={`w-5 h-5 flex-shrink-0 rounded-full flex items-center justify-center ${
-                        isDark ? 'bg-dark-accent' : 'bg-light-accent'
-                      }`}>
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      }`}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      {selected ? (
+                        <div className={`w-5 h-5 flex-shrink-0 rounded-full flex items-center justify-center ${isDark ? 'bg-dark-accent' : 'bg-light-accent'
+                          }`}>
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      ) : (
+                        <svg className={`w-5 h-5 flex-shrink-0 ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                          }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                      </div>
-                    ) : (
-                      <svg className={`w-5 h-5 flex-shrink-0 ${
-                        isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
-                      }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm truncate font-medium flex items-center gap-1.5 ${
-                        selected
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm truncate font-medium ${selected
                           ? isDark
                             ? 'text-dark-accent'
                             : 'text-light-accent'
                           : isDark
                             ? 'text-dark-text'
                             : 'text-[#062A33]'
-                      }`}>
-                        <StatusIndicator status={file.status} />
-                        {file.name}
-                      </p>
-                      <p className={`text-xs ${
-                        isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
-                      }`}>
-                        {formatSize(file.size_bytes)}
-                      </p>
+                          }`}>
+                          {file.name}
+                        </p>
+                        <p className={`text-xs ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                          }`}>
+                          {formatSize(file.size_bytes)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {/* Delete button */}
+                      <button
+                        onClick={(e) => handleDeleteFile(file.id, e)}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-all"
+                        title="Delete file"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {/* Preview button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPreviewFile(file)
-                      }}
-                      className={`opacity-0 group-hover:opacity-100 p-1.5 rounded transition-all ${
-                        isDark 
-                          ? 'hover:bg-white/10 text-dark-text/70' 
-                          : 'hover:bg-black/10 text-[#062A33]/70'
-                      }`}
-                      title="Preview file"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    </button>
-                    {/* Delete button */}
-                    <button
-                      onClick={(e) => handleDeleteFile(file.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-all"
-                      title="Delete file"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* File Preview Modal */}
-      <FilePreviewModal
-        isOpen={!!previewFile}
-        onClose={() => setPreviewFile(null)}
-        bucketId={bucketId}
-        file={previewFile}
-      />
     </div>
   )
 }

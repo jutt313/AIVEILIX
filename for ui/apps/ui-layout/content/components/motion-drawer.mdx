@@ -1,0 +1,132 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Motion Drawer",
+  description:
+    "A motion drawer component for React with smooth Framer Motion animations. Functions as a collapsible navigation drawer on mobile and a persistent sidebar on desktop.",
+  keywords: [
+    "Motion drawer React",
+    "Framer Motion drawer",
+    "Animated drawer component",
+    "React drawer",
+    "Collapsible drawer UI",
+    "Responsive drawer React",
+    "Drawer with motion effects",
+    "React animated drawer",
+    "Mobile drawer navigation",
+    "Desktop sidebar component",
+    "Framer Motion navigation drawer",
+    "Interactive sidebar React",
+    "Responsive layout sidebar",
+    "React sidebar with animation",
+    "Collapsible navigation panel",
+    "Drawer style sidebar",
+    "Accessible sidebar UI",
+    "React motion sidebar",
+    "Sidebar for dashboards",
+    "Modern UI sidebar",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Responsive Sidebar | UI Layouts",
+    description:
+      "An animated responsive sidebar built with React and Framer Motion. Works as a navigation drawer on mobile and a collapsible sidebar on desktop.",
+    url: "https://ui-layouts.com/components/motion-drawer",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Responsive Sidebar | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "Responsive sidebar component powered by Framer Motion. Smooth animations for navigation drawers and collapsible sidebars in React apps.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+<ComponentCodePreview name='motion-drawer-default' hasReTrigger responsive />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+  <TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+    <TabsTrigger value="cli">CLI</TabsTrigger>
+    <TabsTrigger value="manual">Manual</TabsTrigger>
+  </TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add motion-drawer
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/motion-drawer.json'
+      ```
+   </CodeWithTabs>
+  </TabsContent>
+
+
+<TabsContent value="manual" manualType>
+
+```bash
+npm install motion
+```
+
+<CodeSnippets name="motion-drawer" />
+
+</TabsContent>
+</Tabs>
+
+## Props
+
+| Prop                  | Type                                      | Default                       | Description                                                        |
+| --------------------- | ----------------------------------------- | ----------------------------- | ------------------------------------------------------------------ |
+| overlayColor          | `string`                                  | `'rgba(0, 0, 0, 0.3)'`        | Color of the background overlay.                                   |
+| width                 | `number`                                  | `300`                         | Width of the side menu.                                            |
+| direction             | `'left' \| 'right'`                       | `'left'`                      | The direction from which the menu opens.                           |
+| backgroundColor       | `string`                                  | `'#ffffff'`                   | Background color of the side menu.                                 |
+| children              | `React.ReactNode`                         |                               | The content to display inside the side menu.                       |
+| isOpen                | `boolean`                                 |                               | Controls the open/closed state of the menu.                        |
+| onToggle              | `(isOpen: boolean) => void`               |                               | Callback when the menu is opened or closed.                        |
+| showToggleButton      | `boolean`                                 | `true`                        | Whether to show the toggle button.                                 |
+| toggleButtonText      | `{ open: string; close: string }`         |                               | Custom text for the toggle button.                                 |
+| className             | `string`                                  | `''`                          | Custom className for the container.                                |
+| contentClassName      | `string`                                  | `''`                          | Custom className for the content area.                             |
+| overlayClassName      | `string`                                  | `''`                          | Custom className for the overlay.                                  |
+| animationConfig       | `{ type?: 'spring' \| 'tween'; damping?: number; stiffness?: number; duration?: number }` | `{ type: 'spring', damping: 25, stiffness: 120 }` | Configuration for the animation.                                   |
+| enableDrag            | `boolean`                                 | `true`                        | Whether to allow drag-to-close.                                    |
+| dragThreshold         | `number`                                  | `0.3`                         | Threshold for drag-to-close.                                       |
+| buttonOpeningVariants | `'push' \| 'merge' \| 'stay'`             | `'merge'`                     | Controls how the toggle button animates when the menu opens.        |
+
+
+## Examples
+
+### Right Drawer 
+
+<ComponentCodePreview name='right-motion-drawer' hasReTrigger responsive />

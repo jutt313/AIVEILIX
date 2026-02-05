@@ -1,0 +1,127 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Directional Drawer",
+  description:
+    "A Responsive multi Directional/Sliding Drawer component for React with Vaul. Functions as a collapsible navigation drawer on mobile and a persistent sidebar on desktop.",
+  keywords: [
+    "Responsive sidebar React",
+    "vaul sidebar",
+    "Animated sidebar component",
+    "React navigation drawer",
+    "Collapsible sidebar UI",
+    "Responsive drawer React",
+    "Sidebar with motion effects",
+    "React animated sidebar",
+    "Mobile sidebar navigation",
+    "Desktop sidebar component",
+    "vaul navigation drawer",
+    "Interactive sidebar React",
+    "Responsive layout sidebar",
+    "React sidebar with animation",
+    "Collapsible navigation panel",
+    "Drawer style sidebar",
+    "Accessible sidebar UI",
+    "React motion sidebar",
+    "Sidebar for dashboards",
+    "Modern UI sidebar",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Responsive Sidebar | UI Layouts",
+    description:
+      "An animated responsive sidebar built with React and vaul. Works as a navigation drawer on mobile and a collapsible sidebar on desktop.",
+    url: "https://ui-layouts.com/components/directional-drawer",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Responsive Sidebar | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "Responsive sidebar component powered by Framer Motion. Smooth animations for navigation drawers and collapsible sidebars in React apps.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+<ComponentCodePreview name='directional-drawer-default' hasReTrigger responsive />
+
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+  <TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+    <TabsTrigger value="cli">CLI</TabsTrigger>
+    <TabsTrigger value="manual">Manual</TabsTrigger>
+  </TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add directional-drawer
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/directional-drawer.json'
+      ```
+   </CodeWithTabs>
+  </TabsContent>
+
+
+<TabsContent value="manual" manualType>
+
+```bash
+npm install vaul
+```
+
+<CodeSnippets name="directional-drawer" />
+
+</TabsContent>
+</Tabs>
+
+## Props
+
+| Prop      | Type     | Description                                                                                    |
+| --------- | -------- | :--------------------------------------------------------------------------------------------- |
+| open      | boolean  | The content to be displayed within the AuroraBackground component.                             |
+| setOpen   | boolean  | this is an function to close and open the drawer                                               |
+| drawerBtn | function | this is an function for default button, when you don't to use state then you can use drawerBtn |
+
+## Example
+
+### Left Sidebar
+
+<ComponentCodePreview name='left-directional-drawer' hasReTrigger responsive />
+
+### Top Sidebar
+
+<ComponentCodePreview name='top-directional-drawer' hasReTrigger responsive />
+
+### Bottom Sidebar
+
+<ComponentCodePreview name='bottom-directional-drawer' hasReTrigger responsive />

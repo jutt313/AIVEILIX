@@ -1,0 +1,142 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Liquid Glass",
+  description: "A modern liquid glass component with glassmorphism effects featuring frosted glass aesthetics, backdrop blur, transparency, and smooth animations. Perfect for creating contemporary glass-like UI elements with CSS and JavaScript.",
+  keywords: [
+    "Liquid glass component",
+    "Glassmorphism effect",
+    "Glass UI component",
+    "Frosted glass effect",
+    "Backdrop blur-sm component",
+    "Glass morphism design",
+    "Transparent glass UI",
+    "Modern glass effect",
+    "CSS glass component",
+    "Figma Glassmorphism Effect",
+    "Apple Vision Pro Glassmorphism Effect",
+    "Glass card component",
+    "Blurred glass effect",
+    "Glass overlay component",
+    "Liquid glass design",
+    "Glass aesthetic UI",
+    "Translucent component",
+    "Glass panel effect",
+    "Modern UI glass",
+    "Glass background effect",
+    "CSS backdrop filter",
+    "Glass surface component",
+    "Frosted UI element",
+    "Glass texture effect",
+    "Liquid interface design",
+    "Glass material design",
+    "Transparent overlay",
+    "Glass blur-sm effect",
+    "Modern glassmorphism",
+    "CSS glass filter",
+    "Glass animation effect",
+    "Contemporary glass UI"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Liquid Glass Component | UI Layouts",
+    description: "Modern liquid glass component with glassmorphism effects, frosted glass aesthetics, backdrop blur, and smooth animations for contemporary web interfaces.",
+    url: "https://ui-layouts.com/components/liquid-glass",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Liquid Glass Component | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description: "Create stunning glassmorphism effects with this liquid glass component featuring backdrop blur, transparency, and modern glass aesthetics.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+<ComponentCodePreview name='liquid-glass-sidebar-menu' jsonName='liquid-glass-sidebar-menu.json' isFitheight/>
+
+## Installation
+
+<Tabs defaultValue="cli">
+  <TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+    <TabsTrigger value="cli">CLI</TabsTrigger>
+    <TabsTrigger value="manual">Manual</TabsTrigger>
+  </TabsList>
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add liquid-glass
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/liquid-glass.json'
+      ```
+   </CodeWithTabs>
+  </TabsContent>
+<TabsContent value="manual" manualType>
+
+```bash
+npm install motion
+```
+
+<CodeSnippets name="liquid-glass" />
+
+</TabsContent>
+</Tabs>
+
+
+## Props
+
+| Prop            | Type      | Default | Description                                                                 |
+| --------------- | --------- | ------- | --------------------------------------------------------------------------- |
+| children        | ReactNode | -       | The content to be wrapped inside the liquid glass card                     |
+| className       | string    | ''      | Additional CSS classes to apply to the card wrapper                        |
+| draggable       | boolean   | false   | Enable drag functionality with elastic bounce-back animation              |
+| expandable      | boolean   | false   | Enable click-to-expand functionality with smooth size transitions         |
+| width           | string    | -       | Initial/collapsed width (e.g., '200px', '100%', 'auto')                   |
+| height          | string    | -       | Initial/collapsed height (e.g., '120px', 'auto')                          |
+| expandedWidth   | string    | -       | Width when expanded (falls back to width or 'auto' if not provided)       |
+| expandedHeight  | string    | -       | Height when expanded (falls back to height or 'auto' if not provided)     |
+| blurIntensity   | string    | 'sm'    | Backdrop blur strength: 'sm', 'md', 'lg', 'xl'                           |
+| borderRadius    | string    | '32px'  | Custom border radius for the glass card                                   |
+| glowIntensity   | string    | 'sm'    | Outer glow effect: 'none', 'xs', 'sm', 'md', 'lg', 'xl', '2xl'           |
+| shadowIntensity | string    | 'md'    | Inner shadow depth: 'none', 'xs', 'sm', 'md', 'lg', 'xl', '2xl'          |
+| ...props        | object    | -       | Any additional props are passed through to the root element 
+
+## Example
+
+### Weather 
+
+<ComponentCodePreview name='liquid-glass-weather' jsonName='liquid-glass-weather.json' isFitheight/>
+
+### Mobile Icons 
+
+<ComponentCodePreview name='liquid-glass-mobile-icons' jsonName='liquid-glass-mobile-icons.json' isFitheight/>
+
+### Notification
+
+<ComponentCodePreview name='liquid-glass-notification' jsonName='liquid-glass-notification.json' isFitheight/>

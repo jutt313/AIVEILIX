@@ -1,0 +1,226 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Magnified Docs",
+  description:
+    "A MacBook toolbar–inspired interactive tabs component with smooth magnification effects. Built with Framer Motion and React, it delivers a dynamic dock-style tab experience that expands on hover and transitions seamlessly between content.",
+  keywords: [
+    "Magnified docs component",
+    "MacBook toolbar tabs",
+    "Dock style UI",
+    "Framer Motion tabs",
+    "Interactive toolbar",
+    "React dock component",
+    "MacOS dock effect",
+    "Magnify animation UI",
+    "Interactive tabs design",
+    "Hover expand toolbar",
+    "Dock inspired component",
+    "Framer Motion UI animation",
+    "Animated tab expand",
+    "Mac dock style UI",
+    "Tab navigation animation",
+    "React interactive toolbar",
+    "Magnify hover effect",
+    "Dock magnification UI",
+    "Modern toolbar component",
+    "Interactive tab layout",
+    "Dock inspired navigation",
+    "Framer Motion magnify effect",
+    "React MacOS dock component",
+    "Toolbar hover animation",
+    "Interactive navigation tabs",
+    "Expandable dock design"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Magnified Docs | UI Layouts",
+    description:
+      "MacBook dock–style interactive tabs with smooth magnify hover effects, built using Framer Motion and React.",
+    url: "https://ui-layouts.com/components/magnified-doc",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Magnified Docs | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description:
+      "An interactive dock-inspired tabs component with magnification hover effects, powered by Framer Motion and React.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+
+<ComponentCodePreview name='magnified-tab' hasReTrigger />
+
+## Installation
+
+```bash
+npm install motion
+```
+
+Data of this Magnified Doc Component
+
+```tsx
+const apps = [
+  {
+    id: 'carousel',
+    icon: Icons.doc_icon5,
+    name: 'Carousel',
+    onClick: () =>
+      window.open(
+        'https://www.ui-layouts.com/components/embla-carousel',
+        '_blank',
+        'noopener,noreferrer'
+      ),
+    imgSrc:
+      'https://res.cloudinary.com/dzl9yxixg/image/upload/carousel_ymyqq4.svg',
+  },
+  {
+    id: 'tabs',
+    icon: Icons.doc_icon4,
+    name: 'Tabs',
+    onClick: () =>
+      window.open(
+        'https://www.ui-layouts.com/components/tabs',
+        '_blank',
+        'noopener,noreferrer'
+      ),
+    imgSrc: 'https://res.cloudinary.com/dzl9yxixg/image/upload/tabs_hgujxo.svg',
+  },
+  {
+    id: 'faqs',
+    icon: Icons.doc_star,
+    name: 'Faqs',
+    onClick: () =>
+      window.open(
+        'https://www.ui-layouts.com/components/faqs',
+        '_blank',
+        'noopener,noreferrer'
+      ),
+    imgSrc: 'https://res.cloudinary.com/dzl9yxixg/image/upload/faqs_qubbig.svg',
+  },
+  {
+    id: 'grid',
+    icon: Icons.doc_icon3,
+    name: 'Grid',
+    onClick: () =>
+      window.open(
+        'https://www.ui-layouts.com/components/grid',
+        '_blank',
+        'noopener,noreferrer'
+      ),
+    imgSrc: 'https://res.cloudinary.com/dzl9yxixg/image/upload/grid_rbis5c.svg',
+  },
+  {
+    id: 'masking',
+    icon: Icons.doc_circle,
+    name: 'Masking',
+    onClick: () =>
+      window.open(
+        'https://www.ui-layouts.com/components/image-masking',
+        '_blank',
+        'noopener,noreferrer'
+      ),
+    imgSrc:
+      'https://res.cloudinary.com/dzl9yxixg/image/upload/image_masking_kbdo7a.svg',
+  },
+  {
+    id: 'mouseTrail',
+    icon: Icons.doc_rectangle,
+    name: 'MouseTrail',
+    onClick: () =>
+      window.open(
+        'https://www.ui-layouts.com/components/image-mousetrail',
+        '_blank',
+        'noopener,noreferrer'
+      ),
+    imgSrc:
+      'https://res.cloudinary.com/dzl9yxixg/image/upload/image_mousetrail_jt45al.svg',
+  },
+  {
+    id: 'sticky',
+    icon: Icons.doc_icon2,
+    name: 'Sticky',
+    onClick: () =>
+      window.open(
+        'https://www.ui-layouts.com/components/sticky-scroll',
+        '_blank',
+        'noopener,noreferrer'
+      ),
+    imgSrc:
+      'https://res.cloudinary.com/dzl9yxixg/image/upload/sticky_xao8zr.svg',
+  },
+  {
+    id: 'accordion',
+    icon: Icons.doc_triangle,
+    name: 'Accordion',
+    onClick: () =>
+      window.open(
+        'https://www.ui-layouts.com/components/image-accordions',
+        '_blank',
+        'noopener,noreferrer'
+      ),
+    imgSrc:
+      'https://res.cloudinary.com/dzl9yxixg/image/upload/gallerynew_x3apwx.svg',
+  },
+];
+```
+
+```js title="tooltip.tsx"
+'use client'
+
+import { cn } from '@/lib/utils'
+import * as TooltipPrimitive from '@radix-ui/react-tooltip'
+import * as React from 'react'
+
+const TooltipProvider = TooltipPrimitive.Provider
+
+const Tooltip = TooltipPrimitive.Root
+
+const TooltipTrigger = TooltipPrimitive.Trigger
+
+const TooltipContent = React.forwardRef<
+  React.ElementRef<typeof TooltipPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
+>(({ className, sideOffset = 4, ...props }, ref) => (
+  <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Content
+      ref={ref}
+      sideOffset={sideOffset}
+      className={cn(
+        'z-50 overflow-hidden rounded-lg border dark:bg-neutral-800 bg-neutral-50 backdrop-filter dark:border-[#2C2C2C] backdrop-blur-lg dark:bg-[#1A1A1A]/95 px-4 py-3 text-sm text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+        className
+      )}
+      {...props}
+    />
+  </TooltipPrimitive.Portal>
+))
+TooltipContent.displayName = TooltipPrimitive.Content.displayName
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+```

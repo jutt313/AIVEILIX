@@ -1,0 +1,177 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Blur Vignette Effect",
+  description: "Apple Vision Pro-inspired blur-sm vignette effect for creating stunning visual overlays. Apply beautiful blur-sm effects to images, videos, cards, and UI elements. Features customizable intensity, smooth transitions, and modern glassmorphism design aesthetics.",
+  keywords: [
+    "Blur vignette effect",
+    "Apple Vision Pro blur-sm",
+    "Glassmorphism effect",
+    "Image blur-sm overlay",
+    "Video blur-sm effect",
+    "Card blur-sm component",
+    "Vignette blur-sm filter",
+    "React blur-sm component",
+    "CSS blur-sm effect",
+    "Modern blur-sm design",
+    "Visual overlay effect",
+    "Backdrop blur-sm filter",
+    "UI blur-sm effects",
+    "Interactive blur-sm",
+    "Customizable blur-sm",
+    "Smooth blur-sm transition",
+    "Image filter effect",
+    "Video overlay blur-sm",
+    "Card glassmorphism",
+    "Tailwind blur-sm utility"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Blur Vignette Effect | UI Layouts",
+    description: "Apple Vision Pro-inspired blur-sm vignette effect for creating stunning visual overlays on images, videos, and cards with modern glassmorphism design.",
+    siteName: "UI Layouts",
+    url: "https://ui-layouts.com/components/blur-vignette",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Blur Vignette Effect | UI Layouts",
+    description: "Apple Vision Pro-inspired blur-sm vignette effect for stunning visual overlays on images, videos, and cards.",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+> Read Docs to know more [Blur Vignette](https://expensive.toys/blog/blur-vignette)
+
+<ComponentCodePreview
+  name='blur-vignette-video'
+  jsonName='blur-vignette-video'
+  isFitheight
+/>
+
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add blur-vignette
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/blur-vignette.json'
+      ```
+
+   </CodeWithTabs>
+  </TabsContent>
+  
+  <TabsContent value="manual" manualType>
+
+<CodeSnippets name="blur-vignette" />
+
+```css globals.css
+@layer utilities {
+  .blur-vignette {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius);
+    -webkit-backdrop-filter: blur(var(--blur));
+    backdrop-filter: blur(var(--blur));
+    --r: max(var(--transition-length), calc(var(--radius) - var(--inset)));
+    --corner-size: calc(var(--r) + var(--inset)) calc(var(--r) + var(--inset));
+    --corner-gradient: transparent 0px,
+      transparent calc(var(--r) - var(--transition-length)), black var(--r);
+    --fill-gradient: black, black var(--inset),
+      transparent calc(var(--inset) + var(--transition-length)),
+      transparent calc(100% - var(--transition-length) - var(--inset)),
+      black calc(100% - var(--inset));
+    --fill-narrow-size: calc(100% - (var(--inset) + var(--r)) * 2);
+    --fill-farther-position: calc(var(--inset) + var(--r));
+    -webkit-mask-image: linear-gradient(to right, var(--fill-gradient)),
+      linear-gradient(to bottom, var(--fill-gradient)),
+      radial-gradient(at bottom right, var(--corner-gradient)),
+      radial-gradient(at bottom left, var(--corner-gradient)),
+      radial-gradient(at top left, var(--corner-gradient)),
+      radial-gradient(at top right, var(--corner-gradient));
+    -webkit-mask-size:
+      100% var(--fill-narrow-size),
+      var(--fill-narrow-size) 100%,
+      var(--corner-size),
+      var(--corner-size),
+      var(--corner-size),
+      var(--corner-size);
+    -webkit-mask-position:
+      0 var(--fill-farther-position),
+      var(--fill-farther-position) 0,
+      0 0,
+      100% 0,
+      100% 100%,
+      0 100%;
+    -webkit-mask-repeat: no-repeat;
+  }
+}
+```
+</TabsContent>
+</Tabs>
+
+## Props
+
+| Prop               | Type              | Default | Description                                                  |
+| ------------------ | ----------------- | ------- | ------------------------------------------------------------ |
+| `classname`        | `string`          |         | Optional CSS class for styling the main vignette container.  |
+| `children`         | `React.ReactNode` |         | The content to display inside the vignette effect.           |
+| `radius`           | `string`          | `24px`  | The radius for the vignette effect.                          |
+| `inset`            | `string`          | `20px`  | The inset value for the vignette effect.                     |
+| `transitionLength` | `string`          | `44px`  | The length of the transition effect applied to the vignette. |
+| `blur-sm`             | `string`          | `6px`   | The blur amount for the vignette effect.                     |
+| `blurclassname`    | `string`          |         | Optional CSS class for styling the blur effect container.    |
+
+
+## Examples
+
+### Card
+
+<ComponentCodePreview
+  name='blur-vignette-img'
+  isFitheight
+  jsonName='blur-vignette-img'
+/>
+
+### Image
+
+<ComponentCodePreview
+  name='blur-vignette-card'
+  isFitheight
+  jsonName='blur-vignette-card'
+/>

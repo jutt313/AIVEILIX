@@ -1,0 +1,195 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Marquee",
+  description: "A modern marquee component supporting infinite scrolling for seamless display of text, images, and videos. Features smooth animations, customizable speed, and responsive design for continuous content scrolling.",
+  keywords: [
+    "Marquee component",
+    "Infinite scrolling component",
+    "Text scrolling marquee",
+    "CSS marquee animation",
+    "Continuous scroll component",
+    "Auto-scrolling marquee",
+    "Horizontal scroll component",
+    "Marquee text animation",
+    "Image marquee slider",
+    "Video marquee component",
+    "Seamless scrolling effect",
+    "Endless scroll marquee",
+    "Marquee ticker component",
+    "Scrolling banner component",
+    "Animated text marquee",
+    "Modern marquee effect",
+    "Custom marquee component",
+    "Responsive marquee design",
+    "JavaScript marquee",
+    "React marquee component",
+    "Smooth marquee animation",
+    "Marquee scroll speed",
+    "Content marquee slider",
+    "News ticker marquee",
+    "Logo marquee component",
+    "Text ticker animation",
+    "Continuous loop marquee",
+    "Auto-play marquee",
+    "Marquee with pause",
+    "Interactive marquee component"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Marquee Component | UI Layouts",
+    description: "Modern marquee component with infinite scrolling for seamless display of text, images, and videos. Features smooth animations and customizable speed controls.",
+    url: "https://ui-layouts.com/components/marquee",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Marquee Component | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description: "Create smooth infinite scrolling marquees for text, images, and videos with customizable speed and responsive design.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+<ComponentCodePreview name='default-marquee' hasReTrigger isFitheight />
+
+## Usage
+
+```css global.css
+@import "tailwindcss";
+
+@theme inline {
+  --animate-border: border 4s linear infinite;
+  --animate-infinite-scroll: infinite-scroll 25s linear infinite;
+  --animate-marquee: marquee var(--duration) linear infinite;
+  --animate-marquee-vertical: marquee-vertical var(--duration) linear infinite;
+  --animate-marquee-reverse: marquee-reverse var(--duration) linear infinite;
+  --animate-marquee-vertical-reverse: marquee-vertical-reverse var(--duration) linear infinite;
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(calc(-100% - var(--gap)));
+    }
+  }
+  @keyframes marquee-vertical {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(calc(-100% - var(--gap)));
+    }
+  }
+  @keyframes marquee-reverse {
+    from {
+      transform: translateX(calc(-100% - var(--gap)));
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes marquee-vertical-reverse {
+    from {
+      transform: translateY(calc(-100% - var(--gap)));
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+}
+```
+
+```tsx marquee.tsx
+import { cn } from '@/lib/utils';
+
+interface MarqueeProps {
+  className?: string;
+  reverse?: boolean;
+  pauseOnHover?: boolean;
+  children?: React.ReactNode;
+  vertical?: boolean;
+  repeat?: number;
+  [key: string]: any;
+}
+
+export default function Marquee({
+  className,
+  reverse,
+  pauseOnHover = false,
+  children,
+  vertical = false,
+  repeat = 4,
+  ...props
+}: MarqueeProps) {
+  return (
+    <div
+      {...props}
+      className={cn(
+        'group flex overflow-hidden p-2 [--duration:40s] [--gap:1rem] gap-(--gap)',
+        {
+          'flex-row': !vertical,
+          'flex-col': vertical,
+        },
+        className
+      )}
+    >
+      {Array(repeat)
+        .fill(0)
+        .map((_, i) => (
+          <div
+            key={i}
+            className={cn('flex shrink-0 justify-around gap-(--gap)', {
+              'animate-marquee flex-row': !vertical && !reverse,
+              'animate-marquee-vertical flex-col': vertical && !reverse,
+              'animate-marquee-reverse flex-row': !vertical && reverse,
+              'animate-marquee-vertical-reverse flex-col': vertical && reverse,
+              'group-hover:[animation-play-state:paused]': pauseOnHover,
+            })}
+          >
+            {children}
+          </div>
+        ))}
+    </div>
+  )
+}
+```
+
+## Exammple
+
+### Varticle Maruqee
+
+<ComponentCodePreview name='verticle-marquee' hasReTrigger isFitheight />
+
+### Logos Maruqee
+
+<ComponentCodePreview name='logos-marquee' hasReTrigger isFitheight />
+
+### 3D Maruqee
+
+<ComponentCodePreview name='3d-marquee' hasReTrigger isFitheight />

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import { authAPI, bucketsAPI, apiKeysAPI, oauthAPI } from '../services/api'
+import { authAPI, bucketsAPI, apiKeysAPI, oauthAPI, stripeAPI } from '../services/api'
 import Input from './Input'
 import Button from './Button'
 import CreateAPIKeyModal from './CreateAPIKeyModal'
@@ -49,6 +49,13 @@ export default function ProfileModal({ isOpen, onClose }) {
   const [showCreateCredentialModal, setShowCreateCredentialModal] = useState(false)
   const [credentialView, setCredentialView] = useState('api-keys') // 'api-keys' or 'oauth'
 
+  // Subscription state
+  const [subscription, setSubscription] = useState(null)
+  const [usage, setUsage] = useState(null)
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+  const [cancelLoading, setCancelLoading] = useState(false)
+  const navigate = useNavigate()
+
   // Load API keys, OAuth clients, and buckets when API Keys tab is active
   useEffect(() => {
     if (isOpen && activeTab === 'api-keys') {
@@ -57,6 +64,65 @@ export default function ProfileModal({ isOpen, onClose }) {
       loadBuckets()
     }
   }, [isOpen, activeTab])
+
+  // Load subscription data when subscription tab is active
+  useEffect(() => {
+    if (isOpen && activeTab === 'subscription') {
+      loadSubscriptionData()
+    }
+  }, [isOpen, activeTab])
+
+  const loadSubscriptionData = async () => {
+    setSubscriptionLoading(true)
+    try {
+      const [subRes, usageRes] = await Promise.all([
+        stripeAPI.getSubscription(),
+        stripeAPI.getUsage()
+      ])
+      setSubscription(subRes.data)
+      setUsage(usageRes.data)
+    } catch (error) {
+      console.error('Failed to load subscription:', error)
+    } finally {
+      setSubscriptionLoading(false)
+    }
+  }
+
+  const handleManageBilling = async () => {
+    try {
+      const response = await stripeAPI.getPortal()
+      window.location.href = response.data.url
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Failed to open billing portal')
+    }
+  }
+
+  const handleCancelSubscription = async () => {
+    if (!confirm('Are you sure you want to cancel your subscription? You will still have access until the end of your billing period.')) {
+      return
+    }
+    setCancelLoading(true)
+    try {
+      await stripeAPI.cancelSubscription()
+      loadSubscriptionData()
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Failed to cancel subscription')
+    } finally {
+      setCancelLoading(false)
+    }
+  }
+
+  const handleReactivate = async () => {
+    setCancelLoading(true)
+    try {
+      await stripeAPI.reactivateSubscription()
+      loadSubscriptionData()
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Failed to reactivate subscription')
+    } finally {
+      setCancelLoading(false)
+    }
+  }
 
   const loadAPIKeys = async () => {
     try {
@@ -254,6 +320,177 @@ export default function ProfileModal({ isOpen, onClose }) {
     } finally {
       setDangerLoading(false)
     }
+  }
+
+  const renderSubscriptionContent = () => {
+    if (subscriptionLoading) {
+      return (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 dark:border-dark-accent border-light-accent mx-auto"></div>
+        </div>
+      )
+    }
+
+    const planName = subscription?.plan || 'free_trial'
+    const planLabels = {
+      free_trial: 'Free Trial',
+      starter: 'Starter',
+      pro: 'Pro',
+      premium: 'Premium',
+      expired: 'Expired'
+    }
+
+    const formatBytes = (bytes) => {
+      if (!bytes) return '0 GB'
+      const gb = bytes / (1024 * 1024 * 1024)
+      return `${gb.toFixed(2)} GB`
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Current Plan Card */}
+        <div className={`p-6 rounded-2xl border ${
+          planName === 'expired'
+            ? 'bg-red-500/10 border-red-500/30'
+            : 'dark:bg-dark-accent/10 dark:border-dark-accent/30 bg-light-accent/10 border-light-accent/30'
+        }`}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm dark:text-dark-text/70 text-light-text/70">Current Plan</p>
+              <h3 className={`text-2xl font-bold ${
+                planName === 'expired' ? 'text-red-400' : 'dark:text-dark-accent text-light-accent'
+              }`}>
+                {planLabels[planName] || planName}
+              </h3>
+            </div>
+            {subscription?.status && (
+              <span className={`px-3 py-1 rounded-full text-sm ${
+                subscription.status === 'active' ? 'bg-green-500/20 text-green-400' :
+                subscription.status === 'trialing' ? 'bg-blue-500/20 text-blue-400' :
+                subscription.cancel_at_period_end ? 'bg-yellow-500/20 text-yellow-400' :
+                'bg-red-500/20 text-red-400'
+              }`}>
+                {subscription.cancel_at_period_end ? 'Canceling' : subscription.status}
+              </span>
+            )}
+          </div>
+
+          {subscription?.current_period_end && (
+            <p className="text-sm dark:text-dark-text/70 text-light-text/70">
+              {subscription.cancel_at_period_end
+                ? `Access until: ${new Date(subscription.current_period_end).toLocaleDateString()}`
+                : `Next billing: ${new Date(subscription.current_period_end).toLocaleDateString()}`
+              }
+            </p>
+          )}
+
+          <div className="flex gap-3 mt-4">
+            {planName !== 'expired' && subscription?.stripe_customer_id && (
+              <Button onClick={handleManageBilling} className="!w-auto">
+                Manage Billing
+              </Button>
+            )}
+            <Button
+              onClick={() => { onClose(); navigate('/pricing') }}
+              variant={planName === 'expired' ? 'primary' : 'secondary'}
+              className="!w-auto"
+            >
+              {planName === 'expired' || planName === 'free_trial' ? 'Upgrade Now' : 'Change Plan'}
+            </Button>
+            {subscription?.status === 'active' && !subscription?.cancel_at_period_end && planName !== 'free_trial' && (
+              <Button
+                onClick={handleCancelSubscription}
+                variant="secondary"
+                className="!w-auto !text-red-400 !border-red-500/30 hover:!bg-red-500/10"
+                loading={cancelLoading}
+              >
+                Cancel
+              </Button>
+            )}
+            {subscription?.cancel_at_period_end && (
+              <Button
+                onClick={handleReactivate}
+                variant="secondary"
+                className="!w-auto"
+                loading={cancelLoading}
+              >
+                Reactivate
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Usage Stats */}
+        {usage && (
+          <div>
+            <h3 className="text-lg font-semibold dark:text-dark-text text-light-text mb-4">
+              Usage
+            </h3>
+            <div className="space-y-4">
+              {/* Storage */}
+              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
+                <div className="flex justify-between mb-2">
+                  <span className="dark:text-dark-text text-light-text">Storage</span>
+                  <span className="dark:text-dark-text/70 text-light-text/70">
+                    {formatBytes(usage.usage?.storage?.used_bytes)} / {formatBytes(usage.usage?.storage?.limit_bytes)}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full dark:bg-white/10 bg-black/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full dark:bg-dark-accent bg-light-accent transition-all"
+                    style={{ width: `${Math.min(usage.usage?.storage?.percentage || 0, 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Documents */}
+              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
+                <div className="flex justify-between mb-2">
+                  <span className="dark:text-dark-text text-light-text">Documents</span>
+                  <span className="dark:text-dark-text/70 text-light-text/70">
+                    {usage.usage?.documents?.count || 0} / {usage.usage?.documents?.limit === -1 ? 'Unlimited' : usage.usage?.documents?.limit}
+                  </span>
+                </div>
+                {usage.usage?.documents?.limit !== -1 && (
+                  <div className="h-2 rounded-full dark:bg-white/10 bg-black/10 overflow-hidden">
+                    <div
+                      className="h-full rounded-full dark:bg-dark-accent bg-light-accent transition-all"
+                      style={{ width: `${Math.min(usage.usage?.documents?.percentage || 0, 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* API Calls */}
+              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
+                <div className="flex justify-between mb-2">
+                  <span className="dark:text-dark-text text-light-text">API Calls (Today)</span>
+                  <span className="dark:text-dark-text/70 text-light-text/70">
+                    {usage.usage?.api_calls?.today || 0} / {usage.usage?.api_calls?.limit || 0}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full dark:bg-white/10 bg-black/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full dark:bg-dark-accent bg-light-accent transition-all"
+                    style={{ width: `${Math.min(usage.usage?.api_calls?.percentage || 0, 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Max File Size */}
+              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
+                <div className="flex justify-between">
+                  <span className="dark:text-dark-text text-light-text">Max File Size</span>
+                  <span className="dark:text-dark-text/70 text-light-text/70">
+                    {usage.usage?.max_file_size_mb || 0} MB
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   const renderAPIKeysContent = () => (
@@ -631,11 +868,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           <div className="flex-1">
             {activeTab === 'profile' && renderProfileContent()}
             {activeTab === 'api-keys' && renderAPIKeysContent()}
-            {activeTab === 'subscription' && (
-              <div className="text-center py-12 dark:text-dark-text/70 text-light-text/70">
-                Subscription section coming soon
-              </div>
-            )}
+            {activeTab === 'subscription' && renderSubscriptionContent()}
           </div>
         </div>
       </div>

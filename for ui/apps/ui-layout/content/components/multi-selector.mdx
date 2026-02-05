@@ -1,0 +1,122 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Multi Selector",
+  description:
+    "A multiple selector component built with shadcn/ui. Supports searching, tagging, and multi-value selection with an accessible and customizable design for modern React apps.",
+  keywords: [
+    "Multi select component",
+    "shadcn multi selector",
+    "React multi select",
+    "shadcn/ui select",
+    "Accessible multi select",
+    "Customizable selector",
+    "Multi option picker",
+    "React select component",
+    "Multi tag selector",
+    "Dropdown multi select",
+    "React shadcn components",
+    "Multi choice selector",
+    "UI selector component",
+    "shadcn/ui dropdown",
+    "Interactive multi select",
+    "Tag input multi select",
+    "Searchable selector React",
+    "Multi item selection UI",
+    "shadcn multi picker",
+    "Modern select component",
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Multi Selector | UI Layouts",
+    description:
+      "An accessible, customizable multi selector component built with shadcn/ui. Supports tagging, searching, and multi-value selection for modern React projects.",
+    url: "https://ui-layouts.com/components/multi-selector",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Multi Selector | UI Layouts",
+    image:["https://ui-layouts.com/component-og.jpg"],
+    description:
+      "A shadcn/ui multi selector with support for search, tags, and multiple value selection. Built for modern React applications.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+
+> Thanks to [Sersavan](https://github.com/sersavan/shadcn-multi-select-component)
+
+<ComponentCodePreview name='multi-selector-default' isFitheight hasReTrigger isTab>
+  <TabCodePreview name='multi-selector-default'/>
+</ComponentCodePreview>
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add multi-selector
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/multi-selector.json'
+      ```
+
+   </CodeWithTabs>
+  </TabsContent>
+  
+  <TabsContent value="manual" manualType>
+
+<CodeSnippets name="multi-selector" />
+
+</TabsContent>
+</Tabs>
+
+## Props
+
+| Prop            | Type                                                                                 | Default            | Description                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `options`       | `{ label: string; value: string; icon?: React.ComponentType; disable?: boolean; }[]` | `[]`               | An array of option objects displayed in the multi-select. Each object has a `label`, `value`, optional `icon`, and optional `disable` flag. |
+| `onValueChange` | `(value: string[]) => void`                                                          | `undefined`        | Callback triggered when the selected values change. Receives an array of selected values.                                                   |
+| `defaultValue`  | `string[]`                                                                           | `[]`               | The default selected values when the component mounts.                                                                                      |
+| `placeholder`   | `string`                                                                             | `"Select options"` | Text displayed when no values are selected.                                                                                                 |
+| `animation`     | `number`                                                                             | `0`                | Duration of animation effects (in seconds) for visual feedback like bouncing badges.                                                        |
+| `maxCount`      | `number`                                                                             | `3`                | Maximum number of items to display before summarizing the rest.                                                                             |
+| `modalPopover`  | `boolean`                                                                            | `false`            | Enables modal behavior for the popover, disabling interaction with outside elements and enhancing accessibility for screen readers.         |
+| `asChild`       | `boolean`                                                                            | `false`            | Renders the multi-select as a child element of another component.                                                                           |
+| `className`     | `string`                                                                             | `undefined`        | Additional CSS classes for custom styling of the multi-select component.                                                                    |
+| `popoverClass`  | `string`                                                                             | `undefined`        | Additional CSS classes for custom styling of the popover content.                                                                           |
+| `showall`       | `boolean`                                                                            | `false`            | Option to display all items without truncating the list, regardless of the `maxCount` setting.                                              |
+| `ref`           | `React.RefObject<HTMLButtonElement>`                                                 | `undefined`        | A React ref object for the root element of the multi-select component, allowing for external access to the component’s DOM node.            |

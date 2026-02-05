@@ -1,0 +1,128 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Animated Dialog",
+  description: "An animated dialog component powered by Framer Motion, featuring smooth transitions and interactive visual effects for modal windows. Perfect for creating engaging overlays, popups, and interactive dialogs with modern animations.",
+  keywords: [
+    "Animated dialog component",
+    "Framer Motion dialog",
+    "React dialog component",
+    "Animated modal component",
+    "Motion dialog",
+    "Interactive dialog",
+    "Modal with animations",
+    "Smooth dialog transitions",
+    "Framer Motion modal",
+    "Dialog animations",
+    "Modal window component",
+    "Interactive modal",
+    "Animated popup",
+    "Dialog transitions",
+    "Modal transitions",
+    "Overlay component",
+    "Popup component",
+    "React modal",
+    "Motion components",
+    "Interactive visual effects",
+    "Dialog with motion",
+    "Animated overlay",
+    "Modal dialog component",
+    "Responsive dialog",
+    "Modern dialog design",
+    "UI dialog component",
+    "Custom dialog",
+    "Dialog with effects",
+    "Tailwind dialog",
+    "Accessible dialog"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Animated Dialog Component | UI Layouts",
+    description: "An animated dialog component powered by Framer Motion, featuring smooth transitions and interactive visual effects for modern modal windows.",
+    url: "https://ui-layouts.com/components/dialog",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Animated Dialog Component | UI Layouts",
+    description: "Animated dialog component powered by Framer Motion with smooth transitions and interactive visual effects for modal windows.",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+<ComponentCodePreview name='dialog-default' hasReTrigger responsive />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+  <TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+    <TabsTrigger value="cli">CLI</TabsTrigger>
+    <TabsTrigger value="manual">Manual</TabsTrigger>
+  </TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add dialog
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/dialog.json'
+      ```
+   </CodeWithTabs>
+  </TabsContent>
+
+
+<TabsContent value="manual" manualType>
+
+```bash
+npm install motion
+```
+
+<CodeSnippets name="dialog" />
+
+</TabsContent>
+</Tabs>
+
+
+## Props
+
+`FramerModal` Props
+
+| Prop     | Type                    | Default   | Description                                   |
+| -------- | ----------------------- | --------- | --------------------------------------------- |
+| children | React.ReactNode         | -         | The content inside the modal.                 |
+| open     | boolean                 | undefined | Controls the visibility of the modal.         |
+| setOpen  | (open: boolean) => void | undefined | Function to set the modal's visibility state. |
+
+`ModalContent` Props
+
+| Prop     | Type            | Default | Description                                |
+| -------- | --------------- | ------- | ------------------------------------------ |
+| children | React.ReactNode | -       | The content inside the modal content area. |

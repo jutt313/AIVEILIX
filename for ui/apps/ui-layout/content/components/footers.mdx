@@ -1,0 +1,111 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Animated Footer",
+  description: "An animated footer component with scrolling and mousemove effects, enhancing visual engagement through interactive user interactions. Features smooth animations, responsive design, and modern visual effects for dynamic website footers.",
+  keywords: [
+    "Animated footer component",
+    "Interactive footer",
+    "Footer with animations",
+    "Scrolling footer effects",
+    "Mousemove footer animations",
+    "React footer component",
+    "Dynamic footer",
+    "Footer scroll effects",
+    "Interactive website footer",
+    "Animated website footer",
+    "Footer with motion",
+    "Modern footer design",
+    "Responsive footer component",
+    "Footer mouse interactions",
+    "Visual footer effects",
+    "Engaging footer design",
+    "Footer parallax effects",
+    "Interactive footer section",
+    "Footer hover effects",
+    "Custom footer component",
+    "UI footer component",
+    "Footer with interactions",
+    "Smooth footer animations",
+    "Footer visual engagement",
+    "Website footer animations",
+    "Footer component library",
+    "Creative footer design",
+    "Footer scroll animations",
+    "Modern web footer",
+    "Tailwind footer component"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Animated Footer Component | UI Layouts",
+    description: "An animated footer component with scrolling and mousemove effects, enhancing visual engagement through interactive user interactions and smooth animations.",
+    url: "https://ui-layouts.com/components/footers",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Animated Footer Component | UI Layouts",
+    description: "Animated footer with scrolling and mousemove effects, enhancing visual engagement through interactive user interactions.",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+## Animated Logo
+
+<ComponentCodePreview name='animated-logo-footer' hasReTrigger responsive>
+
+##### Installation
+
+```bash
+npm install motion
+```
+
+</ComponentCodePreview>
+
+## Hover Footer
+
+<ComponentCodePreview name='hover-footer' responsive  isTab>
+
+<TabCodePreview name='hover-footer' />
+
+```css globals.css
+@layer utilities {
+  .animated-text {
+    background: radial-gradient(
+      circle at var(--text-mouse-x) var(--text-mouse-y),
+      var(--gradient-text-center) 0%,
+      var(--gradient-text-edge) 40%
+    );
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+```
+</ComponentCodePreview>

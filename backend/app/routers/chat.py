@@ -98,6 +98,150 @@ def parse_ai_response_with_citations(ai_response: str, source_inventory: dict):
     # Fallback: return full response, empty sources
     return ai_response, []
 
+
+def extract_ai_sources_from_json(ai_response: str, file_names: dict):
+    """Extract sources from AI's JSON response and convert to our format"""
+    import re
+
+    try:
+        # Find JSON in response
+        json_match = re.search(r'\{[\s\S]*"sources"[\s\S]*\}', ai_response)
+        if not json_match:
+            return []
+
+        data = json.loads(json_match.group())
+        ai_sources = data.get("sources", [])
+
+        converted_sources = []
+        for src in ai_sources[:10]:  # Max 10 sources
+            src_type = src.get("type", "")
+
+            if src_type == "doc":
+                # Document source from AI
+                converted_sources.append({
+                    "type": "document",
+                    "file_name": src.get("name", "Document"),
+                    "confidence": src.get("confidence", "medium"),
+                    "quote": src.get("quote", "")[:200]  # Limit quote length
+                })
+            elif src_type == "web":
+                # Web search source
+                converted_sources.append({
+                    "type": "web_search",
+                    "title": src.get("title", "Web Result"),
+                    "url": src.get("url", ""),
+                    "domain": src.get("domain", "")
+                })
+            elif src_type == "ai_knowledge":
+                # AI's own knowledge
+                converted_sources.append({
+                    "type": "ai_knowledge",
+                    "topic": src.get("topic", "General Knowledge")
+                })
+
+        return converted_sources
+    except Exception as e:
+        logger.warning(f"Failed to extract AI sources: {e}")
+        return []
+
+
+def extract_response_from_json(ai_response: str):
+    """Extract the response text from AI's JSON response"""
+    import re
+
+    try:
+        # Find JSON in response
+        json_match = re.search(r'\{[\s\S]*"response"[\s\S]*\}', ai_response)
+        if json_match:
+            data = json.loads(json_match.group())
+            return data.get("response", ai_response)
+    except Exception as e:
+        logger.warning(f"Failed to extract response from JSON: {e}")
+
+    # Fallback: return as-is
+    return ai_response
+
+
+def extract_thinking_from_json(ai_response: str):
+    """Extract the thinking content from AI's JSON response"""
+    import re
+
+    try:
+        json_match = re.search(r'\{[\s\S]*"thinking"[\s\S]*\}', ai_response)
+        if json_match:
+            data = json.loads(json_match.group())
+            return data.get("thinking", "")
+    except Exception as e:
+        logger.warning(f"Failed to extract thinking from JSON: {e}")
+
+    return ""
+
+
+def parse_ai_sources(response_text: str, file_names: dict):
+    """Parse sources from AI response and return cleaned response + sources list"""
+    import re
+
+    # Find the [[SOURCES:...]] pattern
+    sources_pattern = r'\[\[SOURCES:(.*?)\]\]'
+    match = re.search(sources_pattern, response_text, re.DOTALL)
+
+    if not match:
+        logger.info("No [[SOURCES:...]] found in AI response")
+        return response_text, []
+
+    # Extract and parse JSON
+    sources_json = match.group(1).strip()
+    cleaned_response = re.sub(sources_pattern, '', response_text).strip()
+
+    try:
+        sources_data = json.loads(sources_json)
+        parsed_sources = []
+
+        # Parse document sources
+        docs = sources_data.get("docs", [])
+        for doc_name in docs:
+            # Find file_id by name
+            file_id = None
+            for fid, fname in file_names.items():
+                if fname == doc_name or doc_name in fname:
+                    file_id = fid
+                    break
+            parsed_sources.append({
+                "type": "document",
+                "file_name": doc_name,
+                "file_id": str(file_id) if file_id else None,
+                "confidence": "high"
+            })
+
+        # Parse web sources
+        web_urls = sources_data.get("web", [])
+        for url in web_urls:
+            try:
+                from urllib.parse import urlparse
+                domain = urlparse(url).netloc
+            except:
+                domain = url
+            parsed_sources.append({
+                "type": "web_search",
+                "url": url,
+                "domain": domain.replace("www.", ""),
+                "title": domain
+            })
+
+        # Parse AI knowledge
+        if sources_data.get("ai", False):
+            parsed_sources.append({
+                "type": "ai_knowledge",
+                "topic": "General Knowledge"
+            })
+
+        logger.info(f"✅ Parsed {len(parsed_sources)} sources from AI response")
+        return cleaned_response, parsed_sources
+
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse sources JSON: {e}")
+        return cleaned_response, []
+
 # Initialize DeepSeek client (OpenAI-compatible)
 deepseek_client = None
 if settings.deepseek_api_key:
@@ -106,37 +250,48 @@ if settings.deepseek_api_key:
         base_url="https://api.deepseek.com/v1"
     )
 
-# Basic system prompt (now includes web search capability)
-SYSTEM_PROMPT = """You are AIveilix, an AI assistant that helps users understand and work with their knowledge buckets.
-You have access to all the documents and files the user has uploaded to their bucket.
-You can also search the web when the user needs current information or information not in their documents.
+# Super Smart System Prompt - Plain text responses with source citations
+SYSTEM_PROMPT = """You are AIveilix, an exceptionally intelligent AI assistant with deep document analysis capabilities.
 
-When answering questions, always:
-1. Use information from the uploaded documents when relevant
-2. Be concise but thorough
-3. If you don't know something, say so rather than guessing
+IDENTITY:
+- Confident, friendly, professional tone
+- Match user's language and communication style
+- ALWAYS reply in the same language the user writes in
+- NEVER expose internal details (source IDs, system info, technical internals)
 
-CRITICAL FORMATTING RULES:
-- DO NOT use ### headers
-- DO NOT use ** for bold text
-- Write in plain, conversational language
+CRITICAL: The current year is 2026.
 
-CITATION REQUIREMENTS - YOU MUST FOLLOW THIS FORMAT:
-Respond with VALID JSON in this EXACT format:
+DOCUMENT PROTOCOL (FOLLOW STRICTLY):
+1. DEEP SEARCH - Thoroughly analyze ALL provided documents before saying "I don't know"
+2. PRIORITY ORDER: User documents → Web search results → Your AI knowledge
+3. QUOTE exact text from documents when relevant (mention the file name naturally)
+4. SYNTHESIZE information from multiple files when answering
+5. If documents don't contain the answer, clearly state that and use other sources
 
-{
-  "message": "your natural language response here",
-  "cited_sources": [
-    {"id": "analysis_abc123"},
-    {"id": "web_0"}
-  ]
-}
+RESPONSE RULES:
+- Plain text ONLY (no markdown: no **, no ###, no *, use - for bullets)
+- Adapt response length to question complexity (short question = concise answer)
+- Ask clarifying questions if user's request is vague or ambiguous
+- Gently guide confused users toward what they might be looking for
+- NEVER hallucinate - if you truly don't know, admit it honestly
+- When citing files, naturally mention them like "According to report.pdf..." or "In the document..."
+- When using web results, mention the source naturally
 
-CITATION RULES:
-- Only cite sources you ACTUALLY used in your answer
-- Use exact source IDs from the [AVAILABLE SOURCES] list provided in context
-- If you don't use any sources, return empty array: "cited_sources": []
-- Do not invent source IDs"""
+CRITICAL - SOURCE CITATION (MUST DO):
+At the END of EVERY response, add a sources line in this EXACT format:
+[[SOURCES:{"docs":["filename1.pdf","filename2.txt"],"web":["https://example.com"],"ai":true/false}]]
+
+Rules for sources:
+- "docs": Array of document filenames you ACTUALLY used (empty [] if none)
+- "web": Array of URLs you ACTUALLY used (empty [] if none)
+- "ai": true if you used your own knowledge, false if only docs/web
+- ONLY cite sources you actually used in your answer
+- This line will be hidden from user, so always include it
+
+Example: [[SOURCES:{"docs":["report.pdf","data.csv"],"web":[],"ai":false}]]
+Example: [[SOURCES:{"docs":[],"web":["https://news.com/article"],"ai":true}]]
+
+REMEMBER: Be helpful, accurate, and conversational. Write like you're explaining to a friend."""
 
 
 @router.post("/{bucket_id}/chat")
@@ -331,19 +486,24 @@ async def chat_with_bucket(
             web_results=search_results_for_inventory
         )
 
-        # Build messages array with system prompt, documents context, web search, conversation history, and current message
-        context_message = f"""User's Knowledge Bucket: {bucket_res.data['name']}
+        # Build messages array with WEB SEARCH FIRST (highest priority), then documents
+        context_message = ""
+
+        # Add web search results FIRST if available (HIGHEST PRIORITY)
+        if web_search_context:
+            context_message += f"""🌐 CURRENT WEB SEARCH RESULTS (USE THESE FIRST):
+{web_search_context}
+
+"""
+
+        context_message += f"""User's Knowledge Bucket: {bucket_res.data['name']}
 
 {source_inventory['inventory_text']}
 
 Available Documents:
-{full_context}"""
+{full_context}
 
-        # Add web search results if available
-        if web_search_context:
-            context_message += f"\n\n{web_search_context}"
-
-        context_message += "\n\nContinue the conversation below. Answer based on the available sources above."
+Continue the conversation below. Answer based on the available sources above."""
         
         ai_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -356,57 +516,203 @@ Available Documents:
         # Add current user message
         ai_messages.append({"role": "user", "content": request.message})
         
+        # Build sources list from context that was provided to AI
+        used_sources = []
+
+        # Add document sources (files that had content in context)
+        files_with_content = set()
+        for file_id in summaries_by_file:
+            files_with_content.add(file_id)
+        for file_id in chunks_by_file:
+            files_with_content.add(file_id)
+
+        for file_id in files_with_content:
+            file_name = file_names.get(file_id, "Unknown")
+            used_sources.append({
+                "type": "document",
+                "file_id": str(file_id),
+                "file_name": file_name
+            })
+
+        # Add web search sources if used
+        if search_results:
+            for result in search_results[:5]:
+                used_sources.append({
+                    "type": "web_search",
+                    "title": result.get("title", "Web Result"),
+                    "url": result.get("link", ""),
+                    "domain": result.get("displayLink", "")
+                })
+
+        logger.info(f"📚 Sources prepared: {len(used_sources)} total ({len(files_with_content)} docs, {len(search_results) if search_results else 0} web)")
+
         async def generate_stream():
+            nonlocal used_sources
             try:
                 full_response = ""
+                thinking_content = ""
+                use_reasoner = True  # Try deepseek-reasoner first
 
-                # Stream from DeepSeek
-                stream = deepseek_client.chat.completions.create(
+                # STEP 1: Quick AI call to check if search needed and get keywords
+                logger.info("🤖 Step 1: Checking if web search needed...")
+                search_check_prompt = f"""Analyze this user question: "{request.message}"
+
+If this question needs current/real-time information (current events, people in office, recent news, prices, weather, etc.), respond with ONLY search keywords (3-5 words).
+If it doesn't need web search, respond with: NO_SEARCH
+
+Examples:
+"who is the prime minister of japan now" → japan prime minister 2026
+"what is the weather" → weather today
+"explain quantum physics" → NO_SEARCH
+"summarize this document" → NO_SEARCH
+
+Your response (keywords only or NO_SEARCH):"""
+
+                search_check = deepseek_client.chat.completions.create(
                     model="deepseek-chat",
-                    messages=ai_messages,
-                    temperature=0.7,
-                    stream=True
+                    messages=[{"role": "user", "content": search_check_prompt}],
+                    temperature=0.3,
+                    max_tokens=50
                 )
 
-                for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        full_response += content
-                        # Send chunk to frontend
-                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                search_decision = search_check.choices[0].message.content.strip()
+                logger.info(f"🔍 AI search decision: '{search_decision}'")
 
-                # Parse full response for citations (try JSON parse, fallback to raw)
+                # STEP 2: If AI wants search, do it
+                if search_decision != "NO_SEARCH" and len(search_decision) > 0:
+                    keywords = search_decision
+                    logger.info(f"🌐 Searching with keywords: '{keywords}'")
+
+                    # Send "searching" status to frontend
+                    yield f"data: {json.dumps({'type': 'searching', 'keywords': keywords})}\n\n"
+
+                    # Perform web search
+                    search_results_data = await search_web(keywords, num_results=5)
+                    logger.info(f"✅ Found {len(search_results_data)} results")
+
+                    # Add web sources
+                    for result in search_results_data[:5]:
+                        used_sources.append({
+                            "type": "web_search",
+                            "title": result.get("title", "Web Result"),
+                            "url": result.get("link", ""),
+                            "domain": result.get("displayLink", "")
+                        })
+
+                    # Format search results and add to context
+                    web_results_text = "\n\n🌐 CURRENT WEB SEARCH RESULTS (USE THESE AS PRIMARY SOURCE):\n"
+                    for i, result in enumerate(search_results_data, 1):
+                        web_results_text += f"{i}. {result['title']}\n   {result['snippet']}\n   URL: {result['link']}\n\n"
+
+                    # Add to messages
+                    ai_messages.append({
+                        "role": "user",
+                        "content": web_results_text + "\n\nNow answer the original question using these current search results."
+                    })
+
+                # STEP 3: Try deepseek-reasoner first for 3-phase streaming
+                logger.info("💭 Attempting deepseek-reasoner for thinking + response...")
+
                 try:
-                    # Try to extract JSON from response
-                    json_match = __import__('re').search(r'\{[\s\S]*"message"[\s\S]*"cited_sources"[\s\S]*\}', full_response)
-                    if json_match:
-                        data = json.loads(json_match.group())
-                        message_text = data.get("message", full_response)
-                        citation_ids = [c.get("id") for c in data.get("cited_sources", []) if c.get("id")]
-                        cited_sources = []
-                        for cid in citation_ids:
-                            if cid in source_inventory["sources"]:
-                                cited_sources.append(source_inventory["sources"][cid])
-                    else:
-                        message_text = full_response
-                        cited_sources = []
-                except:
-                    message_text = full_response
-                    cited_sources = []
+                    # Try deepseek-reasoner (has native reasoning_content)
+                    stream = deepseek_client.chat.completions.create(
+                        model="deepseek-reasoner",
+                        messages=ai_messages,
+                        temperature=0.7,
+                        stream=True
+                    )
+                    model_used_actual = "deepseek-reasoner"
 
-                # Save to database
+                    # Phase 1: Stream thinking content
+                    in_thinking_phase = True
+                    yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'thinking'})}\n\n"
+
+                    for chunk in stream:
+                        # Check for reasoning_content (thinking)
+                        if hasattr(chunk.choices[0].delta, 'reasoning_content') and chunk.choices[0].delta.reasoning_content:
+                            content = chunk.choices[0].delta.reasoning_content
+                            thinking_content += content
+                            yield f"data: {json.dumps({'type': 'thinking', 'content': content})}\n\n"
+
+                        # Check for regular content (response)
+                        if chunk.choices[0].delta.content:
+                            # Switch to response phase on first content
+                            if in_thinking_phase:
+                                in_thinking_phase = False
+                                yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'response'})}\n\n"
+
+                            content = chunk.choices[0].delta.content
+                            full_response += content
+
+                            # Clean markdown from chunk before sending
+                            clean_content = content.replace('**', '').replace('###', '').replace('__', '')
+                            yield f"data: {json.dumps({'type': 'response', 'content': clean_content})}\n\n"
+
+                except Exception as reasoner_error:
+                    # Fallback to deepseek-chat if reasoner fails
+                    logger.warning(f"⚠️ deepseek-reasoner failed ({reasoner_error}), falling back to deepseek-chat")
+                    use_reasoner = False
+                    model_used_actual = "deepseek-chat"
+
+                    # Simulate thinking phase with a brief delay message
+                    yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'thinking'})}\n\n"
+                    thinking_content = "Analyzing your question and searching through documents..."
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
+
+                    yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'response'})}\n\n"
+
+                    stream = deepseek_client.chat.completions.create(
+                        model="deepseek-chat",
+                        messages=ai_messages,
+                        temperature=0.7,
+                        stream=True
+                    )
+
+                    for chunk in stream:
+                        if chunk.choices[0].delta.content:
+                            content = chunk.choices[0].delta.content
+                            full_response += content
+
+                            # Clean markdown from chunk before sending
+                            clean_content = content.replace('**', '').replace('###', '').replace('__', '')
+                            yield f"data: {json.dumps({'type': 'response', 'content': clean_content})}\n\n"
+
+                # Process the response - parse AI sources and clean up
+                message_text = full_response.strip()
+                message_text = message_text.replace('**', '').replace('###', '').replace('__', '')
+
+                # Parse AI-cited sources from response
+                message_text, ai_sources = parse_ai_sources(message_text, file_names)
+
+                # Use AI sources if available, otherwise fall back to context sources
+                if ai_sources:
+                    used_sources = ai_sources
+                    logger.info(f"📚 Using AI-cited sources: {len(ai_sources)}")
+
+                logger.info(f"📝 Response: {len(message_text)} chars, Thinking: {len(thinking_content)} chars")
+
+                # Prepare metadata for database
+                message_metadata = {
+                    "thinking": thinking_content,
+                    "model": model_used_actual,
+                    "has_thinking": bool(thinking_content)
+                }
+
+                # Save to database with sources and metadata
                 supabase.table("messages").insert({
                     "id": str(uuid.uuid4()),
                     "user_id": user_id,
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": message_text,
-                    "model_used": model_used,
-                    "sources": cited_sources[:10]
+                    "model_used": model_used_actual,
+                    "sources": used_sources[:10],
+                    "metadata": message_metadata
                 }).execute()
 
-                # Send sources and conversation ID at the end
-                yield f"data: {json.dumps({'type': 'done', 'sources': cited_sources[:10], 'conversation_id': conversation_id})}\n\n"
+                # Send done signal with cleaned message, sources, conversation ID, and thinking
+                logger.info(f"✅ Sending {len(used_sources)} sources to frontend (thinking: {len(thinking_content)} chars)")
+                yield f"data: {json.dumps({'type': 'done', 'message': message_text, 'sources': used_sources[:10], 'conversation_id': conversation_id, 'thinking': thinking_content})}\n\n"
 
             except Exception as e:
                 error_str = str(e).lower()

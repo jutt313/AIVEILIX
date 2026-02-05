@@ -1,0 +1,137 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Datetime Picker",
+  description: "A comprehensive datetime picker component built on top of shadcn-ui with no additional libraries required. Features date and time selection, calendar interface, and smart datetime input for modern web applications.",
+  keywords: [
+    "Datetime picker component",
+    "Shadcn-ui datetime picker",
+    "React datetime picker",
+    "Date time selector",
+    "Calendar picker",
+    "Time picker component",
+    "Date picker component",
+    "Smart datetime input",
+    "Shadcn datetime",
+    "No library datetime picker",
+    "Built-in datetime picker",
+    "React date picker",
+    "Interactive calendar",
+    "Time selection component",
+    "Date selection component",
+    "Modern datetime picker",
+    "Responsive datetime picker",
+    "Calendar component",
+    "DateTime input field",
+    "Date time interface",
+    "Calendar widget",
+    "Time input component",
+    "Native datetime picker",
+    "Custom datetime picker",
+    "UI datetime component",
+    "Form datetime picker",
+    "Accessible datetime picker",
+    "Lightweight datetime picker",
+    "Shadcn components",
+    "Tailwind datetime picker"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Datetime Picker | UI Layouts",
+    description: "A comprehensive datetime picker component built on top of shadcn-ui with no additional libraries required. Features smart datetime input and calendar interface.",
+    url: "https://ui-layouts.com/components/datetime-picker",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Datetime Picker Component | UI Layouts",
+    description: "Comprehensive datetime picker built on shadcn-ui with no additional libraries required. Features smart datetime input and calendar interface.",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+> Thanks to [Yerfa](https://shadcn-extension.vercel.app/docs/smart-datetime-input)
+
+<ComponentCodePreview name='datetime-picke-default' isFitheight hasReTrigger />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add datetime-input
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/datetime-input.json'
+      ```
+
+   </CodeWithTabs>
+  </TabsContent>
+  
+  <TabsContent value="manual" manualType>
+
+```bash
+npm install chrono-node react-day-picker@^8.9.1
+```
+
+<CodeSnippets name="datetime-input" />
+
+</TabsContent>
+</Tabs>
+
+## Props
+
+| Prop             | Type                   | Default     | Description                                              |
+| ---------------- | ---------------------- | ----------- | -------------------------------------------------------- |
+| `value`          | `Date`                 | `undefined` | The selected date value for the input.                   |
+| `onValueChange`  | `(date: Date) => void` | `-`         | Callback function triggered when the date value changes. |
+| `showCalendar`   | `boolean`              | `true`      | Whether to display a calendar for date selection.        |
+| `showTimePicker` | `boolean`              | `true`      | Whether to display a time picker for time selection.     |
+| `className`      | `string`               | `undefined` | Additional CSS class names to style the input component. |
+| `placeholder`    | `string`               | `undefined` | Placeholder text displayed when no value is selected.    |
+| `disabled`       | `boolean`              | `undefined` | Whether the input is disabled and not interactive.       |
+
+
+## Example
+
+### Time Picker
+
+<ComponentCodePreview name='time-picker' isFitheight hasReTrigger />
+
+### Date Picker
+
+<ComponentCodePreview name='date-picker' isFitheight hasReTrigger />
+

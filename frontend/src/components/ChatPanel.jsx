@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { chatAPI, filesAPI } from '../services/api'
 import { useTheme } from '../context/ThemeContext'
+import UpgradeModal from './UpgradeModal'
 
-export default function ChatPanel({ 
-  bucketId, 
-  conversationId: externalConversationId, 
+export default function ChatPanel({
+  bucketId,
+  conversationId: externalConversationId,
   onConversationCreated,
-  onFilesUpdate, 
-  selectedFiles = [], 
-  onSelectedFilesChange 
+  onFilesUpdate,
+  selectedFiles = [],
+  onSelectedFilesChange
 }) {
   const { isDark } = useTheme()
   const [messages, setMessages] = useState([])
@@ -18,6 +19,12 @@ export default function ChatPanel({
   const [conversationId, setConversationId] = useState(externalConversationId)
   const [showUploadMenu, setShowUploadMenu] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [currentPhase, setCurrentPhase] = useState('idle') // idle, thinking, response
+  const [thinkingContent, setThinkingContent] = useState('')
+  const [expandedThinking, setExpandedThinking] = useState({}) // per message: { [msgIdx]: true/false }
+  const [isTyping, setIsTyping] = useState(false) // Show typing cursor
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [upgradeError, setUpgradeError] = useState(null)
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const uploadMenuRef = useRef(null)
@@ -25,6 +32,28 @@ export default function ChatPanel({
   const folderInputRef = useRef(null)
   const isCreatingConversation = useRef(false)
   const abortControllerRef = useRef(null)
+
+  // Toggle thinking expansion for a specific message
+  const toggleThinking = (msgIdx) => {
+    setExpandedThinking(prev => ({
+      ...prev,
+      [msgIdx]: !prev[msgIdx]
+    }))
+  }
+
+  // Get confidence badge color
+  const getConfidenceColor = (confidence, isDark) => {
+    switch (confidence) {
+      case 'high':
+        return isDark ? 'bg-green-500/20 text-green-300' : 'bg-green-500/15 text-green-700'
+      case 'medium':
+        return isDark ? 'bg-yellow-500/20 text-yellow-300' : 'bg-yellow-500/15 text-yellow-700'
+      case 'low':
+        return isDark ? 'bg-orange-500/20 text-orange-300' : 'bg-orange-500/15 text-orange-700'
+      default:
+        return isDark ? 'bg-gray-500/20 text-gray-300' : 'bg-gray-500/15 text-gray-700'
+    }
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -66,7 +95,7 @@ export default function ChatPanel({
     try {
       const messagesRes = await chatAPI.getMessages(convId)
       const loadedMessages = messagesRes.data?.messages || []
-      
+
       // Convert to UI format
       const formattedMessages = loadedMessages.map(msg => ({
         role: msg.role,
@@ -74,7 +103,7 @@ export default function ChatPanel({
         sources: msg.sources || [],
         timestamp: new Date(msg.created_at)
       }))
-      
+
       setMessages(formattedMessages)
     } catch (error) {
       console.error('Failed to load conversation messages:', error)
@@ -82,11 +111,14 @@ export default function ChatPanel({
     }
   }
 
-  useEffect(() => {
-    // Auto-resize textarea (grows upward)
+  useLayoutEffect(() => {
+    // Auto-resize textarea - grows upward smoothly
     if (textareaRef.current) {
+      // Reset to single line height first
       textareaRef.current.style.height = '24px'
-      const newHeight = Math.min(textareaRef.current.scrollHeight, 128)
+      // Calculate needed height (max 6 lines = ~144px)
+      const scrollHeight = textareaRef.current.scrollHeight
+      const newHeight = Math.min(scrollHeight, 144)
       textareaRef.current.style.height = newHeight + 'px'
     }
   }, [input])
@@ -112,15 +144,14 @@ export default function ChatPanel({
     setShowUploadMenu(false)
     let successCount = 0
     let errorCount = 0
+    let limitError = null
 
     for (const file of Array.from(files)) {
       try {
-        // Extract folder path from webkitRelativePath if available
         let folderPath = null
         if (file.webkitRelativePath) {
           const pathParts = file.webkitRelativePath.split('/')
           if (pathParts.length > 1) {
-            // Remove the filename, keep only the folder path
             folderPath = pathParts.slice(0, -1).join('/')
           }
         }
@@ -128,14 +159,20 @@ export default function ChatPanel({
         successCount++
       } catch (error) {
         console.error(`Upload failed for ${file.name}:`, error)
+        if (error.response?.status === 402) {
+          limitError = error.response.data?.detail || { error: 'limit_exceeded', message: 'Plan limit reached' }
+          break
+        }
         errorCount++
-        // Continue with next file
       }
     }
 
     if (onFilesUpdate) onFilesUpdate()
 
-    if (errorCount > 0) {
+    if (limitError) {
+      setUpgradeError(limitError)
+      setShowUpgradeModal(true)
+    } else if (errorCount > 0) {
       alert(`Upload complete: ${successCount} successful, ${errorCount} failed`)
     }
 
@@ -174,6 +211,9 @@ export default function ChatPanel({
       abortControllerRef.current.abort()
       abortControllerRef.current = null
       setLoading(false)
+      setCurrentPhase('idle')
+      setThinkingContent('')
+      setIsTyping(false)
 
       // Remove the user message since we're canceling
       setMessages(prev => prev.slice(0, -1))
@@ -211,13 +251,17 @@ export default function ChatPanel({
 
     // Determine loading message based on query
     const queryLower = userMessage.toLowerCase()
-    const searchKeywords = ['search', 'look up', 'find', 'what is', 'who is', 'how to', 'current', 'latest', 'today', 'recent', 'news', 'weather', 'price']
+    const searchKeywords = ['search', 'look up', 'find', 'what is', 'who is', 'how to', 'current', 'latest', 'today', 'recent', 'news', 'weather', 'price', 'now', 'stock']
     const isSearchQuery = searchKeywords.some(keyword => queryLower.includes(keyword))
 
     if (isSearchQuery) {
-      // Extract topic (first 3 words, skip common words)
-      const words = userMessage.split(' ').filter(w => !['the', 'a', 'an', 'is', 'what', 'who', 'how', 'to', 'search', 'find', 'look', 'up'].includes(w.toLowerCase()))
-      const topic = words.slice(0, 3).join(' ')
+      // Extract topic - skip stop words and common question words
+      const stopWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'who', 'where', 'when', 'why', 'how', 'to', 'search', 'find', 'look', 'up', 'tell', 'me', 'please', 'can', 'you', 'could', 'would', 'in', 'on', 'at', 'for', 'of', 'about', 'now']
+      const words = userMessage.split(' ').filter(w => {
+        const lower = w.toLowerCase()
+        return !stopWords.includes(lower) && w.length > 2
+      })
+      const topic = words.slice(0, 4).join(' ')
       setLoadingMessage(`Searching ${topic || 'web'}...`)
     } else {
       setLoadingMessage('Thinking...')
@@ -232,8 +276,16 @@ export default function ChatPanel({
       role: 'assistant',
       content: '',
       sources: [],
+      thinking: '',
       timestamp: new Date()
     }])
+
+    let accumulatedText = ''
+    let accumulatedThinking = ''
+
+    // Reset phase state
+    setCurrentPhase('idle')
+    setThinkingContent('')
 
     try {
       const response = await chatAPI.sendMessage(
@@ -242,28 +294,79 @@ export default function ChatPanel({
         conversationId,
         abortControllerRef.current.signal,
         (chunk) => {
-          // Update message content as chunks arrive
-          setMessages(prev => {
-            const newMessages = [...prev]
-            if (newMessages[assistantMsgIndex]) {
-              newMessages[assistantMsgIndex].content += chunk
+          // Handle different event types
+          if (typeof chunk === 'object') {
+            switch (chunk.type) {
+              case 'searching':
+                setLoadingMessage(`Searching ${chunk.keywords}...`)
+                break
+
+              case 'phase_change':
+                setCurrentPhase(chunk.phase)
+                if (chunk.phase === 'thinking') {
+                  setLoadingMessage('Reasoning...')
+                  setIsTyping(false)
+                } else if (chunk.phase === 'response') {
+                  setLoadingMessage('')
+                  setIsTyping(true) // Start showing typing cursor
+                }
+                break
+
+              case 'thinking':
+                accumulatedThinking += chunk.content
+                setThinkingContent(accumulatedThinking)
+                // Update message thinking content live
+                setMessages(prev => {
+                  const newMessages = [...prev]
+                  if (newMessages[assistantMsgIndex]) {
+                    newMessages[assistantMsgIndex].thinking = accumulatedThinking
+                  }
+                  return newMessages
+                })
+                break
+
+              case 'response':
+                accumulatedText += chunk.content
+                // Update message content as chunks arrive
+                setMessages(prev => {
+                  const newMessages = [...prev]
+                  if (newMessages[assistantMsgIndex]) {
+                    newMessages[assistantMsgIndex].content = accumulatedText
+                  }
+                  return newMessages
+                })
+                break
+
+              case 'done':
+                // Stop typing cursor
+                setIsTyping(false)
+                break
+
+              default:
+                // Unknown event type, ignore
+                break
             }
-            return newMessages
-          })
+          }
         }
       )
       const data = response.data
 
-      // Update final message with sources
+      // Update final message with parsed content, sources, and thinking
       setMessages(prev => {
         const newMessages = [...prev]
         if (newMessages[assistantMsgIndex]) {
+          newMessages[assistantMsgIndex].content = data.message
           newMessages[assistantMsgIndex].sources = data.sources
+          newMessages[assistantMsgIndex].thinking = data.thinking || accumulatedThinking
         }
         return newMessages
       })
 
+      // Reset phase
+      setCurrentPhase('idle')
+
       console.log('📦 Assistant message sources:', data.sources)
+      console.log('💭 Thinking content:', data.thinking?.slice(0, 100))
 
       // Update conversation ID if new conversation was created
       if (data.conversation_id && data.conversation_id !== conversationId) {
@@ -295,6 +398,9 @@ export default function ChatPanel({
     } finally {
       abortControllerRef.current = null
       setLoading(false)
+      setCurrentPhase('idle')
+      setThinkingContent('')
+      setIsTyping(false)
     }
   }
 
@@ -303,128 +409,210 @@ export default function ChatPanel({
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         <div className="max-w-4xl mx-auto space-y-4">
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <p className={`${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'} mb-1`}>
-                Start a conversation
-              </p>
-              <p className={`text-sm ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'}`}>
-                Ask questions about your documents
-              </p>
+          {messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <p className={`${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'} mb-1`}>
+                  Start a conversation
+                </p>
+                <p className={`text-sm ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'}`}>
+                  Ask questions about your documents
+                </p>
+              </div>
             </div>
-          </div>
-        ) : (
-          messages.map((msg, idx) => (
-            <div
-              key={idx}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+          ) : (
+            messages.map((msg, idx) => (
               <div
-                className={`max-w-[85%] rounded-3xl px-4 py-2 ${
-                  msg.role === 'user'
+                key={idx}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-3xl px-4 py-2 ${msg.role === 'user'
                     ? isDark
                       ? 'bg-[#2DFFB7]/20 text-dark-text border border-[#2DFFB7]'
                       : 'bg-[#1FE0A5]/20 text-[#062A33] border border-[#1FE0A5]'
                     : isDark
                       ? 'text-dark-text'
                       : 'text-[#062A33]'
-                }`}
-              >
-                <div className="whitespace-pre-wrap leading-relaxed space-y-4">
-                  {msg.content.split('\n\n').map((paragraph, i) => (
-                    <p key={i}>{paragraph}</p>
-                  ))}
-                </div>
-                {msg.sources && msg.sources.length > 0 && (
-                  <div className={`mt-3 pt-3 border-t ${isDark ? 'border-white/10' : 'border-[#1FE0A5]/20'}`}>
-                    <p className="text-xs opacity-70 mb-2">Sources:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {msg.sources.map((source, i) => {
-                        // Handle different source types
-                        if (source.type === 'web_search') {
-                          return (
-                            <a
-                              key={i}
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={`text-xs px-2 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1 ${isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-500/10 text-blue-600'}`}
-                              title={source.snippet || source.title}
-                            >
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                              </svg>
-                              {source.title.length > 30 ? source.title.substring(0, 30) + '...' : source.title}
-                            </a>
-                          )
-                        } else {
-                          // File source
-                          return (
-                            <span key={i} className={`text-xs px-2 py-1 rounded ${isDark ? 'bg-white/10' : 'bg-[#1FE0A5]/10 text-[#0B3C49]'}`}>
-                              {source.file_name || 'Document'}
-                            </span>
-                          )
-                        }
-                      })}
+                    }`}
+                >
+                  {/* Thinking Section (Collapsible) - Only for assistant messages with thinking */}
+                  {msg.role === 'assistant' && msg.thinking && (
+                    <div className={`mb-3 pb-3 border-b ${isDark ? 'border-white/10' : 'border-[#1FE0A5]/20'}`}>
+                      <button
+                        onClick={() => toggleThinking(idx)}
+                        className={`flex items-center gap-2 text-xs transition-colors ${isDark ? 'text-yellow-400/70 hover:text-yellow-400' : 'text-yellow-600/70 hover:text-yellow-600'
+                          }`}
+                      >
+                        {/* Lightbulb Icon */}
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-2.3l-.85-.6A4.997 4.997 0 017 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z" />
+                        </svg>
+                        <span>{expandedThinking[idx] ? 'Hide reasoning' : 'View reasoning'}</span>
+                        <svg
+                          className={`w-3 h-3 transition-transform ${expandedThinking[idx] ? 'rotate-180' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      {expandedThinking[idx] && (
+                        <div className={`mt-2 p-3 rounded-lg text-sm leading-relaxed ${isDark ? 'bg-yellow-500/10 text-white/60' : 'bg-yellow-500/10 text-gray-600'
+                          }`}>
+                          {msg.thinking}
+                        </div>
+                      )}
                     </div>
+                  )}
+
+                  {/* Message Content */}
+                  <div className="whitespace-pre-wrap leading-relaxed space-y-4">
+                    {msg.content.split('\n\n').map((paragraph, i) => (
+                      <p key={i}>{paragraph}</p>
+                    ))}
+                    {/* Typing cursor for last assistant message */}
+                    {isTyping && msg.role === 'assistant' && idx === messages.length - 1 && (
+                      <span className="inline-block w-2 h-5 ml-1 bg-current animate-pulse" />
+                    )}
+                  </div>
+
+                  {/* Enhanced Sources Section */}
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className={`mt-3 pt-3 border-t ${isDark ? 'border-white/10' : 'border-[#1FE0A5]/20'}`}>
+                      <p className="text-xs opacity-50 mb-2">Sources</p>
+                      <div className="flex flex-wrap gap-2">
+                        {msg.sources.map((source, i) => {
+                          // Web search source
+                          if (source.type === 'web_search') {
+                            const domain = source.domain || (source.url ? new URL(source.url).hostname : 'web')
+                            return (
+                              <a
+                                key={i}
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`text-xs px-2.5 py-1.5 rounded-lg hover:scale-105 transition-all flex items-center gap-1.5 ${isDark ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30' : 'bg-blue-500/10 text-blue-600 hover:bg-blue-500/20'
+                                  }`}
+                                title={source.title}
+                              >
+                                <img
+                                  src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+                                  alt=""
+                                  className="w-3.5 h-3.5 rounded-sm"
+                                  onError={(e) => { e.target.style.display = 'none' }}
+                                />
+                                <span>{domain.replace('www.', '')}</span>
+                              </a>
+                            )
+                          } else if (source.type === 'ai_knowledge') {
+                            // AI Knowledge source (purple styling)
+                            return (
+                              <span
+                                key={i}
+                                className={`text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 ${isDark ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-500/15 text-purple-700'
+                                  }`}
+                                title={`AI Knowledge: ${source.topic}`}
+                              >
+                                {/* Brain/AI Icon */}
+                                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z" />
+                                </svg>
+                                <span>{source.topic?.length > 20 ? source.topic.substring(0, 20) + '...' : source.topic || 'AI Knowledge'}</span>
+                              </span>
+                            )
+                          } else {
+                            // Document source with confidence badge
+                            const confidence = source.confidence || 'medium'
+                            return (
+                              <span
+                                key={i}
+                                className={`text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 ${isDark ? 'bg-dark-accent/20 text-dark-accent' : 'bg-[#1FE0A5]/15 text-[#0B3C49]'
+                                  }`}
+                                title={source.quote ? `"${source.quote}"` : source.file_name}
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span>{source.file_name?.length > 20 ? source.file_name.substring(0, 20) + '...' : source.file_name || 'Document'}</span>
+                                {/* Confidence Badge */}
+                                {source.confidence && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getConfidenceColor(confidence, isDark)}`}>
+                                    {confidence}
+                                  </span>
+                                )}
+                              </span>
+                            )
+                          }
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+          {/* Loading indicator - only show during thinking phase, not during typing */}
+          {loading && !isTyping && (
+            <div className="flex justify-start">
+              <div className="rounded-lg p-4">
+                <div className="flex items-center gap-2">
+                  {currentPhase === 'thinking' ? (
+                    // Thinking phase indicator (lightbulb pulsing)
+                    <svg className="w-5 h-5 animate-pulse text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-2.3l-.85-.6A4.997 4.997 0 017 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z" />
+                    </svg>
+                  ) : (
+                    // Default spinner
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-dark-accent"></div>
+                  )}
+                  <span className={`text-sm ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`}>{loadingMessage}</span>
+                </div>
+                {/* Show live thinking content if in thinking phase */}
+                {currentPhase === 'thinking' && thinkingContent && (
+                  <div className={`mt-2 text-xs max-w-md p-2 rounded-lg ${isDark ? 'bg-yellow-500/10 text-white/50' : 'bg-yellow-500/10 text-gray-500'
+                    }`}>
+                    {thinkingContent.slice(-200)}...
                   </div>
                 )}
               </div>
             </div>
-          ))
-        )}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="rounded-lg p-4">
-              <div className="flex items-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-dark-accent"></div>
-                <span className={`text-sm ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`}>{loadingMessage}</span>
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+          )}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
       {/* Input Area */}
-      <div className="p-4">
+      <div className="pt-0 px-[16px] pb-0">
         <div className="max-w-4xl mx-auto">
-        {/* Selected Files Mentions */}
-        {selectedFiles.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {selectedFiles.map((file) => (
-              <div
-                key={file.id}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${
-                  isDark
+          {/* Selected Files Mentions */}
+          {selectedFiles.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {selectedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${isDark
                     ? 'bg-dark-accent/20 border border-dark-accent/50'
                     : 'bg-[#1FE0A5]/10 border border-[#1FE0A5]'
-                }`}
-              >
-                <span className={isDark ? 'text-dark-accent' : 'text-[#0B3C49]'}>@{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeSelectedFile(file.id)}
-                  className="ml-1 hover:bg-dark-accent/20 rounded-full p-0.5 transition-colors"
+                    }`}
                 >
-                  <svg className="w-3 h-3 dark:text-dark-accent text-dark-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        
-        <form onSubmit={handleSend}>
-          {/* Input Bar with rounded corners (not full pill) */}
-          <div className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-[32px] border ${
-            isDark
-              ? 'bg-white/5 border-white/5'
-              : 'bg-white/50 border-[#1FE0A5]/30'
-          }`}>
+                  <span className={isDark ? 'text-dark-accent' : 'text-[#0B3C49]'}>@{file.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeSelectedFile(file.id)}
+                    className="ml-1 hover:bg-dark-accent/20 rounded-full p-0.5 transition-colors"
+                  >
+                    <svg className="w-3 h-3 dark:text-dark-accent text-dark-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={handleSend}>
             {/* Hidden file inputs */}
             <input
               ref={fileInputRef}
@@ -445,112 +633,98 @@ export default function ChatPanel({
               disabled={uploading}
             />
 
-            {/* Upload Button (left) - Stays at bottom */}
-            <div className="relative flex-shrink-0" ref={uploadMenuRef}>
+            {/* Input Bar - Dynamic layout */}
+            <div className={`transition-all duration-200 ease-in-out border rounded-3xl flex items-center py-2 ${isDark
+              ? 'bg-white/5 border-white/10'
+              : 'bg-white/50 border-[#1FE0A5]/30'
+              }`}>
+
+              {/* + button on left */}
+              <div className="relative pl-2 flex-shrink-0" ref={uploadMenuRef}>
+                <button
+                  type="button"
+                  onClick={handleUploadClick}
+                  disabled={uploading}
+                  className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Upload files"
+                >
+                  {uploading ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-dark-accent"></div>
+                  ) : (
+                    <svg className={`w-5 h-5 ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  )}
+                </button>
+                {/* Upload Menu Dropdown */}
+                {showUploadMenu && !uploading && (
+                  <div className={`absolute bottom-full left-0 mb-2 w-48 rounded-lg backdrop-blur-xl border shadow-lg py-2 z-50 ${isDark ? 'bg-black/20 border-white/10' : 'bg-white/90 border-[#1FE0A5]/20'
+                    }`}>
+                    <button type="button" onClick={handleUploadFileClick} className={`w-full px-4 py-2 text-left text-sm transition-colors flex items-center gap-2 ${isDark ? 'text-dark-text hover:bg-white/10' : 'text-[#062A33] hover:bg-black/10'}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      Upload File
+                    </button>
+                    <button type="button" onClick={handleUploadFolderClick} className={`w-full px-4 py-2 text-left text-sm transition-colors flex items-center gap-2 ${isDark ? 'text-dark-text hover:bg-white/10' : 'text-[#062A33] hover:bg-black/10'}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                      Upload Folder
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Textarea */}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask about your documents..."
+                className={`flex-1 min-w-0 bg-transparent focus:outline-none resize-none overflow-y-auto text-[16px] leading-6 px-3 ${isDark
+                    ? 'text-dark-text placeholder:text-dark-text/50'
+                    : 'text-[#062A33] placeholder:text-[#062A33]/50'
+                  }`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend(e)
+                  }
+                }}
+                style={{
+                  height: '24px',
+                  maxHeight: '144px',
+                }}
+              />
+
+              {/* Send button on right */}
               <button
-                type="button"
-                onClick={handleUploadClick}
-                disabled={uploading}
-                className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Upload files"
+                type={loading ? "button" : "submit"}
+                onClick={loading ? handleStop : undefined}
+                disabled={!loading && (!input.trim() && selectedFiles.length === 0)}
+                className={`flex-shrink-0 w-8 h-8 mr-2 rounded-full text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${loading ? 'bg-red-500 hover:bg-red-600' : 'bg-dark-accent hover:bg-dark-accent/90'
+                  }`}
+                title={loading ? "Stop generation" : "Send message"}
               >
-                {uploading ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-dark-accent"></div>
+                {loading ? (
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
                 ) : (
-                  <svg className={`w-5 h-5 ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
                 )}
               </button>
-
-              {/* Upload Menu Dropdown */}
-              {showUploadMenu && !uploading && (
-                <div className={`absolute bottom-full left-0 mb-2 w-48 rounded-lg backdrop-blur-xl border shadow-lg py-2 z-50 ${
-                  isDark 
-                    ? 'bg-black/20 border-white/10' 
-                    : 'bg-white/90 border-[#1FE0A5]/20'
-                }`}>
-                  <button
-                    type="button"
-                    onClick={handleUploadFileClick}
-                    className={`w-full px-4 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
-                      isDark 
-                        ? 'text-dark-text hover:bg-white/10' 
-                        : 'text-[#062A33] hover:bg-black/10'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Upload File
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleUploadFolderClick}
-                    className={`w-full px-4 py-2 text-left text-sm transition-colors flex items-center gap-2 ${
-                      isDark 
-                        ? 'text-dark-text hover:bg-white/10' 
-                        : 'text-[#062A33] hover:bg-black/10'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                    Upload Folder
-                  </button>
-                </div>
-              )}
             </div>
+          </form>
 
-            {/* Message Input - Multi-line */}
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about your documents..."
-              className={`flex-1 bg-transparent focus:outline-none resize-none overflow-y-auto leading-6 ${
-                isDark 
-                  ? 'text-dark-text placeholder:text-dark-text/50' 
-                  : 'text-[#062A33] placeholder:text-[#062A33]/50'
-              }`}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSend(e)
-                }
-              }}
-              style={{
-                height: '24px',
-                maxHeight: '128px',
-              }}
-            />
-
-            {/* Send/Stop Button - Transforms while loading */}
-            <button
-              type={loading ? "button" : "submit"}
-              onClick={loading ? handleStop : undefined}
-              disabled={!loading && (!input.trim() && selectedFiles.length === 0)}
-              className={`flex-shrink-0 w-8 h-8 rounded-full text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${
-                loading
-                  ? 'bg-red-500 hover:bg-red-600'
-                  : 'bg-dark-accent hover:bg-dark-accent/90'
-              }`}
-              title={loading ? "Stop generation" : "Send message"}
-            >
-              {loading ? (
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <rect x="6" y="6" width="12" height="12" rx="1" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                </svg>
-              )}
-            </button>
-          </div>
-        </form>
+          {/* Disclaimer */}
+          <p className={`text-center text-[10px] py-[3px] ${isDark ? 'text-white/30' : 'text-[#062A33]/30'}`}>
+            AIveilix can make mistakes. Check important info.
+          </p>
         </div>
       </div>
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        error={upgradeError}
+      />
     </div>
   )
 }

@@ -6,6 +6,7 @@ from app.services.supabase import get_supabase_auth, get_supabase
 from app.services.file_processor import extract_text_from_file, chunk_text, generate_embedding, generate_embeddings_batch, generate_summary, analyze_file_comprehensive, fetch_full_file_content
 from app.services.semantic_search import semantic_search, hybrid_search
 from app.services.notifications import create_file_uploaded_notification, create_file_processed_notification
+from app.services.plan_limits import check_all_upload_limits
 from postgrest.exceptions import APIError as PostgrestAPIError
 import asyncio
 from app.routers.buckets import get_current_user_id
@@ -17,10 +18,105 @@ import tempfile
 import logging
 import traceback
 from pathlib import Path
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import sentry_sdk
 
 router = APIRouter()
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=4, max=30),
+    retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+    before_sleep=lambda retry_state: logger.warning(
+        f"⚠️ Retry attempt {retry_state.attempt_number} for file processing after error: {retry_state.outcome.exception()}"
+    )
+)
+def _process_file_with_retry(
+    file_id: str,
+    storage_path: str,
+    filename: str,
+    mime_type: str,
+    user_id: str,
+    bucket_id: str,
+    supabase
+) -> Dict:
+    """
+    Inner function that does the actual processing with retry support.
+    Retries on transient errors (connection, timeout, OS errors).
+    """
+    # Download file from storage
+    logger.info(f"  1️⃣  Downloading file from storage...")
+    file_data = supabase.storage.from_("files").download(storage_path)
+
+    if not file_data:
+        raise ConnectionError("Failed to download file from storage")
+
+    # Save to temp file for processing
+    file_ext = os.path.splitext(storage_path)[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+        temp_file.write(file_data)
+        temp_file_path = temp_file.name
+
+    logger.info(f"  ✅ Downloaded ({len(file_data)} bytes)")
+
+    try:
+        # Extract text
+        logger.info(f"  2️⃣  Extracting text from {filename}...")
+        text_data = extract_text_from_file(temp_file_path, mime_type)
+        text = text_data["text"]
+        metadata = text_data["metadata"]
+
+        logger.info(f"  ✅ Text extracted: {len(text)} chars, {metadata.get('word_count', 0)} words")
+
+        # Only process if we got text content
+        if not text or len(text.strip()) == 0:
+            raise ValueError("No text content extracted from file")
+
+        # Create chunks
+        logger.info(f"  3️⃣  Creating text chunks...")
+        chunks = chunk_text(text)
+        logger.info(f"  ✅ Created {len(chunks)} chunks")
+
+        # Generate embeddings in BATCH (much faster than one-by-one)
+        logger.info(f"  4️⃣  Generating embeddings for {len(chunks)} chunks...")
+        chunk_texts = [chunk["content"] for chunk in chunks]
+        embeddings = generate_embeddings_batch(chunk_texts)
+
+        # Store chunks with embeddings
+        logger.info(f"  5️⃣  Storing chunks in database...")
+        chunk_records = []
+        for i, chunk in enumerate(chunks):
+            chunk_record = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "bucket_id": bucket_id,
+                "file_id": file_id,
+                "content": chunk["content"],
+                "content_hash": hashlib.md5(chunk["content"].encode()).hexdigest(),
+                "chunk_index": chunk["chunk_index"],
+                "start_offset": chunk["start_offset"],
+                "end_offset": chunk["end_offset"],
+                "token_count": chunk["token_count"]
+            }
+            # Only add embedding if it was generated
+            if embeddings[i]:
+                chunk_record["embedding"] = embeddings[i]
+            chunk_records.append(chunk_record)
+
+        # Batch insert chunks
+        if chunk_records:
+            supabase.table("chunks").insert(chunk_records).execute()
+            logger.info(f"  ✅ Stored {len(chunk_records)} chunks")
+
+        return {"metadata": metadata, "chunks_count": len(chunk_records)}
+
+    finally:
+        # Clean up temp file
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
 
 
 def process_file_background(
@@ -35,6 +131,7 @@ def process_file_background(
     Background task to process a file after upload.
     Fetches file from Supabase Storage, extracts text, creates chunks with embeddings.
     This runs in background so upload returns instantly.
+    Includes retry logic for transient failures.
     """
     logger.info("=" * 80)
     logger.info(f"🔄 BACKGROUND PROCESSING STARTED: {filename}")
@@ -51,90 +148,33 @@ def process_file_background(
             "status": "processing"
         }).eq("id", file_id).execute()
 
-        # Download file from storage
-        logger.info(f"  1️⃣  Downloading file from storage...")
-        file_data = supabase.storage.from_("files").download(storage_path)
+        # Process with retry logic
+        result = _process_file_with_retry(
+            file_id=file_id,
+            storage_path=storage_path,
+            filename=filename,
+            mime_type=mime_type,
+            user_id=user_id,
+            bucket_id=bucket_id,
+            supabase=supabase
+        )
 
-        if not file_data:
-            raise Exception("Failed to download file from storage")
+        metadata = result["metadata"]
 
-        # Save to temp file for processing
-        file_ext = os.path.splitext(storage_path)[1]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
-            temp_file.write(file_data)
-            temp_file_path = temp_file.name
+        # Update file status to ready
+        logger.info(f"  6️⃣  Updating file status to 'ready'...")
+        supabase.table("files").update({
+            "status": "ready",
+            "processed_at": "now()",
+            "page_count": metadata.get("page_count"),
+            "word_count": metadata.get("word_count")
+        }).eq("id", file_id).execute()
 
-        logger.info(f"  ✅ Downloaded ({len(file_data)} bytes)")
+        logger.info(f"✅ BACKGROUND PROCESSING COMPLETE: {filename}")
+        logger.info("=" * 80)
 
-        try:
-            # Extract text
-            logger.info(f"  2️⃣  Extracting text from {filename}...")
-            text_data = extract_text_from_file(temp_file_path, mime_type)
-            text = text_data["text"]
-            metadata = text_data["metadata"]
-
-            logger.info(f"  ✅ Text extracted: {len(text)} chars, {metadata.get('word_count', 0)} words")
-
-            # Only process if we got text content
-            if not text or len(text.strip()) == 0:
-                logger.error(f"  ❌ No text content extracted from {filename}")
-                raise Exception("No text content extracted from file")
-
-            # Create chunks
-            logger.info(f"  3️⃣  Creating text chunks...")
-            chunks = chunk_text(text)
-            logger.info(f"  ✅ Created {len(chunks)} chunks")
-
-            # Generate embeddings in BATCH (much faster than one-by-one)
-            logger.info(f"  4️⃣  Generating embeddings for {len(chunks)} chunks...")
-            chunk_texts = [chunk["content"] for chunk in chunks]
-            embeddings = generate_embeddings_batch(chunk_texts)
-
-            # Store chunks with embeddings
-            logger.info(f"  5️⃣  Storing chunks in database...")
-            chunk_records = []
-            for i, chunk in enumerate(chunks):
-                chunk_record = {
-                    "id": str(uuid.uuid4()),
-                    "user_id": user_id,
-                    "bucket_id": bucket_id,
-                    "file_id": file_id,
-                    "content": chunk["content"],
-                    "content_hash": hashlib.md5(chunk["content"].encode()).hexdigest(),
-                    "chunk_index": chunk["chunk_index"],
-                    "start_offset": chunk["start_offset"],
-                    "end_offset": chunk["end_offset"],
-                    "token_count": chunk["token_count"]
-                }
-                # Only add embedding if it was generated
-                if embeddings[i]:
-                    chunk_record["embedding"] = embeddings[i]
-                chunk_records.append(chunk_record)
-
-            # Batch insert chunks
-            if chunk_records:
-                supabase.table("chunks").insert(chunk_records).execute()
-                logger.info(f"  ✅ Stored {len(chunk_records)} chunks")
-
-            # Update file status to ready
-            logger.info(f"  6️⃣  Updating file status to 'ready'...")
-            supabase.table("files").update({
-                "status": "ready",
-                "processed_at": "now()",
-                "page_count": metadata.get("page_count"),
-                "word_count": metadata.get("word_count")
-            }).eq("id", file_id).execute()
-
-            logger.info(f"✅ BACKGROUND PROCESSING COMPLETE: {filename}")
-            logger.info("=" * 80)
-
-            # Create file processed notification
-            create_file_processed_notification(user_id, filename, bucket_id, file_id)
-
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_file_path):
-                os.unlink(temp_file_path)
+        # Create file processed notification
+        create_file_processed_notification(user_id, filename, bucket_id, file_id)
 
     except Exception as e:
         error_message = str(e)
@@ -143,6 +183,17 @@ def process_file_background(
         logger.error(f"   Error: {error_message}")
         logger.error(f"   Traceback:", exc_info=True)
         logger.error("=" * 80)
+
+        # Capture to Sentry with file context
+        sentry_sdk.set_context("file_processing", {
+            "file_id": file_id,
+            "filename": filename,
+            "storage_path": storage_path,
+            "mime_type": mime_type,
+            "user_id": user_id,
+            "bucket_id": bucket_id,
+        })
+        sentry_sdk.capture_exception(e)
 
         # Update file status to failed with error tracking
         try:
@@ -182,6 +233,9 @@ async def upload_file(
         # Read file content
         content = await file.read()
         file_ext = Path(file.filename).suffix
+
+        # Check plan limits before upload (storage, document count, file size)
+        await check_all_upload_limits(user_id, len(content))
 
         # Store file in Supabase Storage (this is fast)
         storage_path = f"{user_id}/{bucket_id}/{uuid.uuid4()}{file_ext}"

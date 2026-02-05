@@ -1,0 +1,150 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "File Upload",
+  description: "A comprehensive file upload component built on top of shadcn-ui with no additional libraries required. Features drag-and-drop functionality, file preview, progress indicators, and multiple file support for modern web applications.",
+  keywords: [
+    "File upload component",
+    "Shadcn-ui file upload",
+    "React file upload",
+    "Drag and drop upload",
+    "File uploader component",
+    "Multiple file upload",
+    "File preview component",
+    "Upload progress indicator",
+    "File drop zone",
+    "Image upload component",
+    "Document upload component",
+    "File input component",
+    "Upload widget",
+    "File picker component",
+    "Drag drop file upload",
+    "No library file upload",
+    "Built-in file upload",
+    "Modern file upload",
+    "Responsive file upload",
+    "Custom file upload",
+    "File upload interface",
+    "Upload area component",
+    "File selection component",
+    "Shadcn components",
+    "File upload UI",
+    "Form file upload",
+    "Accessible file upload",
+    "Lightweight file upload",
+    "File upload field",
+    "Tailwind file upload"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "File Upload Component | UI Layouts",
+    description: "A comprehensive file upload component built on top of shadcn-ui with drag-and-drop functionality, file preview, and progress indicators.",
+    url: "https://ui-layouts.com/components/file-upload",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "File Upload Component | UI Layouts",
+    description: "Comprehensive file upload component built on shadcn-ui with drag-and-drop functionality and file preview features.",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+> Thanks to [Yerfa](https://shadcn-extension.vercel.app/docs/file-upload)
+
+<ComponentCodePreview name='file-upload' isFitheight hasReTrigger />
+
+## Img Preview
+
+<ComponentCodePreview name='imgpreview-dropzone' isFitheight hasReTrigger />
+
+## Chat
+
+<ComponentCodePreview name='chat-form-dropzone' isFitheight hasReTrigger />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add file-upload
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/file-upload.json'
+      ```
+
+   </CodeWithTabs>
+  </TabsContent>
+  
+  <TabsContent value="manual" manualType>
+
+```bash
+npm install sonner react-dropzone
+```
+
+<CodeSnippets name="file-upload" />
+
+</TabsContent>
+</Tabs>
+
+## FileUploader Props
+
+| Prop              | Type                              | Default      | Description                                                                                     |
+| ----------------- | --------------------------------- | ------------ | ----------------------------------------------------------------------------------------------- |
+| `value`           | `File[] \| null`                  | `null`       | The array of uploaded files.                                                                    |
+| `reSelect`        | `boolean`                         | `undefined`  | If `true`, allows reselecting files when `maxFiles` is 1.                                       |
+| `onValueChange`   | `(value: File[] \| null) => void` | `-`          | Callback triggered when the file selection changes.                                             |
+| `dropzoneOptions` | `DropzoneOptions`                 | `{}`         | Configuration options for the dropzone, such as `maxFiles`, `maxSize`, and `accept` file types. |
+| `orientation`     | `'horizontal' \| 'vertical'`      | `'vertical'` | Sets the layout direction of the file uploader.                                                 |
+| `children`        | `React.ReactNode`                 | `undefined`  | Components or elements to be rendered within the file uploader.                                 |
+| `className`       | `string`                          | `undefined`  | Additional CSS classes for custom styling.                                                      |
+| `dir`             | `'rtl' \| 'ltr' \| undefined`     | `undefined`  | Sets text directionality, affecting navigation and layout in `horizontal` mode.                 |
+| `ref`             | `React.Ref<HTMLDivElement>`       | `undefined`  | Reference to the uploader’s root div element.                                                   |
+
+## FileUploaderContext
+
+The `FileUploaderContext` is a context containing the following properties:
+
+| Property            | Type                               | Description                                                                                   |
+| ------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| `dropzoneState`     | `DropzoneState`                    | The state object provided by `react-dropzone`, used for handling file drag-and-drop behavior. |
+| `isLOF`             | `boolean`                          | Indicates if the maximum number of files has been reached.                                    |
+| `isFileTooBig`      | `boolean`                          | Indicates if the rejected file exceeds the maximum allowed size.                              |
+| `removeFileFromSet` | `(index: number) => void`          | Function to remove a file at a specific index from the current selection.                     |
+| `activeIndex`       | `number`                           | The index of the currently selected file in the list, used for navigation.                    |
+| `setActiveIndex`    | `Dispatch<SetStateAction<number>>` | Function to set the active index.                                                             |
+| `orientation`       | `'horizontal' \| 'vertical'`       | Defines whether files are displayed horizontally or vertically.                               |
+| `direction`         | `'rtl' \| 'ltr' \| undefined`      | Specifies the text direction; affects keyboard navigation in horizontal mode.                 |

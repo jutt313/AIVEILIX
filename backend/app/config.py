@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_secret_key: str = "change-me-in-production"
 
+    # Error Tracking
+    sentry_dsn: str = ""  # Get from sentry.io
+
     # Server
     backend_port: int = Field(default=7223, env="PORT")  # Render sets PORT automatically
     backend_url: str = "http://localhost:7223"  # Public base URL for MCP/OAuth full URLs
@@ -56,6 +59,50 @@ class Settings(BaseSettings):
     mcp_http_port: int = 7223
     mcp_server_name: str = "aiveilix-mcp"
     mcp_server_version: str = "1.0.0"
+
+    # Stripe Configuration
+    stripe_publishable_key: str = ""
+    stripe_secret_key: str = ""
+    stripe_price_starter: str = ""
+    stripe_price_pro: str = ""
+    stripe_price_premium: str = ""
+    stripe_webhook_secret: str = ""
+
+    # SMTP Email Configuration
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "noreply@aiveilix.com"
+    smtp_from_name: str = "AIveilix"
+
+    # Plan Limits
+    plan_limits: dict = {
+        "free_trial": {
+            "storage_gb": 1,
+            "max_documents": 50,
+            "max_file_size_mb": 10,
+            "api_calls_per_day": 50
+        },
+        "starter": {
+            "storage_gb": 3,
+            "max_documents": 200,
+            "max_file_size_mb": 25,
+            "api_calls_per_day": 100
+        },
+        "pro": {
+            "storage_gb": 10,
+            "max_documents": -1,  # Unlimited
+            "max_file_size_mb": 50,
+            "api_calls_per_day": 1000
+        },
+        "premium": {
+            "storage_gb": 50,
+            "max_documents": -1,  # Unlimited
+            "max_file_size_mb": 100,
+            "api_calls_per_day": 5000
+        }
+    }
 
     class Config:
         env_file = "../../.env"

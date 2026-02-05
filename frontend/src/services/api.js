@@ -129,7 +129,8 @@ export const chatAPI = {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
-    let fullMessage = ''
+    let fullResponse = ''
+    let fullThinking = ''
     let sources = []
     let finalConversationId = conversationId
 
@@ -142,25 +143,58 @@ export const chatAPI = {
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6))
+          try {
+            const data = JSON.parse(line.slice(6))
 
-          if (data.type === 'content') {
-            fullMessage += data.content
-            if (onChunk) onChunk(data.content)
-          } else if (data.type === 'done') {
-            sources = data.sources || []
-            finalConversationId = data.conversation_id || conversationId
-          } else if (data.type === 'error') {
-            throw new Error(data.error)
+            // Handle new 3-phase streaming events
+            if (data.type === 'phase_change') {
+              // Signal phase transition: thinking -> response
+              if (onChunk) onChunk({ type: 'phase_change', phase: data.phase })
+            } else if (data.type === 'thinking') {
+              // AI's reasoning/thinking content
+              fullThinking += data.content
+              if (onChunk) onChunk({ type: 'thinking', content: data.content })
+            } else if (data.type === 'response') {
+              // AI's actual response content (new event type)
+              fullResponse += data.content
+              if (onChunk) onChunk({ type: 'response', content: data.content })
+            } else if (data.type === 'content') {
+              // Legacy content event (backward compatibility)
+              fullResponse += data.content
+              if (onChunk) onChunk({ type: 'response', content: data.content })
+            } else if (data.type === 'searching') {
+              // AI is searching the web with keywords
+              if (onChunk) onChunk({ type: 'searching', keywords: data.keywords })
+            } else if (data.type === 'done') {
+              // Final event with cleaned message, sources and metadata
+              sources = data.sources || []
+              finalConversationId = data.conversation_id || conversationId
+              // Use cleaned message from server (removes [[SOURCES:...]] line)
+              if (data.message) {
+                fullResponse = data.message
+              }
+              // Include thinking from done event if not already captured
+              if (data.thinking && !fullThinking) {
+                fullThinking = data.thinking
+              }
+              if (onChunk) onChunk({ type: 'done', message: fullResponse, sources, thinking: fullThinking })
+            } else if (data.type === 'error') {
+              throw new Error(data.error)
+            }
+          } catch (parseError) {
+            // Skip malformed JSON lines
+            console.warn('Failed to parse SSE line:', line, parseError)
           }
         }
       }
     }
 
+    // Return response with thinking content
     return {
       data: {
-        message: fullMessage,
+        message: fullResponse.trim(),
         sources,
+        thinking: fullThinking,
         conversation_id: finalConversationId
       }
     }
@@ -170,13 +204,24 @@ export const chatAPI = {
 }
 
 export const notificationsAPI = {
-  list: (limit = 50, offset = 0, unreadOnly = false) => 
+  list: (limit = 50, offset = 0, unreadOnly = false) =>
     api.get('/api/notifications', { params: { limit, offset, unread_only: unreadOnly } }),
   getUnreadCount: () => api.get('/api/notifications/unread-count'),
   markAsRead: (notificationId) => api.patch(`/api/notifications/${notificationId}/read`),
   markAllAsRead: () => api.patch('/api/notifications/mark-all-read'),
   delete: (notificationId) => api.delete(`/api/notifications/${notificationId}`),
   deleteAllRead: () => api.delete('/api/notifications/delete-all-read'),
+}
+
+export const stripeAPI = {
+  getPrices: () => api.get('/api/stripe/prices'),
+  createCheckout: (plan, successUrl = null, cancelUrl = null) =>
+    api.post('/api/stripe/checkout', { plan, success_url: successUrl, cancel_url: cancelUrl }),
+  getSubscription: () => api.get('/api/stripe/subscription'),
+  getPortal: () => api.get('/api/stripe/portal'),
+  getUsage: () => api.get('/api/stripe/usage'),
+  cancelSubscription: () => api.post('/api/stripe/cancel'),
+  reactivateSubscription: () => api.post('/api/stripe/reactivate'),
 }
 
 export default api

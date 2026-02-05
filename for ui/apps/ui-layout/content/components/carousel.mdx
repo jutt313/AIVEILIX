@@ -1,0 +1,216 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Interactive Carousel",
+  description: "An interactive carousel component built with Embla Carousel that visually highlights selected items with smooth sliding background transitions. Features hover and click interactions, perfect for creating engaging lists, menus, and navigation elements with clear selection feedback.",
+  keywords: [
+    "Interactive carousel component",
+    "Embla carousel",
+    "Sliding background carousel",
+    "Hover effect carousel",
+    "React carousel",
+    "Swiper carousel",
+    "React slick",
+    "Slick carousel",
+    "Glide.js carousel",
+    "Flickity carousel",
+    "Keen slider",
+    "Splide carousel",
+    "React spring carousel",
+    "React responsive carousel",
+    "React multi carousel",
+    "React alice carousel",
+    "Nuka carousel",
+    "Pure react carousel",
+    "Framer motion carousel",
+    "React carousel component",
+    "Animated carousel",
+    "Selection carousel",
+    "Interactive navigation",
+    "Sliding transition effect",
+    "Menu carousel",
+    "List carousel",
+    "Responsive carousel",
+    "Modern carousel design",
+    "UI carousel component",
+    "Smooth carousel transitions",
+    "Click interaction carousel",
+    "Navigation carousel",
+    "Highlight carousel",
+    "Background slide effect",
+    "Interactive menu component",
+    "Tailwind CSS carousel"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Interactive Carousel | UI Layouts",
+    description: "An interactive carousel component built with Embla Carousel featuring smooth sliding background transitions and hover effects. Perfect for engaging navigation elements.",
+    url: "https://ui-layouts.com/components/carousel",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Interactive Carousel | UI Layouts",
+    description: "Interactive carousel built with Embla Carousel with smooth sliding background transitions and hover effects for engaging navigation.",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+<ComponentCodePreview name='default-slider' isFitHeight jsonName="default-slider" />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+  <TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+    <TabsTrigger value="cli">CLI</TabsTrigger>
+    <TabsTrigger value="manual">Manual</TabsTrigger>
+  </TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add carousel
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/carousel.json'
+      ```
+   </CodeWithTabs>
+  </TabsContent>
+
+
+<TabsContent value="manual" manualType>
+
+```bash
+npm install embla-carousel lucide-react embla-carousel-class-names embla-carousel-react embla-carousel-autoplay motion
+```
+
+<CodeSnippets name="carousel" />
+
+</TabsContent>
+</Tabs>
+
+## Usage
+
+```tsx
+// !mark(16:20) gold
+// !mark(22:24) blue
+// !mark(26:28) green
+// !mark(30) gold
+// !mark(32) gold
+
+import type { EmblaOptionsType } from 'embla-carousel';
+import {
+  Carousel,
+  Slider,
+  SliderContainer,
+  SliderDotButton,
+  SliderNextButton,
+  SliderPrevButton,
+} from './carousel';
+
+function index() {
+  const OPTIONS: EmblaOptionsType = { loop: false };
+  return (
+    <>
+      <Carousel options={OPTIONS}>
+        <SliderContainer>
+          <Slider></Slider>
+          <Slider></Slider>
+          <Slider></Slider>
+        </SliderContainer>
+
+        <SliderPrevButton>
+          <ChevronLeft />
+        </SliderPrevButton>
+
+        <SliderNextButton>
+          <ChevronRight />
+        </SliderNextButton>
+
+        <SliderDotButton />
+
+        <SliderSnapDisplay />
+      </Carousel>
+    </>
+  );
+}
+```
+
+
+## Props
+
+| Prop         | Type        | Default   | Description                                                               |
+| ------------ | ----------- | --------- | ------------------------------------------------------------------------- |
+| defaultValue | string      | string[]  | undefined                                                                 |
+| multiple     | boolean     | false     | Whether the accordion allows multiple items to be active at the same time |
+| children     | ReactNode[] | undefined | The accordion items, including their headers and panels                   |
+| className    | string      | ''        | Optional CSS class for styling the accordion wrapper                      |
+
+## Example
+
+### Align Slider
+
+<ComponentCodePreview name='align-slider' hasReTrigger isFitHeight jsonName="align-slider" />
+
+### Classname Slider
+
+<ComponentCodePreview name='classname-slider' hasReTrigger isFitHeight jsonName="classname-slider" />
+
+### Number Slider
+
+<ComponentCodePreview name='number-slider' hasReTrigger isFitHeight jsonName="number-slider" />
+
+### Scale Slider
+
+<ComponentCodePreview name='scale-slider' hasReTrigger isFitHeight jsonName="scale-slider" />
+
+### Thumbnail Slider
+
+<ComponentCodePreview name='thumbnail-slider' hasReTrigger isFitHeight jsonName="thumbnail-slider" />
+
+### Autostart Slider
+
+<ComponentCodePreview name='autostart-slider' hasReTrigger isFitHeight jsonName="autostart-slider" />
+
+### Autoscroll Slider
+
+<ComponentCodePreview name='autoscroll-slider' hasReTrigger isFitHeight jsonName="autoscroll-slider" />
+
+### Vertical Slider
+
+<ComponentCodePreview name='vertical-slider' hasReTrigger isFitHeight jsonName="vertical-slider" />
+
+### Vertical Thumbnail Slider
+
+<ComponentCodePreview name='vertical-thumbnail-slider' hasReTrigger isFitHeight jsonName="vertical-thumbnail-slider" />
+
+### Vertical Autostart Thumbnail Slider
+
+<ComponentCodePreview name='vertical-thumbnail-autostart-slider' hasReTrigger isFitHeight jsonName="vertical-thumbnail-autostart-slider" />

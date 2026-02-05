@@ -1,0 +1,438 @@
+export const metadata = {
+  metadataBase: new URL("https://ui-layouts.com"),
+
+  title: "Spotlight Cards",
+  description: "Interactive spotlight cards component with dynamic mouse-following effects, featuring proximity spotlight, hover focus, and cursor flow gradients. Creates engaging card layouts with radial gradient lighting effects that respond to user interactions.",
+  keywords: [
+    "Spotlight cards component",
+    "Interactive spotlight effect",
+    "Mouse following cards",
+    "Proximity spotlight component",
+    "Cursor flow gradient",
+    "Hover focus spotlight",
+    "Radial gradient cards",
+    "Dynamic lighting cards",
+    "Interactive card effects",
+    "Mouse tracking component",
+    "Spotlight hover effects",
+    "Gradient card component",
+    "Interactive UI cards",
+    "Dynamic card lighting",
+    "Mouse proximity effects",
+    "Cursor following gradient",
+    "Spotlight animation cards",
+    "Interactive card layouts",
+    "Modern card designs",
+    "Responsive spotlight cards",
+    "Card hover animations",
+    "Flashlight effect cards",
+    "Interactive card grid",
+    "Mouse interactive cards",
+    "Gradient spotlight effect",
+    "Dynamic card interactions",
+    "Modern spotlight design",
+    "UI spotlight component",
+    "React spotlight cards",
+    "Tailwind spotlight cards"
+  ],
+  authors: [{ name: "Naymur Rahman", url: "https://twitter.com/naymur_dev" }],
+  creator: "@naymur_dev",
+  publisher: "UI Layouts",
+  openGraph: {
+    title: "Spotlight Cards Component | UI Layouts",
+    description: "Interactive spotlight cards with dynamic mouse-following effects, featuring proximity spotlight, hover focus, and cursor flow gradients for engaging card layouts.",
+    url: "https://ui-layouts.com/components/spotlight-cards",
+    images: [
+      {
+        url: 'https://ui-layouts.com/component-og.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'UI Layouts Components',
+      },
+    ],
+    siteName: "UI Layouts",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Spotlight Cards Component | UI Layouts",
+    images: ['https://ui-layouts.com/component-og.jpg'],
+    description: "Interactive spotlight cards with dynamic mouse-following effects and radial gradient lighting for engaging card layouts.",
+    creator: "@naymur_dev",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  category: "technology",
+};
+
+<ComponentCodePreview name='spotlight-card1' hasReTrigger jsonName='spotlight-card1' />
+
+## Installation
+
+<Tabs defaultValue="cli">
+
+<TabsList className='border-b w-full bg-white justify-start dark:bg-neutral-800 h-11'>
+  <TabsTrigger value='cli'>CLI</TabsTrigger>
+  <TabsTrigger value='manual'>Manual</TabsTrigger>
+</TabsList>
+
+  <TabsContent value="cli">
+   <CodeWithTabs>
+      ```bash
+      npx uilayouts@latest add spotlight-cards
+      ```
+
+      ```bash
+      npx shadcn@latest add 'https://www.ui-layouts.com/r/spotlight-cards.json'
+      ```
+
+   </CodeWithTabs>
+  </TabsContent>
+  
+<TabsContent value="manual" manualType>
+
+<CodeSnippets name="spotlight" />
+
+</TabsContent>
+</Tabs>
+
+Control the border by chaning padding `p-[2px]` from `spotlight.tsx` file:
+
+```jsx spotlight.tsx
+<div
+  onMouseMove={handleMouemove}
+  onMouseEnter={() => CursorFlowGradient && setIsHovered(true)}
+  onMouseLeave={() => setIsHovered(false)}
+  ref={boxWrapper}
+  className={cn(
+    className,
+    // !mark[/2px/] pink
+    ' relative rounded-lg justify-center items-center p-[2px] bg-[#ffffff15] overflow-hidden'
+  )}
+></div>
+```
+
+## Props
+
+| Prop                | Type      | Default | Description                                                |
+| ------------------- | --------- | ------- | ---------------------------------------------------------- |
+| children            | ReactNode |         | The content to be rendered inside the Spotlight component. |
+| className           | string    |         | Optional CSS class for styling the Spotlight component.    |
+| ProximitySpotlight  | boolean   | `true`  | Whether to enable proximity-based spotlight effect.        |
+| HoverFocusSpotlight | boolean   | `false` | Whether to enable spotlight effect on hover or focus.      |
+| CursorFlowGradient  | boolean   | `true`  | Whether to enable gradient flow based on cursor movement.  |
+
+## Examples
+
+### Spotlight
+
+<ComponentCodePreview
+  name='spotlight-card2'
+  isFitheight
+  jsonName='spotlight-card2'
+/>
+
+### FocuseHover
+
+<ComponentCodePreview
+  name='spotlight-card3'
+  isFitheight
+  jsonName='spotlight-card3'
+/>
+
+### FocuseHover
+
+<ComponentCodePreview
+  name='spotlight-card4'
+  isFitheight
+  jsonName='spotlight-card4'
+/>
+
+
+## Without Components 
+
+### Spotlight
+
+<ComponentCodePreview name='spotlight-card2' hasReTrigger isTab>
+
+```tsx
+// https://buildui.com/recipes/spotlight
+import { cn } from '@/lib/utils';
+import Image from 'next/image';
+import React, { MouseEvent, useRef, useState } from 'react';
+
+export default function index() {
+  // !mark(1:10) gold
+  const boxWrapper = useRef(null);
+  const [overlayColor, setOverlayColor] = useState({ x: 0, y: 0 });
+  const handleMouseMove = ({ currentTarget, clientX, clientY }:MouseEvent) => {
+    let { left, top } = currentTarget.getBoundingClientRect();
+
+    const x = clientX - left;
+    const y = clientY - top;
+
+    setOverlayColor({ x, y });
+  };
+
+  return (
+    <>
+      <div
+        // !mark(1:2)
+        onMouseMove={handleMouseMove}
+        ref={boxWrapper}
+        className={`group relative rounded-lg border-2 bg-black   overflow-hidden w-fit mx-auto`}
+      >
+        <div
+          className='pointer-events-none absolute opacity-0 z-50 rounded-lg w-full h-full group-hover:opacity-100  transition duration-300 '
+          // !mark(1:9) gold
+          style={{
+            background: `
+            radial-gradient(
+              250px circle at ${overlayColor.x}px ${overlayColor.y}px,
+              rgba(255, 255, 255, 0.137),
+              transparent 80%
+            )
+          `,
+          }}
+        />
+
+        <div className="relative text-center z-10 px-0 py-16 rounded-lg w-fit   bg-[url('/new-grid.png')] bg-cover  bg-black h-full mx-auto">
+          <>
+            <Image
+              src={'/chat.png'}
+              alt='grid'
+              width={600}
+              className='mx-auto w-[85%]'
+              height={600}
+            />
+            <h1 className='text-xl font-semibold tracking-tight text-white'>
+              Create Group Effortlessly
+            </h1>
+            <p className='text-base pt-2  text-gray-300 capitalize'>
+              Seamless chats, crystal-clear videos, and <br />
+              premium audio quality
+            </p>
+          </>
+        </div>
+      </div>
+    </>
+  );
+}
+```
+
+
+</ComponentCodePreview>
+
+### FocuseHover
+
+<ComponentCodePreview name='spotlight-card3' hasReTrigger isTab>
+
+```tsx
+// https://buildui.com/recipes/spotlight
+import { cn } from '@/lib/utils';
+import Image from 'next/image';
+
+import React, { MouseEvent, useRef, useState } from 'react';
+
+export default function index() {
+  const boxWrapper = useRef(null);
+  const [isHovered, setIsHovered] = useState(false);
+  // !mark[/mousePosition/] pink
+  // !mark[/setMousePosition/] pink
+  const [mousePosition, setMousePosition] = React.useState({
+    x: null,
+    y: null,
+  });
+  // !mark(1:9)
+  React.useEffect(() => {
+    const updateMousePosition = (ev: { clientX: any; clientY: any }) => {
+      setMousePosition({ x: ev.clientX, y: ev.clientY });
+    };
+    window.addEventListener('mousemove', updateMousePosition);
+    return () => {
+      window.removeEventListener('mousemove', updateMousePosition);
+    };
+  }, []);
+
+  // !mark(1:9)
+  const [overlayColor, setOverlayColor] = useState({ x: 0, y: 0 });
+  const handleMouseMove = ({ currentTarget, clientX, clientY }:MouseEvent) => {
+    let { left, top } = currentTarget.getBoundingClientRect();
+
+    const x = clientX - left;
+    const y = clientY - top;
+
+    setOverlayColor({ x, y });
+  };
+
+  return (
+    <div className='relative bg-black p-8 rounded-md'>
+      <div
+        onMouseMove={handleMouseMove}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        ref={boxWrapper}
+        className={cn(
+          'group relative rounded-lg  p-[2px] bg-[#eeeeee15] overflow-hidden w-fit mx-auto'
+        )}
+      >
+        {/* Cursor Flow Gradient  */}
+
+        {isHovered && (
+          <div
+            className='pointer-events-none absolute opacity-0 z-50 rounded-xl w-full h-full group-hover:opacity-100  transition duration-300 '
+            style={{
+              background: `
+            radial-gradient(
+              250px circle at ${overlayColor.x}px ${overlayColor.y}px,
+              rgba(255, 255, 255, 0.068),
+              transparent 80%
+            )
+          `,
+            }}
+          />
+        )}
+
+        {/* Hover Spotlight  */}
+        <div
+          className='absolute opacity-0 group-hover:opacity-100 z-10 inset-0 bg-fixed rounded-lg'
+          style={{
+            background: `radial-gradient(circle at ${mousePosition.x}px ${mousePosition.y}px, #ffffff76 0%,transparent 20%,transparent) fixed `,
+          }}
+        ></div>
+        <div className="relative text-center z-10 px-8 py-6 rounded-lg w-fit  bg-[url('/sub-grid.png')] bg-cover   bg-black h-full mx-auto">
+          <>
+            <Image
+              src={'/statistic.png'}
+              alt='grid'
+              width={600}
+              className='w-fit mx-auto '
+              height={600}
+            />
+            <h1 className='text-3xl pt-6 font-medium tracking-tight text-white'>
+              Subscriber Growth
+            </h1>
+            <p className='pt-2  text-gray-300 capitalize'>
+              Experience a significant boost in your subscriber <br /> count,
+              achieving 3x growth.
+            </p>
+          </>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+</ComponentCodePreview>
+
+### Proximity
+
+<ComponentCodePreview name='spotlight-card4' hasReTrigger isTab>
+
+```tsx
+// https://buildui.com/recipes/spotlight
+import { cn } from '@/lib/utils';
+import Image from 'next/image';
+import React, { MouseEvent, useRef, useState } from 'react';
+
+export default function index() {
+  const boxWrapper = useRef(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [mousePosition, setMousePosition] = React.useState({
+    x: null,
+    y: null,
+  });
+  // !mark(1:9)
+  React.useEffect(() => {
+    const updateMousePosition = ({ clientX, clientY }:MouseEvent) => {
+      setMousePosition({ x: ev.clientX, y: ev.clientY });
+    };
+    window.addEventListener('mousemove', updateMousePosition);
+    return () => {
+      window.removeEventListener('mousemove', updateMousePosition);
+    };
+  }, []);
+
+  // !mark(1:9)
+  const [overlayColor, setOverlayColor] = useState({ x: 0, y: 0 });
+  const handleMouseMove = ({ currentTarget, clientX, clientY }:MouseEvent) => {
+    let { left, top } = currentTarget.getBoundingClientRect();
+
+    const x = clientX - left;
+    const y = clientY - top;
+
+    setOverlayColor({ x, y });
+  };
+
+  return (
+    <div className='relative bg-black p-8 rounded-md'>
+      <div
+        onMouseMove={handleMouseMove}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        ref={boxWrapper}
+        className={cn(
+          // !mark[/2px/] pink
+          'group relative rounded-lg  p-[2px] bg-[#eeeeee15] overflow-hidden w-fit mx-auto'
+        )}
+      >
+        {isHovered && (
+          <div
+            className='pointer-events-none absolute opacity-0 z-50 rounded-xl w-full h-full group-hover:opacity-100  transition duration-300 '
+            style={{
+              background: `
+            radial-gradient(
+              250px circle at ${overlayColor.x}px ${overlayColor.y}px,
+              rgba(255, 255, 255, 0.137),
+              transparent 80%
+            )
+          `,
+            }}
+          />
+        )}
+
+        <div
+          className='absolute inset-0 z-0  bg-fixed rounded-lg'
+          style={{
+            background: `radial-gradient(circle at ${mousePosition.x}px ${mousePosition.y}px, #ffffff6e 0%,transparent 20%,transparent) fixed`,
+          }}
+        ></div>
+
+        <div className="relative text-center z-10 px-8 py-12 pt-6 rounded-lg w-fit  bg-[url('/timeline-grid.png')] bg-cover  bg-black h-full mx-auto">
+          <>
+            <Image
+              src={'/timeline.png'}
+              alt='grid'
+              width={600}
+              className='w-fit mx-auto '
+              height={600}
+            />
+            <h1 className='text-2xl pt-5 font-semibold tracking-tight text-white'>
+              Seamless Animation For All
+            </h1>
+            <p className='pt-2  text-gray-300 capitalize'>
+              Effortlessly connect with today's leading technologies
+              <br />
+              including React, TypeScript, Next.js, Tailwind CSS, Motion, and
+              Cypress.
+            </p>
+          </>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+</ComponentCodePreview>
