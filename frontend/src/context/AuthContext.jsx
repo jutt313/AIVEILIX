@@ -44,9 +44,26 @@ export function AuthProvider({ children }) {
         // Store tokens and user
         localStorage.setItem('access_token', data.session.access_token)
         localStorage.setItem('refresh_token', data.session.refresh_token)
-        localStorage.setItem('user', JSON.stringify(data.user))
-        
-        setUser(data.user)
+
+        // Fetch team info from /me endpoint
+        try {
+          const meRes = await authAPI.getMe()
+          const meData = meRes.data
+          const enrichedUser = {
+            ...data.user,
+            is_team_member: meData.is_team_member || false,
+            team_owner_id: meData.team_owner_id || null,
+            team_member_id: meData.team_member_id || null,
+            team_member_color: meData.team_member_color || null,
+            team_member_name: meData.team_member_name || null,
+          }
+          localStorage.setItem('user', JSON.stringify(enrichedUser))
+          setUser(enrichedUser)
+        } catch {
+          localStorage.setItem('user', JSON.stringify(data.user))
+          setUser(data.user)
+        }
+
         return { success: true }
       }
       return { success: false, message: data.message }
@@ -91,6 +108,8 @@ export function AuthProvider({ children }) {
     forgotPassword,
     logout,
     isAuthenticated: !!user,
+    isTeamMember: user?.is_team_member || false,
+    teamOwnerColor: user?.team_member_color || null,
   }
 
   return (

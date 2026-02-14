@@ -570,13 +570,24 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
-.section-header h2 {
+.section-header h2,
+.section-header .section-header-h2 {
   font-size: 42px;
   margin: 18px 0 12px;
+  font-weight: 800;
+  color: #FFFFFF;
 }
 
-.section-header h2 span {
+.section-header h2 span,
+.section-header .section-header-h2 span {
   color: #2DFFB7;
+}
+
+.cta-headline {
+  font-size: 44px;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin-bottom: 12px;
 }
 
 .section-header p {
@@ -724,6 +735,171 @@
   color: #FFFFFF;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* Marquee Divider */
+.marquee-divider {
+  padding: 40px 0;
+  background: #050B0D;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.marquee-divider .marquee-text {
+  font-size: 72px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.04);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Timeline - How It Works */
+.timeline-container {
+  position: relative;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.timeline-line {
+  position: absolute;
+  left: 28px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(45, 255, 183, 0.5) 0%, rgba(45, 255, 183, 0.05) 100%);
+}
+
+.timeline-step {
+  display: flex;
+  gap: 32px;
+  padding: 32px 0;
+  position: relative;
+}
+
+.timeline-dot {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(45, 255, 183, 0.12);
+  border: 2px solid rgba(45, 255, 183, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 800;
+  color: #2DFFB7;
+  z-index: 1;
+}
+
+.timeline-content h3 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 8px;
+}
+
+.timeline-content p {
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.6;
+  font-size: 16px;
+}
+
+/* Integration Marquee */
+.integration-marquee-track {
+  display: flex;
+  animation: marquee 30s linear infinite;
+  width: max-content;
+}
+
+.integration-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+.integration-marquee-wrapper {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+
+/* Final CTA Pulsing */
+.final-cta-animated {
+  position: relative;
+  overflow: hidden;
+}
+
+.final-cta-animated::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(45, 255, 183, 0.15), transparent 60%);
+  animation: cta-pulse 4s ease-in-out infinite;
+}
+
+@keyframes cta-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+/* Spotlight card base */
+.spotlight-card {
+  background: linear-gradient(145deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+  backdrop-filter: blur(16px);
+  transition: border-color 0.3s ease, transform 0.3s ease;
+}
+
+.spotlight-card:hover {
+  border-color: rgba(45, 255, 183, 0.25);
+  transform: translateY(-2px);
+}
+
+.spotlight-card h3 {
+  color: #FFFFFF;
+  margin-bottom: 10px;
+  font-size: 20px;
+}
+
+.spotlight-card p {
+  color: rgba(255,255,255,0.65);
+  line-height: 1.6;
+}
+
+/* Features grid 3-col */
+.features-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 900px) {
+  .features-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .timeline-step {
+    gap: 20px;
+  }
+
+  .timeline-dot {
+    width: 44px;
+    height: 44px;
+    font-size: 16px;
+  }
+
+  .marquee-divider .marquee-text {
+    font-size: 48px;
+  }
 }
 
 @media (max-width: 768px) {

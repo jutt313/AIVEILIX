@@ -125,6 +125,9 @@ CREATE TABLE public.files (
     mime_type TEXT NOT NULL,
     size_bytes BIGINT NOT NULL,
     storage_path TEXT NOT NULL,
+
+    -- Origin
+    source TEXT NOT NULL DEFAULT 'uploaded',
     
     -- Processing status
     status file_status DEFAULT 'pending' NOT NULL,

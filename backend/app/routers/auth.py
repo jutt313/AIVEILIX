@@ -26,8 +26,19 @@ async def signup(signup_request: SignupRequest, request: Request):
     """Create a new user account"""
     correlation_id = get_correlation_id(request)
     try:
+        # Block signup if email is used as a team member's real_email
+        supabase_service = get_supabase()
+        team_check = supabase_service.table("team_members").select("id").eq(
+            "real_email", signup_request.email
+        ).eq("is_active", True).execute()
+        if team_check.data:
+            raise HTTPException(
+                status_code=400,
+                detail="This email is associated with a team member account. Please contact your team owner."
+            )
+
         supabase = get_supabase_auth()
-        
+
         response = supabase.auth.sign_up({
             "email": signup_request.email,
             "password": signup_request.password,
@@ -218,14 +229,28 @@ async def get_current_user(http_request: Request, authorization: str = None):
         response = supabase.auth.get_user(token)
         
         if response.user:
-            return {
+            user_data = {
                 "id": str(response.user.id),
                 "email": response.user.email,
                 "full_name": response.user.user_metadata.get("full_name", "")
             }
+
+            # Add team info
+            from app.services.team_service import get_team_member_context
+            ctx = get_team_member_context(str(response.user.id))
+            if ctx:
+                user_data["is_team_member"] = True
+                user_data["team_owner_id"] = ctx["owner_id"]
+                user_data["team_member_id"] = ctx["team_member_id"]
+                user_data["team_member_color"] = ctx["color"]
+                user_data["team_member_name"] = ctx["name"]
+            else:
+                user_data["is_team_member"] = False
+
+            return user_data
         else:
             raise HTTPException(status_code=401, detail="Invalid token")
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -244,8 +269,16 @@ async def change_password(
     try:
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Missing authorization")
-        
+
         token = authorization.replace("Bearer ", "")
+
+        # Block for team members
+        supabase_check = get_supabase_auth()
+        check_user = supabase_check.auth.get_user(token)
+        if check_user.user:
+            from app.services.team_service import get_team_member_context
+            if get_team_member_context(str(check_user.user.id)):
+                raise HTTPException(status_code=403, detail="Team members cannot change their password. Contact your team owner.")
         supabase_auth = get_supabase_auth()
         
         # Get current user
@@ -305,6 +338,11 @@ async def delete_account(
     """Delete user account (requires password verification)"""
     correlation_id = get_correlation_id(http_request)
     try:
+        # Block for team members
+        from app.services.team_service import get_team_member_context
+        if get_team_member_context(user_id):
+            raise HTTPException(status_code=403, detail="Team members cannot delete their account. Contact your team owner.")
+
         supabase_auth = get_supabase_auth()
         supabase_service = get_supabase()  # Service role client
         

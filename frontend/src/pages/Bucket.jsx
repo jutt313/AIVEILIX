@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { bucketsAPI, filesAPI } from '../services/api'
 import ChatPanel from '../components/ChatPanel'
@@ -9,6 +10,7 @@ import ConversationsSidebar from '../components/ConversationsSidebar'
 export default function Bucket() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { isTeamMember, user } = useAuth()
   const { isDark } = useTheme()
   
   const [bucket, setBucket] = useState(null)
@@ -89,6 +91,7 @@ export default function Bucket() {
           conversationId={currentConversationId}
           onConversationCreated={(convId) => setCurrentConversationId(convId)}
           onFilesUpdate={loadData}
+          files={files}
           selectedFiles={selectedFiles}
           onSelectedFilesChange={setSelectedFiles}
         />
@@ -96,7 +99,7 @@ export default function Bucket() {
 
       {/* Files Card - Right */}
       <div className="flex-shrink-0">
-        <FilesCard 
+        <FilesCard
           bucketId={id}
           files={files}
           onFilesUpdate={loadData}

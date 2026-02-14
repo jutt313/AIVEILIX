@@ -133,6 +133,41 @@ def create_api_key_created_notification(user_id: str, key_name: str, key_id: str
     )
 
 
+def create_team_member_added_notification(owner_id: str, member_name: str, member_color: str):
+    """Create a notification when a team member is added"""
+    return create_notification(
+        user_id=owner_id,
+        notification_type="team_member_added",
+        title="Team Member Added",
+        message=f"{member_name} has been added to your team.",
+        icon="users",
+        metadata={"member_name": member_name, "member_color": member_color}
+    )
+
+
+def create_team_member_removed_notification(owner_id: str, member_name: str):
+    """Create a notification when a team member is removed"""
+    return create_notification(
+        user_id=owner_id,
+        notification_type="team_member_removed",
+        title="Team Member Removed",
+        message=f"{member_name} has been removed from your team.",
+        icon="users",
+        metadata={"member_name": member_name}
+    )
+
+
+def create_team_invite_notification(member_user_id: str, owner_name: str):
+    """Create a notification for the invited team member"""
+    return create_notification(
+        user_id=member_user_id,
+        notification_type="team_invite",
+        title="Team Invitation",
+        message=f"You've been invited to {owner_name}'s workspace on AIveilix.",
+        icon="users",
+    )
+
+
 def create_conversation_created_notification(user_id: str, bucket_id: str, conversation_id: str):
     """Create a notification when a conversation is created"""
     return create_notification(

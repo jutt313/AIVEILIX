@@ -10,6 +10,15 @@ class FileUploadResponse(BaseModel):
     message: Optional[str] = None
 
 
+class CreateFileRequest(BaseModel):
+    name: str
+    content: str
+
+
+class FileContentUpdateRequest(BaseModel):
+    content: str
+
+
 class FileResponse(BaseModel):
     id: str
     bucket_id: str
@@ -22,6 +31,9 @@ class FileResponse(BaseModel):
     page_count: Optional[int] = None
     word_count: Optional[int] = None
     folder_path: Optional[str] = None
+    source: Optional[str] = None
+    uploaded_by_color: Optional[str] = None
+    uploaded_by_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -40,6 +52,8 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
+    mode: Optional[str] = None
+    file_name_hint: Optional[str] = None
 
 
 class ChatResponse(BaseModel):

@@ -3,6 +3,13 @@
 .env.local
 .env.production
 .env.development
+env.yaml
+backend/env.yaml
+
+# Firebase / GCloud
+.firebase/
+.firebaserc
+.gcloud/
 
 # Dependencies
 node_modules/
@@ -41,3 +48,4 @@ logs/
 tmp/
 temp/
 *.tmp
+skill/

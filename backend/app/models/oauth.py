@@ -54,7 +54,7 @@ class OAuthClientCreate(BaseModel):
     """Create new OAuth client"""
     name: str = Field(..., min_length=1, max_length=100, description="Client application name")
     redirect_uri: str = Field(..., description="Authorized redirect URI")
-    scopes: List[str] = Field(default=["read:buckets", "read:files", "query", "chat"], description="Allowed scopes")
+    scopes: List[str] = Field(default=["read:buckets", "read:files", "query", "chat", "offline_access"], description="Allowed scopes")
 
 
 # Response Models

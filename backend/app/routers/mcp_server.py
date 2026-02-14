@@ -38,6 +38,7 @@ from app.services.mcp_services import (
     query_bucket_service,
     chat_bucket_service,
     get_bucket_info_service,
+    get_file_content_service,
     MCPServiceError,
 )
 from app.services.oauth2 import get_oauth2_service
@@ -184,6 +185,30 @@ MCP_TOOLS = [
             },
             "required": ["bucket_id"]
         }
+    },
+    {
+        "name": "get_file_content",
+        "description": "Get the full extracted text content, summary, and optionally raw data for a specific file. Use this to read the actual content of documents, images, PDFs, and code files stored in a bucket.",
+        "visibility": "public",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bucket_id": {
+                    "type": "string",
+                    "description": "UUID of the bucket containing the file"
+                },
+                "file_id": {
+                    "type": "string",
+                    "description": "UUID of the file to get content for"
+                },
+                "include_raw": {
+                    "type": "boolean",
+                    "description": "If true, include base64-encoded raw data for image files (default: false)",
+                    "default": False
+                }
+            },
+            "required": ["bucket_id", "file_id"]
+        }
     }
 ]
 
@@ -282,6 +307,8 @@ class MCPProtocolHandler:
                 result = await self._call_chat_bucket(arguments)
             elif tool_name == "get_bucket_info":
                 result = await self._call_get_bucket_info(arguments)
+            elif tool_name == "get_file_content":
+                result = await self._call_get_file_content(arguments)
             else:
                 raise MCPServiceError(f"Unknown tool: {tool_name}", "unknown_tool")
             
@@ -690,6 +717,60 @@ class MCPProtocolHandler:
             "isError": False
         }
 
+    async def _call_get_file_content(self, arguments: dict) -> dict:
+        """Execute get_file_content tool"""
+        bucket_id = arguments.get("bucket_id")
+        file_id = arguments.get("file_id")
+        include_raw = arguments.get("include_raw", False)
+
+        if not bucket_id:
+            raise MCPServiceError("bucket_id is required", "missing_parameter")
+        if not file_id:
+            raise MCPServiceError("file_id is required", "missing_parameter")
+
+        # Check bucket access
+        await check_bucket_access_mcp(self.user, bucket_id)
+
+        result = await get_file_content_service(bucket_id, file_id, self.user, include_raw)
+
+        content = []
+
+        # File header
+        header = (
+            f"**{result['file_name']}** (ID: {result['file_id']})\n"
+            f"Type: {result['mime_type']}, Size: {result['size_bytes']} bytes, "
+            f"Words: {result.get('word_count') or 'N/A'}, "
+            f"Chunks: {result.get('chunk_count', 0)}, Source: {result.get('source', 'unknown')}"
+        )
+        content.append({"type": "text", "text": header})
+
+        # Summary
+        if result.get("summary"):
+            content.append({"type": "text", "text": f"\n**Summary:**\n{result['summary']}"})
+
+        # Full text content
+        if result.get("content"):
+            text = result["content"]
+            # Cap at 30k chars for MCP response
+            if len(text) > 30000:
+                text = text[:30000] + f"\n\n... [Truncated, {len(result['content'])} total chars]"
+            content.append({"type": "text", "text": f"\n**Content:**\n{text}"})
+        else:
+            content.append({"type": "text", "text": "\nNo extracted text content available for this file."})
+
+        # Raw image data
+        if result.get("raw_base64"):
+            content.append({
+                "type": "image",
+                "data": result["raw_base64"],
+                "mimeType": result.get("raw_mime_type", "image/png")
+            })
+
+        return {
+            "content": content,
+            "isError": False
+        }
+
     # ==================== Response Helpers ====================
 
     def _success_response(self, msg_id: Any, result: dict) -> dict:
@@ -889,15 +970,19 @@ async def mcp_protocol_endpoint(
             
             # Log response summary
             result_preview = ""
-            if response.get('result'):
-                if 'content' in response['result']:
-                    content = response['result']['content']
-                    if isinstance(content, list) and content:
-                        result_preview = str(content[0]).get('text', '')[:100] if isinstance(content[0], dict) else str(content[0])[:100]
-                elif 'tools' in response['result']:
-                    result_preview = f"tools_list({len(response['result']['tools'])})"
-                else:
-                    result_preview = str(response['result'])[:100]
+            try:
+                if response.get('result'):
+                    if 'content' in response['result']:
+                        content = response['result']['content']
+                        if isinstance(content, list) and content:
+                            first = content[0]
+                            result_preview = (first.get('text', '')[:100] if isinstance(first, dict) else str(first)[:100])
+                    elif 'tools' in response['result']:
+                        result_preview = f"tools_list({len(response['result']['tools'])})"
+                    else:
+                        result_preview = str(response['result'])[:100]
+            except Exception:
+                result_preview = "preview_error"
             
             logger.info(f"MCP POST /protocol - Success: method={method}, duration={total_duration:.2f}ms, correlation_id={correlation_id}, result_preview={result_preview[:50]}")
             
@@ -1054,7 +1139,7 @@ async def mcp_sse_endpoint(
         logger.info("MCP GET /protocol/sse - No auth provided, returning discovery info")
         async def discovery_stream():
             import asyncio
-            base_url = str(request.base_url).rstrip('/')
+            base_url = settings.backend_url.rstrip('/')
             server_info = {
                 "name": settings.mcp_server_name,
                 "version": settings.mcp_server_version,
@@ -1155,13 +1240,19 @@ async def mcp_sse_endpoint(
 
 # ==================== OAuth2 Endpoints ====================
 
-# ChatGPT allowed redirect URIs
-CHATGPT_REDIRECT_URIS = [
+# Allowed OAuth redirect URIs for ChatGPT, Claude, and local dev
+ALLOWED_REDIRECT_URIS = [
     "https://chatgpt.com/connector_platform_oauth_redirect",
     "https://platform.openai.com/apps-manage/oauth",
-    "http://localhost:6677/oauth/callback",   # Frontend callback
-    "http://localhost:7223/oauth/callback",   # Backend callback (if needed)
-    "http://127.0.0.1:6677/oauth/callback",   # Frontend callback
+    "https://claude.ai/oauth/callback",        # Claude connector
+    "https://claude.ai/api/mcp/auth_callback", # Claude MCP connector
+    "https://aiveilix.com/oauth/callback",     # Production frontend
+    "https://www.aiveilix.com/oauth/callback",  # Production frontend (www)
+    "https://aiveilix-427f3.web.app/oauth/callback",  # Firebase hosting
+    "https://aiveilix-427f3.firebaseapp.com/oauth/callback",  # Firebase hosting
+    "http://localhost:6677/oauth/callback",     # Frontend callback
+    "http://localhost:7223/oauth/callback",     # Backend callback (if needed)
+    "http://127.0.0.1:6677/oauth/callback",    # Frontend callback
     "http://127.0.0.1:7223/oauth/callback",    # Backend callback (if needed)
 ]
 
@@ -1177,13 +1268,12 @@ async def oauth_authorize(
     code_challenge: Optional[str] = None,
     code_challenge_method: Optional[str] = "S256",
     resource: Optional[str] = None,
-    # User authentication would happen here (redirect to login page)
 ):
     """
     OAuth2 authorization endpoint with PKCE support.
-    Supports both GET (query params) and POST (form data) methods.
+    Redirects to React frontend for user login and consent.
     """
-    # Handle both GET and POST - get params from query or form
+    # Handle both GET and POST
     if request.method == "POST":
         form_data = await request.form()
         response_type = response_type or form_data.get("response_type")
@@ -1194,10 +1284,7 @@ async def oauth_authorize(
         code_challenge = code_challenge or form_data.get("code_challenge")
         code_challenge_method = code_challenge_method or form_data.get("code_challenge_method", "S256")
         resource = resource or form_data.get("resource")
-    else:
-        # GET - params come from query string (FastAPI handles this)
-        pass
-    
+
     # Validate required parameters
     if not response_type:
         raise HTTPException(status_code=400, detail="response_type is required")
@@ -1205,46 +1292,118 @@ async def oauth_authorize(
         raise HTTPException(status_code=400, detail="client_id is required")
     if not redirect_uri:
         raise HTTPException(status_code=400, detail="redirect_uri is required")
-    """
-    OAuth2 authorization endpoint with PKCE support.
-    In production, this would show a consent screen after user login.
-    """
-    logger.info(f"OAuth authorize request: client_id={client_id}, redirect_uri={redirect_uri}, PKCE={bool(code_challenge)}")
-    
-    oauth_service = get_oauth2_service()
-    
-    # Validate client
-    valid, client = await oauth_service.validate_client(client_id, redirect_uri=redirect_uri)
-    if not valid:
-        logger.warning(f"Invalid client or redirect_uri: client_id={client_id}, redirect_uri={redirect_uri}")
-        raise HTTPException(status_code=400, detail="Invalid client_id or redirect_uri")
-    
-    # Validate redirect_uri against ChatGPT allowlist (if not matching client's registered URI)
-    # Allow if it matches client's registered URI OR is in ChatGPT allowlist
-    if redirect_uri not in CHATGPT_REDIRECT_URIS and redirect_uri != client["redirect_uri"]:
-        logger.warning(f"Redirect URI not allowed: {redirect_uri}")
-        raise HTTPException(status_code=400, detail="Invalid redirect_uri")
-    
+
     if response_type != "code":
         raise HTTPException(status_code=400, detail="Only response_type=code is supported")
-    
-    # Validate PKCE parameters if provided
+
+    logger.info(f"OAuth authorize request: client_id={client_id}, redirect_uri={redirect_uri}, PKCE={bool(code_challenge)}")
+
+    oauth_service = get_oauth2_service()
+
+    # Validate client exists (don't check redirect_uri match yet - allow ChatGPT URIs)
+    client = await oauth_service.get_client(client_id)
+    if not client:
+        logger.warning(f"Invalid client: client_id={client_id}")
+        raise HTTPException(status_code=400, detail="Invalid client_id")
+
+    # Allow redirect_uri if:
+    # 1. Matches client's registered URI, OR
+    # 2. Is in the hardcoded allowlist, OR
+    # 3. Client was registered via DCR (no user_id) - trust their redirect_uri
+    is_dcr_client = not client.get("user_id")
+    if redirect_uri != client["redirect_uri"] and redirect_uri not in ALLOWED_REDIRECT_URIS and not is_dcr_client:
+        logger.warning(f"Redirect URI not allowed: {redirect_uri}, registered: {client['redirect_uri']}")
+        raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+
+    logger.info(f"OAuth redirect_uri accepted: {redirect_uri} (registered: {client['redirect_uri']}, dcr: {is_dcr_client})")
+
+    # P2 Fix: Guard against missing/empty frontend_url
+    if not settings.frontend_url:
+        logger.error("OAuth authorize: settings.frontend_url is not configured")
+        raise HTTPException(status_code=500, detail="Server misconfiguration: frontend URL not set")
+
+    # Redirect to React frontend for login + consent
+    # The frontend will handle authentication and call back to /oauth/approve
+    from urllib.parse import urlencode, quote
+    frontend_params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": scope or "read:buckets read:files query chat",
+        "response_type": response_type,
+    }
+    if state:
+        frontend_params["state"] = state
     if code_challenge:
-        if code_challenge_method not in ["S256", "plain"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported code_challenge_method: {code_challenge_method}. Supported: S256, plain"
-            )
-        # Validate code_challenge format (base64url, 43-128 chars)
-        if len(code_challenge) < 43 or len(code_challenge) > 128:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid code_challenge: must be 43-128 characters"
-            )
-    
-    # Get user_id from the client (client belongs to a user)
-    user_id = client["user_id"]
-    
+        frontend_params["code_challenge"] = code_challenge
+    if code_challenge_method:
+        frontend_params["code_challenge_method"] = code_challenge_method
+    if resource:
+        frontend_params["resource"] = resource
+
+    frontend_url = f"{settings.frontend_url}/oauth/authorize?{urlencode(frontend_params)}"
+    logger.info(f"Redirecting to React frontend for login: {frontend_url}")
+
+    return RedirectResponse(url=frontend_url, status_code=302)
+
+
+@router.post("/oauth/approve")
+async def oauth_approve(
+    request: Request,
+    client_id: str = Form(...),
+    redirect_uri: str = Form(...),
+    scope: str = Form(...),
+    state: Optional[str] = Form(None),
+    code_challenge: Optional[str] = Form(None),
+    code_challenge_method: Optional[str] = Form(None),
+    resource: Optional[str] = Form(None),
+    access_token: str = Form(..., description="User's Supabase JWT token"),
+):
+    """
+    OAuth2 approval endpoint - called by React frontend after user logs in and consents.
+    Creates authorization code and redirects back to the OAuth client (ChatGPT/Claude).
+    """
+    logger.info(f"OAuth approve: client_id={client_id}, redirect_uri={redirect_uri}")
+
+    # Verify the user's JWT token to get user_id
+    from app.services.supabase import get_supabase_auth
+    try:
+        supabase_auth = get_supabase_auth()
+        user_response = supabase_auth.auth.get_user(access_token)
+        user_id = str(user_response.user.id)
+        logger.info(f"OAuth approve: verified user_id={user_id}")
+    except Exception as e:
+        logger.error(f"OAuth approve: invalid token - {e}")
+        raise HTTPException(status_code=401, detail="Invalid or expired user token")
+
+    oauth_service = get_oauth2_service()
+
+    # Validate client
+    client = await oauth_service.get_client(client_id)
+    if not client:
+        raise HTTPException(status_code=400, detail="Invalid client_id")
+
+    # Check if client was registered via DCR (no user_id)
+    is_dcr_client = not client.get("user_id")
+    logger.info(f"OAuth approve: client user_id={client.get('user_id')!r}, is_dcr={is_dcr_client}, scopes={client.get('scopes')}")
+
+    # Validate redirect_uri against client's registered URI, allowlist, or DCR client
+    if redirect_uri != client["redirect_uri"] and redirect_uri not in ALLOWED_REDIRECT_URIS and not is_dcr_client:
+        logger.warning(f"OAuth approve: redirect_uri not allowed: {redirect_uri}")
+        raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+
+    # Enforce requested scopes - DCR clients get all standard scopes automatically
+    requested_scopes = set(scope.split())
+    allowed_scopes = set(client.get("scopes") or [])
+    # Always allow standard MCP scopes for any client
+    allowed_scopes.update(["read:buckets", "read:files", "query", "chat", "offline_access"])
+    if not requested_scopes.issubset(allowed_scopes):
+        disallowed = requested_scopes - allowed_scopes
+        logger.warning(f"OAuth approve: scopes not allowed: {disallowed}, requested={requested_scopes}, allowed={allowed_scopes}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requested scopes not allowed: {', '.join(disallowed)}"
+        )
+
     # Create authorization code
     try:
         auth_code = await oauth_service.create_authorization_code(
@@ -1253,37 +1412,31 @@ async def oauth_authorize(
             redirect_uri=redirect_uri,
             scope=scope,
             code_challenge=code_challenge,
-            code_challenge_method=code_challenge_method,
-            resource=resource
+            code_challenge_method=code_challenge_method if code_challenge else None,
+            resource=resource,
         )
-        
-        logger.info(f"OAuth authorization code created: client_id={client_id}, user_id={user_id}, PKCE={bool(code_challenge)}")
-        
-        # Build redirect URL with authorization code
+
+        logger.info(f"OAuth authorization code created: client_id={client_id}, user_id={user_id}")
+
+        # Redirect back to the OAuth client with the code
         from urllib.parse import urlencode
-        redirect_params = {
-            "code": auth_code,
-        }
+        redirect_params = {"code": auth_code}
         if state:
             redirect_params["state"] = state
-        
+
         redirect_url = f"{redirect_uri}?{urlencode(redirect_params)}"
-        
-        # Redirect to the redirect_uri with the authorization code
         return RedirectResponse(url=redirect_url, status_code=302)
-        
+
     except Exception as e:
         logger.error(f"Error creating authorization code: {e}", exc_info=True)
-        # On error, redirect with error parameter
         from urllib.parse import urlencode
         error_params = {
             "error": "server_error",
-            "error_description": "Failed to create authorization code"
+            "error_description": "Failed to create authorization code",
         }
         if state:
             error_params["state"] = state
-        redirect_url = f"{redirect_uri}?{urlencode(error_params)}"
-        return RedirectResponse(url=redirect_url, status_code=302)
+        return RedirectResponse(url=f"{redirect_uri}?{urlencode(error_params)}", status_code=302)
 
 
 @router.post("/oauth/token")
@@ -1294,7 +1447,7 @@ async def oauth_token(
     redirect_uri: Optional[str] = Form(None),
     code_verifier: Optional[str] = Form(None),
     client_id: str = Form(...),
-    client_secret: str = Form(...),
+    client_secret: Optional[str] = Form(None),
     refresh_token: Optional[str] = Form(None),
     resource: Optional[str] = Form(None),
 ):
@@ -1302,27 +1455,39 @@ async def oauth_token(
     OAuth2 token endpoint with PKCE support.
     Exchanges authorization code for access token, or refreshes tokens.
     Accepts application/x-www-form-urlencoded (OAuth2 standard).
+
+    client_secret is optional for PKCE public clients (they use code_verifier instead).
     """
-    logger.info(f"OAuth token request: grant_type={grant_type}, client_id={client_id}")
-    
+    logger.info(f"OAuth token request: grant_type={grant_type}, client_id={client_id}, has_secret={bool(client_secret)}, has_verifier={bool(code_verifier)}")
+
     oauth_service = get_oauth2_service()
-    
+
     if grant_type == "authorization_code":
         if not code or not redirect_uri:
             raise HTTPException(
                 status_code=400,
                 detail="code and redirect_uri required for authorization_code grant"
             )
-        
-        # Validate client credentials
-        valid, client = await oauth_service.validate_client(
-            client_id,
-            client_secret
-        )
-        if not valid:
-            logger.warning(f"Invalid client credentials: client_id={client_id}")
-            raise HTTPException(status_code=401, detail="Invalid client credentials")
-        
+
+        # For PKCE public clients: client_secret is optional if code_verifier is provided
+        if client_secret:
+            valid, client = await oauth_service.validate_client(client_id, client_secret)
+            if not valid:
+                logger.warning(f"Invalid client credentials: client_id={client_id}")
+                raise HTTPException(status_code=401, detail="Invalid client credentials")
+        else:
+            # Public client - just verify client exists
+            client = await oauth_service.get_client(client_id)
+            if not client:
+                logger.warning(f"Unknown client_id: {client_id}")
+                raise HTTPException(status_code=401, detail="Invalid client_id")
+            # PKCE is required for public clients
+            if not code_verifier:
+                raise HTTPException(
+                    status_code=400,
+                    detail="code_verifier is required for public clients (no client_secret)"
+                )
+
         # Validate authorization code with PKCE verification
         code_data = await oauth_service.validate_authorization_code(
             code,
@@ -1333,14 +1498,14 @@ async def oauth_token(
         if not code_data:
             logger.warning(f"Invalid or expired authorization code: client_id={client_id}")
             raise HTTPException(status_code=400, detail="Invalid or expired authorization code")
-        
+
         # Get resource from code data or request
         final_resource = code_data.get("resource") or resource
-        
+
         # Determine audience (MCP server URL)
-        base_url = str(http_request.base_url).rstrip('/')
+        base_url = settings.backend_url.rstrip('/')
         audience = f"{base_url}/mcp/server"
-        
+
         # Create tokens with resource and audience
         tokens = await oauth_service.create_tokens(
             client_id=client_id,
@@ -1349,32 +1514,38 @@ async def oauth_token(
             resource=final_resource,
             audience=audience
         )
-        
+
         logger.info(f"OAuth tokens created: client_id={client_id}, user_id={code_data['user_id']}")
-        
-        # Return token response (already includes aud and resource from model)
         return tokens.dict()
-    
+
     elif grant_type == "refresh_token":
         if not refresh_token:
             raise HTTPException(
                 status_code=400,
                 detail="refresh_token required for refresh_token grant"
             )
-        
-        tokens = await oauth_service.refresh_tokens(
-            refresh_token,
-            client_id,
-            client_secret
-        )
-        
+
+        # For refresh, client_secret may or may not be present
+        if client_secret:
+            tokens = await oauth_service.refresh_tokens(
+                refresh_token,
+                client_id,
+                client_secret
+            )
+        else:
+            # Public client refresh - validate client exists and refresh token matches
+            tokens = await oauth_service.refresh_tokens_public(
+                refresh_token,
+                client_id
+            )
+
         if not tokens:
             logger.warning(f"Invalid or expired refresh token: client_id={client_id}")
             raise HTTPException(status_code=400, detail="Invalid or expired refresh token")
-        
+
         logger.info(f"OAuth tokens refreshed: client_id={client_id}")
         return tokens.dict()
-    
+
     else:
         raise HTTPException(
             status_code=400,
@@ -1386,29 +1557,28 @@ async def oauth_token(
 async def oauth_register(
     request: OAuthClientCreate,
     http_request: Request,
-    user: MCPUser = Depends(get_mcp_user)
 ):
     """
     Dynamic Client Registration (RFC 7591).
-    Creates a new OAuth client for the authenticated user.
-    
-    Note: Currently requires API key authentication. In production, this could
-    support initial access tokens or other registration methods.
+    Creates a new OAuth client. No authentication required - ChatGPT/Claude
+    call this endpoint before any auth exists to register themselves as clients.
+
+    The client is created without a user_id initially. The user association
+    happens during the authorization flow when the user logs in and consents.
     """
-    logger.info(f"OAuth DCR request: user_id={user.user_id}, name={request.name}")
-    
+    logger.info(f"OAuth DCR request (public): name={request.name}, redirect_uri={request.redirect_uri}")
+
     oauth_service = get_oauth2_service()
-    
+
     try:
-        client = await oauth_service.create_client(
-            user_id=user.user_id,
+        client = await oauth_service.create_client_public(
             client_data=request
         )
-        
-        logger.info(f"OAuth client registered: client_id={client.client_id}, user_id={user.user_id}")
-        
+
+        logger.info(f"OAuth client registered (public): client_id={client.client_id}")
+
         # Return client registration response (RFC 7591 format)
-        base_url = str(http_request.base_url).rstrip('/')
+        base_url = settings.backend_url.rstrip('/')
         return {
             "client_id": client.client_id,
             "client_secret": client.client_secret,  # Only shown once!
@@ -1419,7 +1589,7 @@ async def oauth_register(
             "response_types": ["code"],
             "client_name": client.name,
             "scope": " ".join(client.scopes),
-            "token_endpoint_auth_method": "client_secret_post",
+            "token_endpoint_auth_method": "none",
             "application_type": "web"
         }
     except HTTPException:

@@ -23,10 +23,16 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      localStorage.removeItem('user')
-      window.location.href = '/login'
+      const url = error.config?.url || ''
+      // Don't redirect for auth endpoints (login/signup) or if already on login page
+      const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/signup')
+      const isOnLoginPage = window.location.pathname === '/login' || window.location.pathname === '/signup'
+      if (!isAuthEndpoint && !isOnLoginPage) {
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('user')
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }
@@ -106,12 +112,18 @@ export const filesAPI = {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
   },
+  create: (bucketId, name, content) =>
+    api.post(`/api/buckets/${bucketId}/files/create`, { name, content }),
+  updateContent: (bucketId, fileId, content) =>
+    api.put(`/api/buckets/${bucketId}/files/${fileId}/content`, { content }),
+  getContent: (bucketId, fileId) =>
+    api.get(`/api/buckets/${bucketId}/files/${fileId}/content`),
   list: (bucketId) => api.get(`/api/buckets/${bucketId}/files`),
   delete: (bucketId, fileId) => api.delete(`/api/buckets/${bucketId}/files/${fileId}`),
 }
 
 export const chatAPI = {
-  sendMessage: async (bucketId, message, conversationId, abortSignal = null, onChunk = null) => {
+  sendMessage: async (bucketId, message, conversationId, abortSignal = null, onChunk = null, options = {}) => {
     const token = localStorage.getItem('access_token')
     const response = await fetch(`${API_URL}/api/buckets/${bucketId}/chat`, {
       method: 'POST',
@@ -119,7 +131,7 @@ export const chatAPI = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ message, conversation_id: conversationId }),
+      body: JSON.stringify({ message, conversation_id: conversationId, ...options }),
       signal: abortSignal
     })
 
@@ -133,6 +145,7 @@ export const chatAPI = {
     let fullThinking = ''
     let sources = []
     let finalConversationId = conversationId
+    let fileDraft = null
 
     while (true) {
       const { done, value } = await reader.read()
@@ -169,6 +182,9 @@ export const chatAPI = {
               // Final event with cleaned message, sources and metadata
               sources = data.sources || []
               finalConversationId = data.conversation_id || conversationId
+              if (data.file_draft) {
+                fileDraft = data.file_draft
+              }
               // Use cleaned message from server (removes [[SOURCES:...]] line)
               if (data.message) {
                 fullResponse = data.message
@@ -195,7 +211,8 @@ export const chatAPI = {
         message: fullResponse.trim(),
         sources,
         thinking: fullThinking,
-        conversation_id: finalConversationId
+        conversation_id: finalConversationId,
+        file_draft: fileDraft
       }
     }
   },
@@ -211,6 +228,27 @@ export const notificationsAPI = {
   markAllAsRead: () => api.patch('/api/notifications/mark-all-read'),
   delete: (notificationId) => api.delete(`/api/notifications/${notificationId}`),
   deleteAllRead: () => api.delete('/api/notifications/delete-all-read'),
+}
+
+export const teamAPI = {
+  listMembers: () => api.get('/api/team/members'),
+  getMember: (memberId) => api.get(`/api/team/members/${memberId}`),
+  addMember: (name, realEmail, password, color) =>
+    api.post('/api/team/members', { name, real_email: realEmail, password, color }),
+  updateMember: (memberId, data) => api.patch(`/api/team/members/${memberId}`, data),
+  removeMember: (memberId) => api.delete(`/api/team/members/${memberId}`),
+  getMemberBuckets: (memberId) => api.get(`/api/team/members/${memberId}/buckets`),
+  assignBuckets: (memberId, permissions) =>
+    api.post(`/api/team/members/${memberId}/buckets`, { permissions }),
+  removeBucketAccess: (memberId, bucketId) =>
+    api.delete(`/api/team/members/${memberId}/buckets/${bucketId}`),
+  getActivity: (memberId = null, bucketId = null, limit = 50) => {
+    const params = { limit }
+    if (memberId) params.member_id = memberId
+    if (bucketId) params.bucket_id = bucketId
+    return api.get('/api/team/activity', { params })
+  },
+  getMyTeamInfo: () => api.get('/api/team/me'),
 }
 
 export const stripeAPI = {

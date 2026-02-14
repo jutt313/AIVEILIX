@@ -46,8 +46,12 @@ async def create_api_key(
     """Create a new API key (returns full key once)"""
     correlation_id = get_correlation_id(http_request)
     try:
+        from app.services.team_service import get_effective_user_id, get_member_accessible_buckets, get_team_member_context, log_team_activity
+        effective_uid = get_effective_user_id(user_id)
+        team_ctx = get_team_member_context(user_id)
+
         supabase = get_supabase()
-        
+
         # Validate scopes
         valid_scopes = ['read', 'write', 'delete']
         for scope in request.scopes:
@@ -56,21 +60,26 @@ async def create_api_key(
                     status_code=400,
                     detail=f"Invalid scope: {scope}. Valid scopes are: {valid_scopes}"
                 )
-        
+
+        # Team members: force allowed_buckets to their assigned buckets
+        allowed_buckets = request.allowed_buckets
+        if team_ctx:
+            accessible = get_member_accessible_buckets(user_id)
+            if accessible is not None:
+                allowed_buckets = accessible
+
         # Generate API key
         full_key, key_hash, key_prefix = generate_api_key()
-        
+
         # Create API key record
-        # Note: allowed_buckets can be None (all buckets) or list (specific buckets)
-        # Don't convert None to [] as it changes semantics
         api_key_data = {
             "id": str(uuid.uuid4()),
-            "user_id": user_id,
+            "user_id": effective_uid,
             "name": request.name,
             "key_hash": key_hash,
             "key_prefix": key_prefix,
             "scopes": request.scopes,
-            "allowed_buckets": request.allowed_buckets,  # Preserve None for "all buckets"
+            "allowed_buckets": allowed_buckets,
             "is_active": True,
             "request_count": 0
         }
@@ -82,6 +91,20 @@ async def create_api_key(
         
         key_record = response.data[0]
         
+        # Log team activity
+        if team_ctx:
+            log_team_activity(
+                owner_id=effective_uid,
+                member_id=user_id,
+                team_member_id=team_ctx["team_member_id"],
+                bucket_id=None,
+                action_type="created_api_key",
+                resource_id=str(key_record["id"]),
+                resource_name=request.name,
+                member_color=team_ctx["color"],
+                member_name=team_ctx["name"],
+            )
+
         return CreateAPIKeyResponse(
             success=True,
             message="API key created successfully",
@@ -117,9 +140,12 @@ async def list_api_keys(
     """List all API keys for current user (never returns full key)"""
     correlation_id = get_correlation_id(http_request)
     try:
+        from app.services.team_service import get_effective_user_id
+        effective_uid = get_effective_user_id(user_id)
+
         supabase = get_supabase()
-        
-        response = supabase.table("api_keys").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+
+        response = supabase.table("api_keys").select("*").eq("user_id", effective_uid).order("created_at", desc=True).execute()
         
         keys_data = response.data if response.data else []
         keys = [
@@ -158,10 +184,13 @@ async def delete_api_key(
     """Delete/revoke an API key"""
     correlation_id = get_correlation_id(http_request)
     try:
+        from app.services.team_service import get_effective_user_id
+        effective_uid = get_effective_user_id(user_id)
+
         supabase = get_supabase()
-        
-        # Check if key exists and belongs to user
-        response = supabase.table("api_keys").select("id").eq("id", key_id).eq("user_id", user_id).single().execute()
+
+        # Check if key exists and belongs to effective user
+        response = supabase.table("api_keys").select("id").eq("id", key_id).eq("user_id", effective_uid).single().execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="API key not found")

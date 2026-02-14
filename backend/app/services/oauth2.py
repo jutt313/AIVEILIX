@@ -142,6 +142,49 @@ class OAuth2Service:
             logger.error(f"Error creating OAuth client: {e}")
             raise HTTPException(status_code=500, detail="Failed to create OAuth client")
 
+    async def create_client_public(
+        self,
+        client_data: OAuthClientCreate
+    ) -> OAuthClientResponse:
+        """
+        Create an OAuth client without a user association (for DCR).
+        ChatGPT/Claude register before any user is authenticated.
+        The user_id is set during the authorization flow.
+        """
+        client_id = generate_client_id()
+        client_secret = generate_client_secret()
+        client_secret_hash = hash_secret(client_secret)
+
+        try:
+            result = self.supabase.table("oauth_clients").insert({
+                "client_id": client_id,
+                "client_secret_hash": client_secret_hash,
+                "user_id": None,
+                "name": client_data.name,
+                "redirect_uri": client_data.redirect_uri,
+                "scopes": client_data.scopes,
+                "is_active": True,
+            }).execute()
+
+            if not result.data:
+                raise HTTPException(status_code=500, detail="Failed to create OAuth client")
+
+            logger.info(f"Created public OAuth client {client_id} (no user)")
+
+            return OAuthClientResponse(
+                client_id=client_id,
+                client_secret=client_secret,
+                name=client_data.name,
+                redirect_uri=client_data.redirect_uri,
+                scopes=client_data.scopes,
+                created_at=datetime.fromisoformat(result.data[0]["created_at"].replace("Z", "+00:00"))
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error creating public OAuth client: {e}")
+            raise HTTPException(status_code=500, detail="Failed to create OAuth client")
+
     async def get_client(self, client_id: str) -> Optional[dict]:
         """Get client by client_id"""
         try:
@@ -387,8 +430,7 @@ class OAuth2Service:
         
         # Set default audience to MCP server URL if not provided
         if not audience:
-            # Use backend URL from settings or construct from request
-            audience = f"{settings.frontend_url.replace(':6677', ':7223')}/mcp/server"
+            audience = f"{settings.backend_url.rstrip('/')}/mcp/server"
 
         try:
             insert_data = {
@@ -500,6 +542,52 @@ class OAuth2Service:
             )
         except Exception as e:
             logger.error(f"Error refreshing tokens: {e}")
+            return None
+
+    async def refresh_tokens_public(
+        self,
+        refresh_token: str,
+        client_id: str
+    ) -> Optional[OAuthTokenResponse]:
+        """Refresh access token for public clients (no client_secret)"""
+        # Just validate client exists (no secret check)
+        client = await self.get_client(client_id)
+        if not client:
+            return None
+
+        refresh_token_hash = hash_secret(refresh_token)
+
+        try:
+            result = self.supabase.table("oauth_tokens").select("*").eq(
+                "refresh_token_hash", refresh_token_hash
+            ).eq("client_id", client_id).eq("is_revoked", False).single().execute()
+
+            if not result.data:
+                return None
+
+            token_data = result.data
+
+            # Check refresh token expiration
+            refresh_expires_at = datetime.fromisoformat(token_data["refresh_expires_at"].replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > refresh_expires_at:
+                logger.warning(f"Refresh token expired for public client {client_id}")
+                return None
+
+            # Revoke old tokens
+            self.supabase.table("oauth_tokens").update({
+                "is_revoked": True
+            }).eq("id", token_data["id"]).execute()
+
+            # Create new tokens
+            return await self.create_tokens(
+                client_id=client_id,
+                user_id=token_data["user_id"],
+                scope=token_data["scope"],
+                resource=token_data.get("resource"),
+                audience=token_data.get("audience")
+            )
+        except Exception as e:
+            logger.error(f"Error refreshing tokens (public): {e}")
             return None
 
     async def revoke_token(self, access_token: str) -> bool:

@@ -9,7 +9,7 @@ import uuid
 import re
 from typing import Optional, List, Dict, Any
 from app.services.supabase import get_supabase
-from app.services.file_processor import generate_embedding
+from app.services.file_processor import generate_embedding, fetch_full_file_content
 from app.models.mcp import (
     MCPBucketResponse,
     MCPFileResponse,
@@ -97,7 +97,7 @@ async def list_files_service(bucket_id: str, user: MCPUser) -> List[MCPFileRespo
         
         # Get files
         response = supabase.table("files").select(
-            "id, name, status, status_message, word_count, size_bytes, created_at"
+            "id, name, status, status_message, word_count, size_bytes, storage_path, created_at"
         ).eq("bucket_id", bucket_id).eq("user_id", user.user_id).order("created_at", desc=True).execute()
         
         files_data = response.data if response.data else []
@@ -263,13 +263,14 @@ async def chat_bucket_service(
         if not bucket_res.data:
             raise MCPServiceError("Bucket not found", "bucket_not_found")
         
-        # Get ALL files from bucket
+        # Get ALL files from bucket (include storage_path for full file access)
         all_files_res = supabase.table("files").select(
-            "id, name, status, status_message, folder_path"
+            "id, name, status, status_message, folder_path, storage_path"
         ).eq("bucket_id", bucket_id).eq("user_id", user.user_id).execute()
         
         all_files = all_files_res.data if all_files_res.data else []
         file_names = {f["id"]: f["name"] for f in all_files}
+        file_storage_paths = {f["id"]: f.get("storage_path") for f in all_files}
         all_file_ids = [f["id"] for f in all_files]
         
         # Get chunks and summaries
@@ -326,7 +327,8 @@ async def chat_bucket_service(
         # Add content from processed files
         for file_id in all_file_ids:
             file_name = file_names.get(file_id, "Unknown")
-            
+            storage_path = file_storage_paths.get(file_id)
+
             # Add analysis if available
             if file_id in summaries_by_file:
                 summary = summaries_by_file[file_id]
@@ -339,15 +341,18 @@ async def chat_bucket_service(
                     type="analysis",
                     summary_id=str(summary_id)
                 ))
-            
+
             # Add chunks if available
-            if file_id in chunks_by_file:
+            has_chunks = file_id in chunks_by_file
+            if has_chunks:
                 chunks_for_file = chunks_by_file[file_id]
                 chunk_contents = []
-                for chunk in chunks_for_file[:5]:
+                total_chunk_chars = 0
+                for chunk in chunks_for_file[:20]:  # Increased from 5 to 20
                     content = chunk.get("content", "")
                     chunk_id = chunk.get("id")
                     chunk_contents.append(content[:1000])
+                    total_chunk_chars += len(content)
                     sources.append(MCPSource(
                         file_name=file_name,
                         file_id=str(file_id),
@@ -357,6 +362,31 @@ async def chat_bucket_service(
                 if chunk_contents:
                     raw_content = "\n".join(chunk_contents)
                     context_parts.append(f"[Content: {file_name}]\n{raw_content}")
+
+                # INTELLIGENT FALLBACK: If chunks are insufficient, fetch full file
+                if total_chunk_chars < 500 and storage_path:
+                    logger.info(f"MCP Services: Chunks limited for '{file_name}'. Fetching full file...")
+                    full_content = fetch_full_file_content(storage_path, supabase)
+                    if full_content and len(full_content) > total_chunk_chars:
+                        logger.info(f"  MCP Services: Full file fetched: {len(full_content)} chars")
+                        context_parts.append(f"[FULL CONTENT: {file_name}]\n{full_content[:8000]}")
+                        sources.append(MCPSource(
+                            file_name=file_name,
+                            file_id=str(file_id),
+                            type="full_file"
+                        ))
+            elif storage_path:
+                # No chunks? Try full file directly
+                logger.info(f"MCP Services: No chunks for '{file_name}'. Fetching full file...")
+                full_content = fetch_full_file_content(storage_path, supabase)
+                if full_content:
+                    logger.info(f"  MCP Services: Full file fetched: {len(full_content)} chars")
+                    context_parts.append(f"[FULL CONTENT: {file_name}]\n{full_content[:8000]}")
+                    sources.append(MCPSource(
+                        file_name=file_name,
+                        file_id=str(file_id),
+                        type="full_file"
+                    ))
         
         # Combine context
         if context_parts:
@@ -492,3 +522,100 @@ async def get_bucket_info_service(bucket_id: str, user: MCPUser) -> Dict[str, An
     except Exception as e:
         logger.error(f"Error getting bucket info for {bucket_id}: {sanitize_error(e)}")
         raise MCPServiceError("Failed to get bucket info", "bucket_info_error")
+
+
+async def get_file_content_service(
+    bucket_id: str,
+    file_id: str,
+    user: MCPUser,
+    include_raw: bool = False
+) -> Dict[str, Any]:
+    """
+    Get the full extracted content for a specific file.
+
+    Args:
+        bucket_id: Bucket UUID
+        file_id: File UUID
+        user: Authenticated MCP user
+        include_raw: If True, include base64 data for image files
+
+    Returns:
+        Dict with file name, content, summary, and optionally raw data
+    """
+    try:
+        supabase = get_supabase()
+
+        # Get file info
+        file_res = supabase.table("files").select(
+            "id, name, status, mime_type, size_bytes, storage_path, word_count"
+        ).eq("id", file_id).eq("bucket_id", bucket_id).eq("user_id", user.user_id).single().execute()
+
+        if not file_res.data:
+            raise MCPServiceError("File not found", "file_not_found")
+
+        file_data = file_res.data
+        file_name = file_data["name"]
+        storage_path = file_data.get("storage_path")
+        mime_type = file_data.get("mime_type", "")
+
+        result = {
+            "file_id": str(file_id),
+            "file_name": file_name,
+            "mime_type": mime_type,
+            "size_bytes": file_data.get("size_bytes", 0),
+            "word_count": file_data.get("word_count"),
+            "status": file_data.get("status", "unknown"),
+        }
+
+        # Get summary if available
+        summary_res = supabase.table("summaries").select(
+            "content, title"
+        ).eq("file_id", file_id).eq("user_id", user.user_id).limit(1).execute()
+
+        if summary_res.data:
+            result["summary"] = summary_res.data[0].get("content", "")
+
+        # Get all chunks for this file (full content)
+        chunks_res = supabase.table("chunks").select(
+            "content, chunk_index"
+        ).eq("file_id", file_id).eq("user_id", user.user_id).order("chunk_index").execute()
+
+        if chunks_res.data:
+            # Combine all chunks into full text
+            chunk_texts = [c.get("content", "") for c in chunks_res.data]
+            result["content"] = "\n".join(chunk_texts)
+            result["chunk_count"] = len(chunks_res.data)
+        else:
+            result["content"] = ""
+            result["chunk_count"] = 0
+
+        # If chunks are empty or insufficient, try fetching full file
+        if len(result["content"]) < 500 and storage_path:
+            full_content = fetch_full_file_content(storage_path, supabase)
+            if full_content and len(full_content) > len(result["content"]):
+                result["content"] = full_content
+                result["source"] = "full_file"
+            else:
+                result["source"] = "chunks"
+        else:
+            result["source"] = "chunks"
+
+        # For images, optionally include base64 data
+        is_image = mime_type and mime_type.startswith("image/")
+        if include_raw and is_image and storage_path:
+            try:
+                import base64
+                file_bytes = supabase.storage.from_("files").download(storage_path)
+                if file_bytes:
+                    result["raw_base64"] = base64.b64encode(file_bytes).decode("utf-8")
+                    result["raw_mime_type"] = mime_type
+            except Exception as e:
+                logger.warning(f"Failed to fetch raw file for {file_id}: {e}")
+
+        return result
+
+    except MCPServiceError:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting file content for {file_id}: {sanitize_error(e)}")
+        raise MCPServiceError("Failed to get file content", "file_content_error")

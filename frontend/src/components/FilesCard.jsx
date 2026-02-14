@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { filesAPI } from '../services/api'
 
-export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect, selectedFiles = [] }) {
+export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect, selectedFiles = [], canDelete = true }) {
   const { isDark } = useTheme()
   const [expandedFolders, setExpandedFolders] = useState(new Set())
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -31,6 +31,49 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
   const handleFileClick = (file) => {
     if (onFileSelect) {
       onFileSelect(file)
+    }
+  }
+
+  const handleDownloadCreatedFile = async (file, e) => {
+    e.stopPropagation()
+    try {
+      const response = await filesAPI.getContent(bucketId, file.id)
+      const content = response.data?.content ?? ''
+      if (!content) {
+        alert('File is still processing or empty.')
+        return
+      }
+      const blob = new Blob([content], { type: file.mime_type || 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = file.name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Download failed:', error)
+      alert('Failed to download file: ' + (error.response?.data?.detail || error.message))
+    }
+  }
+
+  const handleOpenCreatedFile = async (file, e) => {
+    e.stopPropagation()
+    try {
+      const response = await filesAPI.getContent(bucketId, file.id)
+      const content = response.data?.content ?? ''
+      if (!content) {
+        alert('File is still processing or empty.')
+        return
+      }
+      const blob = new Blob([content], { type: file.mime_type || 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
+    } catch (error) {
+      console.error('Open failed:', error)
+      alert('Failed to open file: ' + (error.response?.data?.detail || error.message))
     }
   }
 
@@ -265,7 +308,9 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
     return files
   }
 
-  const { tree, rootFiles } = buildFolderTree(files)
+  const createdFiles = files.filter(file => file.source === 'created')
+  const uploadedFiles = files.filter(file => file.source !== 'created')
+  const { tree, rootFiles } = buildFolderTree(uploadedFiles)
   const rootFolders = Object.values(tree.children).sort((a, b) => a.name.localeCompare(b.name))
 
   return (
@@ -307,73 +352,178 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
             </div>
           ) : (
             <div className="space-y-1">
-              {/* Root Folders (recursive tree) */}
-              {rootFolders.map(folder => (
-                <FolderNode key={folder.path} folder={folder} level={0} />
-              ))}
-
-              {/* Root Files (files without folder_path) */}
-              {rootFiles.map((file) => {
-                const selected = isSelected(file.id)
-                return (
-                  <div
-                    key={file.id}
-                    onClick={() => handleFileClick(file)}
-                    className={`group flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${selected
-                      ? isDark
-                        ? 'bg-dark-accent/20 border border-dark-accent/50'
-                        : 'bg-[#1FE0A5]/20 border border-[#1FE0A5]/50'
-                      : isDark
-                        ? 'hover:bg-white/5'
-                        : 'hover:bg-black/5'
-                      }`}
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {selected ? (
-                        <div className={`w-5 h-5 flex-shrink-0 rounded-full flex items-center justify-center ${isDark ? 'bg-dark-accent' : 'bg-light-accent'
-                          }`}>
-                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                      ) : (
-                        <svg className={`w-5 h-5 flex-shrink-0 ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
-                          }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm truncate font-medium ${selected
+              {createdFiles.length > 0 && (
+                <div className="pt-1">
+                  <p className={`px-2 pb-1 text-[11px] uppercase tracking-wide ${isDark ? 'text-dark-text/40' : 'text-[#062A33]/40'
+                    }`}>
+                    Created Files
+                  </p>
+                  {createdFiles.map((file) => {
+                    const selected = isSelected(file.id)
+                    return (
+                      <div
+                        key={file.id}
+                        onClick={() => handleFileClick(file)}
+                        className={`group flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${selected
                           ? isDark
-                            ? 'text-dark-accent'
-                            : 'text-light-accent'
+                            ? 'bg-dark-accent/20 border border-dark-accent/50'
+                            : 'bg-[#1FE0A5]/20 border border-[#1FE0A5]/50'
                           : isDark
-                            ? 'text-dark-text'
-                            : 'text-[#062A33]'
-                          }`}>
-                          {file.name}
-                        </p>
-                        <p className={`text-xs ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
-                          }`}>
-                          {formatSize(file.size_bytes)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {/* Delete button */}
-                      <button
-                        onClick={(e) => handleDeleteFile(file.id, e)}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-all"
-                        title="Delete file"
+                            ? 'hover:bg-white/5'
+                            : 'hover:bg-black/5'
+                          }`}
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {selected ? (
+                            <div className={`w-5 h-5 flex-shrink-0 rounded-full flex items-center justify-center ${isDark ? 'bg-dark-accent' : 'bg-light-accent'
+                              }`}>
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          ) : (
+                            <svg className={`w-5 h-5 flex-shrink-0 ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm truncate font-medium ${selected
+                              ? isDark
+                                ? 'text-dark-accent'
+                                : 'text-light-accent'
+                              : isDark
+                                ? 'text-dark-text'
+                                : 'text-[#062A33]'
+                              }`}>
+                              {file.name}
+                            </p>
+                            <p className={`text-xs ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                              }`}>
+                              {formatSize(file.size_bytes)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => handleDownloadCreatedFile(file, e)}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-white/10 text-blue-400 transition-all"
+                            title="Download file"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => handleOpenCreatedFile(file, e)}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-white/10 text-emerald-400 transition-all"
+                            title="Open in new tab"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 3h7v7m0-7L10 14m-4 7h12a2 2 0 002-2V9" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteFile(file.id, e)}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-all"
+                            title="Delete file"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {(rootFolders.length > 0 || rootFiles.length > 0) && (
+                <div className="pt-2">
+                  <p className={`px-2 pb-1 text-[11px] uppercase tracking-wide ${isDark ? 'text-dark-text/40' : 'text-[#062A33]/40'
+                    }`}>
+                    Uploaded Files
+                  </p>
+                  {/* Root Folders (recursive tree) */}
+                  {rootFolders.map(folder => (
+                    <FolderNode key={folder.path} folder={folder} level={0} />
+                  ))}
+
+                  {/* Root Files (files without folder_path) */}
+                  {rootFiles.map((file) => {
+                    const selected = isSelected(file.id)
+                    return (
+                      <div
+                        key={file.id}
+                        onClick={() => handleFileClick(file)}
+                        className={`group flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${selected
+                          ? isDark
+                            ? 'bg-dark-accent/20 border border-dark-accent/50'
+                            : 'bg-[#1FE0A5]/20 border border-[#1FE0A5]/50'
+                          : isDark
+                            ? 'hover:bg-white/5'
+                            : 'hover:bg-black/5'
+                          }`}
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {selected ? (
+                            <div className={`w-5 h-5 flex-shrink-0 rounded-full flex items-center justify-center ${isDark ? 'bg-dark-accent' : 'bg-light-accent'
+                              }`}>
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          ) : (
+                            <svg className={`w-5 h-5 flex-shrink-0 ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              {file.uploaded_by_color && (
+                                <div
+                                  className="w-2 h-2 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: file.uploaded_by_color }}
+                                  title={file.uploaded_by_name || ''}
+                                />
+                              )}
+                              <p className={`text-sm truncate font-medium ${selected
+                                ? isDark
+                                  ? 'text-dark-accent'
+                                  : 'text-light-accent'
+                                : isDark
+                                  ? 'text-dark-text'
+                                  : 'text-[#062A33]'
+                                }`}>
+                                {file.name}
+                              </p>
+                            </div>
+                            <p className={`text-xs ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'
+                              }`}>
+                              {formatSize(file.size_bytes)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {canDelete && (
+                            <button
+                              onClick={(e) => handleDeleteFile(file.id, e)}
+                              className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-all"
+                              title="Delete file"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -630,3 +630,46 @@ async def chat_with_bucket(
             status_code=500,
             detail=sanitize_error_message(e)
         )
+
+
+@router.get("/buckets/{bucket_id}/files/{file_id}/content")
+async def get_file_content(
+    bucket_id: str,
+    file_id: str,
+    include_raw: bool = False,
+    api_user: APIKeyUser = Depends(get_api_key_user)
+):
+    """Get the full extracted content for a specific file"""
+    try:
+        if not validate_uuid(bucket_id):
+            raise HTTPException(status_code=400, detail="Invalid bucket ID format")
+        if not validate_uuid(file_id):
+            raise HTTPException(status_code=400, detail="Invalid file ID format")
+
+        supabase = get_supabase()
+        check_bucket_access(api_user, bucket_id, supabase)
+
+        from app.services.mcp_services import get_file_content_service
+        from app.models.oauth import MCPUser
+
+        # Convert APIKeyUser to MCPUser for service layer
+        mcp_user = MCPUser(
+            user_id=api_user.user_id,
+            auth_type="api_key",
+            api_key_id=api_user.api_key_id,
+            scopes=api_user.scopes,
+            allowed_buckets=api_user.allowed_buckets,
+        )
+
+        result = await get_file_content_service(bucket_id, file_id, mcp_user, include_raw)
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"MCP get_file_content error for file {file_id}, bucket {bucket_id}: {error_trace}")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_error_message(e)
+        )

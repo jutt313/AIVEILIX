@@ -2,15 +2,18 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import { authAPI, bucketsAPI, apiKeysAPI, oauthAPI, stripeAPI } from '../services/api'
+import { authAPI, bucketsAPI, apiKeysAPI, oauthAPI, stripeAPI, teamAPI } from '../services/api'
 import Input from './Input'
 import Button from './Button'
 import CreateAPIKeyModal from './CreateAPIKeyModal'
 import CreateOAuthClientModal from './CreateOAuthClientModal'
 import CreateCredentialModal from './CreateCredentialModal'
+import AddTeamMemberModal from './AddTeamMemberModal'
+import TeamMemberBucketPermissions from './TeamMemberBucketPermissions'
+import TeamActivityFeed from './TeamActivityFeed'
 
 export default function ProfileModal({ isOpen, onClose }) {
-  const { user, logout } = useAuth()
+  const { user, logout, isTeamMember } = useAuth()
   const { isDark, toggleTheme } = useTheme()
   const [activeTab, setActiveTab] = useState('profile')
   
@@ -49,6 +52,13 @@ export default function ProfileModal({ isOpen, onClose }) {
   const [showCreateCredentialModal, setShowCreateCredentialModal] = useState(false)
   const [credentialView, setCredentialView] = useState('api-keys') // 'api-keys' or 'oauth'
 
+  // Team state
+  const [teamMembers, setTeamMembers] = useState([])
+  const [teamLoading, setTeamLoading] = useState(false)
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false)
+  const [expandedMember, setExpandedMember] = useState(null)
+  const [showPermissions, setShowPermissions] = useState(null)
+
   // Subscription state
   const [subscription, setSubscription] = useState(null)
   const [usage, setUsage] = useState(null)
@@ -65,12 +75,56 @@ export default function ProfileModal({ isOpen, onClose }) {
     }
   }, [isOpen, activeTab])
 
+  // Load team data when team tab is active
+  useEffect(() => {
+    if (isOpen && activeTab === 'team') {
+      loadTeamMembers()
+    }
+  }, [isOpen, activeTab])
+
   // Load subscription data when subscription tab is active
   useEffect(() => {
     if (isOpen && activeTab === 'subscription') {
       loadSubscriptionData()
     }
   }, [isOpen, activeTab])
+
+  const loadTeamMembers = async () => {
+    setTeamLoading(true)
+    try {
+      const res = await teamAPI.listMembers()
+      setTeamMembers(res.data?.members || res.data || [])
+    } catch (err) {
+      console.error('Failed to load team:', err)
+      setTeamMembers([])
+    } finally {
+      setTeamLoading(false)
+    }
+  }
+
+  const handleAddMember = async (name, realEmail, password, color) => {
+    await teamAPI.addMember(name, realEmail, password, color)
+    loadTeamMembers()
+  }
+
+  const handleRemoveMember = async (memberId, memberName) => {
+    if (!confirm(`Remove ${memberName} from your team? They will lose access to all buckets.`)) return
+    try {
+      await teamAPI.removeMember(memberId)
+      loadTeamMembers()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to remove member')
+    }
+  }
+
+  const handleToggleShowName = async (memberId, currentValue) => {
+    try {
+      await teamAPI.updateMember(memberId, { show_name: !currentValue })
+      loadTeamMembers()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update')
+    }
+  }
 
   const loadSubscriptionData = async () => {
     setSubscriptionLoading(true)
@@ -235,6 +289,7 @@ export default function ProfileModal({ isOpen, onClose }) {
 
   const tabs = [
     { id: 'profile', label: 'Profile' },
+    ...(!isTeamMember ? [{ id: 'team', label: 'Team' }] : []),
     { id: 'api-keys', label: 'Credentials' },
     { id: 'subscription', label: 'Subscription' }
   ]
@@ -825,6 +880,122 @@ export default function ProfileModal({ isOpen, onClose }) {
     </div>
   )
 
+  const renderTeamContent = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold dark:text-dark-text text-light-text">Team Members</h3>
+          <p className="text-sm dark:text-dark-text/70 text-light-text/70">
+            Manage team members and their bucket permissions
+          </p>
+        </div>
+        <Button onClick={() => setShowAddMemberModal(true)} className="!w-auto px-3 py-2 text-sm">
+          Add Member
+        </Button>
+      </div>
+
+      {teamLoading ? (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 dark:border-dark-accent border-light-accent mx-auto" />
+        </div>
+      ) : teamMembers.length === 0 ? (
+        <div className="text-center py-12 dark:text-dark-text/70 text-light-text/70">
+          <p className="mb-4">No team members yet</p>
+          <Button onClick={() => setShowAddMemberModal(true)} className="!w-auto">
+            Add Your First Team Member
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {teamMembers.map((member) => (
+            <div key={member.id} className="rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border overflow-hidden">
+              <div
+                className="flex items-center gap-3 p-4 cursor-pointer"
+                onClick={() => setExpandedMember(expandedMember === member.id ? null : member.id)}
+              >
+                <div
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: member.color }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium dark:text-dark-text text-light-text">{member.name}</span>
+                    {!member.is_active && (
+                      <span className="px-2 py-0.5 text-xs rounded bg-red-500/20 text-red-400">Removed</span>
+                    )}
+                  </div>
+                  <span className="text-xs dark:text-dark-text/50 text-light-text/50">{member.aiveilix_email}</span>
+                </div>
+                <svg
+                  className={`w-4 h-4 dark:text-dark-text/50 text-light-text/50 transition-transform ${expandedMember === member.id ? 'rotate-180' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+
+              {expandedMember === member.id && (
+                <div className="px-4 pb-4 space-y-3 border-t dark:border-white/5 border-black/5 pt-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="dark:text-dark-text/70 text-light-text/70">Real email</span>
+                    <span className="dark:text-dark-text text-light-text">{member.real_email}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="dark:text-dark-text/70 text-light-text/70">Show name on hover</span>
+                    <button
+                      onClick={() => handleToggleShowName(member.id, member.show_name)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        member.show_name
+                          ? 'dark:bg-dark-accent/30 dark:text-dark-accent bg-light-accent/20 text-light-accent'
+                          : 'dark:bg-white/5 dark:text-dark-text/50 bg-black/5 text-light-text/50'
+                      }`}
+                    >
+                      {member.show_name ? 'On' : 'Off'}
+                    </button>
+                  </div>
+
+                  {showPermissions === member.id ? (
+                    <TeamMemberBucketPermissions
+                      memberId={member.id}
+                      onClose={() => setShowPermissions(null)}
+                    />
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowPermissions(member.id)}
+                      className="!w-full text-sm"
+                    >
+                      Manage Bucket Permissions
+                    </Button>
+                  )}
+
+                  {member.is_active && (
+                    <button
+                      onClick={() => handleRemoveMember(member.id, member.name)}
+                      className="w-full px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm transition-colors"
+                    >
+                      Remove Member
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Activity Feed */}
+      {teamMembers.length > 0 && (
+        <div className="border-t dark:border-white/10 border-black/10 pt-6">
+          <h3 className="text-lg font-semibold dark:text-dark-text text-light-text mb-4">
+            Recent Activity
+          </h3>
+          <TeamActivityFeed />
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 dark:bg-black/50 bg-black/30 backdrop-blur-sm">
@@ -867,6 +1038,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           {/* Content Area */}
           <div className="flex-1">
             {activeTab === 'profile' && renderProfileContent()}
+            {activeTab === 'team' && renderTeamContent()}
             {activeTab === 'api-keys' && renderAPIKeysContent()}
             {activeTab === 'subscription' && renderSubscriptionContent()}
           </div>
@@ -989,6 +1161,13 @@ export default function ProfileModal({ isOpen, onClose }) {
           </div>
         </div>
       )}
+
+      {/* Add Team Member Modal */}
+      <AddTeamMemberModal
+        isOpen={showAddMemberModal}
+        onClose={() => setShowAddMemberModal(false)}
+        onCreate={handleAddMember}
+      />
 
       {/* Password Confirmation Modal */}
       {showPasswordConfirm && (

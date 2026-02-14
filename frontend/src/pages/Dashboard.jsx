@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import { bucketsAPI, filesAPI } from '../services/api'
+import { bucketsAPI, filesAPI, teamAPI } from '../services/api'
 import StatCard from '../components/StatCard'
 import DashboardGraph from '../components/DashboardGraph'
 import BucketsTable from '../components/BucketsTable'
@@ -13,7 +13,7 @@ import NotificationIcon from '../components/NotificationIcon'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, isTeamMember } = useAuth()
   const { isDark, toggleTheme } = useTheme()
   
   const [stats, setStats] = useState({ total_buckets: 0, total_files: 0, total_storage_bytes: 0 })
@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [teamMemberCount, setTeamMemberCount] = useState(0)
 
   const loadData = async () => {
     try {
@@ -68,6 +69,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData()
+    if (!isTeamMember) {
+      teamAPI.listMembers().then(res => {
+        const members = res.data?.members || res.data || []
+        setTeamMemberCount(members.filter(m => m.is_active).length)
+      }).catch(() => {})
+    }
   }, [])
 
   const handleCreateBucket = async (name, description, files = []) => {
@@ -147,6 +154,11 @@ export default function Dashboard() {
             <span className={`${isDark ? 'text-dark-text/70' : 'text-light-text/70'}`}>
               Welcome, {userName}
             </span>
+            {!isTeamMember && teamMemberCount > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-xs ${isDark ? 'bg-dark-accent/20 text-dark-accent' : 'bg-light-accent/20 text-light-accent'}`}>
+                {teamMemberCount} team member{teamMemberCount !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
           
           <div className="flex items-center gap-3">
@@ -194,16 +206,32 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="relative z-10 max-w-7xl mx-auto px-4 py-8">
-        {/* Create Bucket Button - Top Right */}
-        <div className="flex justify-end mb-6">
-          <Button
-            variant="primary"
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 text-sm w-auto max-w-[200px]"
-          >
-            Create New Bucket
-          </Button>
-        </div>
+        {/* Team Member Banner */}
+        {isTeamMember && (
+          <div className={`mb-6 p-4 rounded-2xl border ${isDark ? 'bg-dark-accent/10 border-dark-accent/20' : 'bg-light-accent/10 border-light-accent/20'}`}>
+            <div className="flex items-center gap-2">
+              {user?.team_member_color && (
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: user.team_member_color }} />
+              )}
+              <span className={`text-sm ${isDark ? 'text-dark-text/70' : 'text-light-text/70'}`}>
+                Team member workspace {user?.team_member_name ? `(${user.team_member_name})` : ''}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Create Bucket Button - Top Right (owners only) */}
+        {!isTeamMember && (
+          <div className="flex justify-end mb-6">
+            <Button
+              variant="primary"
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 text-sm w-auto max-w-[200px]"
+            >
+              Create New Bucket
+            </Button>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-20">

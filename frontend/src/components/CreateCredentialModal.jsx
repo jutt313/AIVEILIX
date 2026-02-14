@@ -75,6 +75,7 @@ export default function CreateCredentialModal({ isOpen, onClose, onCreate, bucke
       setRedirectUri('')
       setScope('delete')
       setSelectedBuckets([])
+      onClose() // Close modal on success
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to create credential')
     } finally {

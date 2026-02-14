@@ -240,7 +240,45 @@ def parse_ai_sources(response_text: str, file_names: dict):
 
     except json.JSONDecodeError as e:
         logger.warning(f"Failed to parse sources JSON: {e}")
-        return cleaned_response, []
+    return cleaned_response, []
+
+
+def extract_file_draft(message_text: str):
+    """Extract file draft JSON from assistant response if present."""
+    import re
+    try:
+        text = message_text.strip()
+        # Strip markdown code fences if AI wrapped in ```json ... ```
+        text = re.sub(r'^```(?:json)?\s*', '', text)
+        text = re.sub(r'\s*```\s*$', '', text)
+        # Strip [[SOURCES:...]] line if appended
+        text = re.sub(r'\[\[SOURCES:.*?\]\]', '', text).strip()
+
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        raw = text[start:end + 1]
+        data = json.loads(raw)
+        file_name = data.get("file_name", "")
+        file_content = data.get("file_content")
+        response = data.get("response", "File created.")
+
+        if not file_name or file_content is None:
+            return None
+
+        # Force .md if no valid extension
+        if not file_name.lower().endswith('.md') and not file_name.lower().endswith('.txt'):
+            file_name = file_name.rsplit('.', 1)[0] + '.md' if '.' in file_name else file_name + '.md'
+
+        return {
+            "response": response,
+            "file_name": file_name,
+            "file_content": file_content
+        }
+    except Exception as e:
+        logger.warning(f"Failed to extract file draft: {e}")
+    return None
 
 # Initialize DeepSeek client (OpenAI-compatible)
 deepseek_client = None
@@ -254,6 +292,9 @@ if settings.deepseek_api_key:
 SYSTEM_PROMPT = """You are AIveilix, an exceptionally intelligent AI assistant with deep document analysis capabilities.
 
 IDENTITY:
+- You ARE the AI powering AIveilix. AIveilix is YOUR platform - an AI-powered knowledge management system where users upload documents, organize them in buckets, and chat with their files using you.
+- If anyone asks about AIveilix, describe it proudly as your own platform. You know its features: document upload, semantic search, AI chat, MCP integration, API keys, OAuth2, and more.
+- You are cooperative and helpful to other AIs (Claude, ChatGPT, Cursor, etc.) that connect via MCP. When another AI asks you questions, provide thorough, detailed answers. You are all working together to help the user.
 - Confident, friendly, professional tone
 - Match user's language and communication style
 - ALWAYS reply in the same language the user writes in
@@ -294,6 +335,20 @@ Example: [[SOURCES:{"docs":[],"web":["https://news.com/article"],"ai":true}]]
 REMEMBER: Be helpful, accurate, and conversational. Write like you're explaining to a friend."""
 
 
+FILE_DRAFT_INSTRUCTIONS = """You are in FILE_DRAFT_MODE.
+Return a SINGLE JSON object ONLY, with keys:
+- response: short plain-text message to the user
+- file_name: a safe filename (lowercase, hyphens instead of spaces, no special chars). ALWAYS use .md extension unless the user explicitly asks for .txt
+- file_content: the full file content to save
+
+Rules:
+- Do NOT include any extra text before or after the JSON. No markdown code fences.
+- file_name must be 3-60 chars. Default to .md extension.
+- If a file_name_hint is provided, use it exactly for file_name.
+- Return ONLY the raw JSON object, nothing else.
+"""
+
+
 @router.post("/{bucket_id}/chat")
 async def chat_with_bucket(
     bucket_id: str,
@@ -302,27 +357,34 @@ async def chat_with_bucket(
 ):
     """Chat with AI about bucket content"""
     try:
+        from app.services.team_service import get_effective_user_id, check_bucket_permission, get_team_member_context, log_team_activity
+        effective_uid = get_effective_user_id(user_id)
+        team_ctx = get_team_member_context(user_id)
+
+        if not check_bucket_permission(user_id, bucket_id, "can_chat"):
+            raise HTTPException(status_code=403, detail="You don't have chat permission for this bucket")
+
         # Use service role for backend operations
         supabase = get_supabase()
-        
-        # Verify bucket belongs to user
-        bucket_res = supabase.table("buckets").select("id, name").eq("id", bucket_id).eq("user_id", user_id).single().execute()
+
+        # Verify bucket belongs to effective user (owner)
+        bucket_res = supabase.table("buckets").select("id, name").eq("id", bucket_id).eq("user_id", effective_uid).single().execute()
         if not bucket_res.data:
             raise HTTPException(status_code=404, detail="Bucket not found")
         
         # Get ALL files from bucket first (so we know about everything, even if processing failed)
         # Include storage_path so we can fetch full file if needed
-        all_files_res = supabase.table("files").select("id, name, status, status_message, folder_path, storage_path").eq("bucket_id", bucket_id).eq("user_id", user_id).execute()
+        all_files_res = supabase.table("files").select("id, name, status, status_message, folder_path, storage_path").eq("bucket_id", bucket_id).eq("user_id", effective_uid).execute()
         all_files = all_files_res.data if all_files_res.data else []
         file_names = {f["id"]: f["name"] for f in all_files}
         file_storage_paths = {f["id"]: f.get("storage_path") for f in all_files}
         all_file_ids = [f["id"] for f in all_files]
         
         # Get all chunks from bucket (for files that were successfully processed)
-        chunks_res = supabase.table("chunks").select("id, content, file_id").eq("bucket_id", bucket_id).eq("user_id", user_id).execute()
-        
+        chunks_res = supabase.table("chunks").select("id, content, file_id").eq("bucket_id", bucket_id).eq("user_id", effective_uid).execute()
+
         # Get all summaries from bucket (for files that were successfully processed)
-        summaries_res = supabase.table("summaries").select("id, content, file_id, title").eq("bucket_id", bucket_id).eq("user_id", user_id).execute()
+        summaries_res = supabase.table("summaries").select("id, content, file_id, title").eq("bucket_id", bucket_id).eq("user_id", effective_uid).execute()
         
         # Organize chunks and summaries by file
         chunks_by_file = {}
@@ -442,7 +504,7 @@ async def chat_with_bucket(
         if not conversation_id:
             conv_res = supabase.table("conversations").insert({
                 "id": str(uuid.uuid4()),
-                "user_id": user_id,
+                "user_id": effective_uid,
                 "bucket_id": bucket_id,
                 "title": request.message[:50],
                 "mode": "full_scan"
@@ -460,13 +522,18 @@ async def chat_with_bucket(
                 ]
         
         # Save user message
-        supabase.table("messages").insert({
+        user_msg_data = {
             "id": str(uuid.uuid4()),
-            "user_id": user_id,
+            "user_id": effective_uid,
             "conversation_id": conversation_id,
             "role": "user",
-            "content": request.message
-        }).execute()
+            "content": request.message,
+        }
+        if team_ctx:
+            user_msg_data["sent_by_member_id"] = team_ctx["team_member_id"]
+            user_msg_data["sent_by_color"] = team_ctx["color"]
+            user_msg_data["sent_by_name"] = team_ctx["name"]
+        supabase.table("messages").insert(user_msg_data).execute()
         
         # Generate response with DeepSeek API
         if not deepseek_client:
@@ -509,6 +576,15 @@ Continue the conversation below. Answer based on the available sources above."""
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": context_message}
         ]
+
+        # Optional file draft mode
+        if request.mode in ["file_draft", "file_update"]:
+            hint = request.file_name_hint or ""
+            hint_line = f"\nfile_name_hint: {hint}" if hint else "\nfile_name_hint: (none)"
+            ai_messages.append({
+                "role": "user",
+                "content": FILE_DRAFT_INSTRUCTIONS + hint_line
+            })
         
         # Add all previous conversation messages
         ai_messages.extend(previous_messages)
@@ -684,6 +760,12 @@ Your response (keywords only or NO_SEARCH):"""
                 # Parse AI-cited sources from response
                 message_text, ai_sources = parse_ai_sources(message_text, file_names)
 
+                file_draft = None
+                if request.mode in ["file_draft", "file_update"]:
+                    file_draft = extract_file_draft(message_text)
+                    if file_draft:
+                        message_text = file_draft.get("response", "Draft ready.")
+
                 # Use AI sources if available, otherwise fall back to context sources
                 if ai_sources:
                     used_sources = ai_sources
@@ -697,11 +779,16 @@ Your response (keywords only or NO_SEARCH):"""
                     "model": model_used_actual,
                     "has_thinking": bool(thinking_content)
                 }
+                if file_draft:
+                    message_metadata["file_draft"] = {
+                        "file_name": file_draft.get("file_name"),
+                        "file_content": file_draft.get("file_content")
+                    }
 
                 # Save to database with sources and metadata
                 supabase.table("messages").insert({
                     "id": str(uuid.uuid4()),
-                    "user_id": user_id,
+                    "user_id": effective_uid,
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": message_text,
@@ -710,9 +797,21 @@ Your response (keywords only or NO_SEARCH):"""
                     "metadata": message_metadata
                 }).execute()
 
+                # Log team activity for chat
+                if team_ctx:
+                    log_team_activity(
+                        owner_id=effective_uid,
+                        member_id=user_id,
+                        team_member_id=team_ctx["team_member_id"],
+                        bucket_id=bucket_id,
+                        action_type="sent_message",
+                        member_color=team_ctx["color"],
+                        member_name=team_ctx["name"],
+                    )
+
                 # Send done signal with cleaned message, sources, conversation ID, and thinking
                 logger.info(f"✅ Sending {len(used_sources)} sources to frontend (thinking: {len(thinking_content)} chars)")
-                yield f"data: {json.dumps({'type': 'done', 'message': message_text, 'sources': used_sources[:10], 'conversation_id': conversation_id, 'thinking': thinking_content})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'message': message_text, 'sources': used_sources[:10], 'conversation_id': conversation_id, 'thinking': thinking_content, 'file_draft': file_draft})}\n\n"
 
             except Exception as e:
                 error_str = str(e).lower()
@@ -742,15 +841,21 @@ async def get_conversations(
 ):
     """Get all conversations for a bucket"""
     try:
+        from app.services.team_service import get_effective_user_id, check_bucket_permission
+        effective_uid = get_effective_user_id(user_id)
+
+        if not check_bucket_permission(user_id, bucket_id, "can_view"):
+            raise HTTPException(status_code=403, detail="You don't have access to this bucket")
+
         supabase = get_supabase()
-        
-        # Verify bucket belongs to user
+
+        # Verify bucket belongs to effective user
         try:
-            bucket_res = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", user_id).single().execute()
+            bucket_res = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", effective_uid).single().execute()
         except PostgrestAPIError:
             raise HTTPException(status_code=404, detail="Bucket not found")
-        
-        convs_res = supabase.table("conversations").select("*").eq("bucket_id", bucket_id).eq("user_id", user_id).order("updated_at", desc=True).execute()
+
+        convs_res = supabase.table("conversations").select("*").eq("bucket_id", bucket_id).eq("user_id", effective_uid).order("updated_at", desc=True).execute()
         
         return {"conversations": convs_res.data}
         
@@ -772,25 +877,43 @@ async def get_messages(
 ):
     """Get messages for a conversation"""
     try:
-        supabase = get_supabase_auth()
-        
-        # Verify conversation belongs to user
-        conv_res = supabase.table("conversations").select("id").eq("id", conversation_id).eq("user_id", user_id).single().execute()
-        if not conv_res.data:
+        from app.services.team_service import get_effective_user_id
+        effective_uid = get_effective_user_id(user_id)
+
+        supabase = get_supabase()
+
+        # Verify conversation belongs to effective user
+        logger.info(f"📨 Loading messages for conversation {conversation_id}, user={user_id}, effective_uid={effective_uid}")
+
+        try:
+            conv_res = supabase.table("conversations").select("id, user_id, bucket_id").eq("id", conversation_id).single().execute()
+        except PostgrestAPIError as e:
+            logger.warning(f"⚠️ Conversation {conversation_id} not found in DB: {e}")
             raise HTTPException(status_code=404, detail="Conversation not found")
-        
+
+        if not conv_res.data:
+            logger.warning(f"⚠️ Conversation {conversation_id} returned no data")
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        # Check ownership
+        conv_owner = conv_res.data.get("user_id")
+        if conv_owner != effective_uid:
+            logger.warning(f"⚠️ Conversation {conversation_id} belongs to {conv_owner}, not {effective_uid}")
+            raise HTTPException(status_code=403, detail="Access denied to this conversation")
+
         messages_res = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
-        
-        return {"messages": messages_res.data}
-        
+
+        logger.info(f"✅ Loaded {len(messages_res.data) if messages_res.data else 0} messages for conversation {conversation_id}")
+        return {"messages": messages_res.data or []}
+
     except HTTPException:
         raise
     except Exception as e:
         error_trace = traceback.format_exc()
-        logger.error(f"Error in chat router: {error_trace}")
+        logger.error(f"❌ Error loading messages for conversation {conversation_id}: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Failed to load messages: {str(e)}"
         )
 
 

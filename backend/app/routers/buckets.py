@@ -43,10 +43,20 @@ async def list_buckets(http_request: Request, user_id: str = Depends(get_current
     """Get all buckets for current user"""
     correlation_id = get_correlation_id(http_request)
     try:
+        from app.services.team_service import get_effective_user_id, get_member_accessible_buckets
+        effective_uid = get_effective_user_id(user_id)
+
         # Use service role to bypass RLS (we've already validated user_id)
         supabase = get_supabase()
-        
-        response = supabase.table("buckets").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+
+        # Team members only see assigned buckets
+        accessible = get_member_accessible_buckets(user_id)
+        if accessible is not None:
+            if not accessible:
+                return BucketsListResponse(buckets=[], total=0)
+            response = supabase.table("buckets").select("*").eq("user_id", effective_uid).in_("id", accessible).order("created_at", desc=True).execute()
+        else:
+            response = supabase.table("buckets").select("*").eq("user_id", effective_uid).order("created_at", desc=True).execute()
         
         buckets_data = response.data if response.data else []
         buckets = [
@@ -85,6 +95,10 @@ async def create_bucket(
     """Create a new bucket"""
     correlation_id = get_correlation_id(http_request)
     try:
+        from app.services.team_service import get_team_member_context
+        if get_team_member_context(user_id):
+            raise HTTPException(status_code=403, detail="Team members cannot create buckets")
+
         # Use service role to bypass RLS (we've already validated user_id)
         supabase = get_supabase()
         
@@ -134,9 +148,15 @@ async def get_bucket(
 ):
     """Get a specific bucket"""
     try:
+        from app.services.team_service import get_effective_user_id, check_bucket_permission
+        effective_uid = get_effective_user_id(user_id)
+
+        if not check_bucket_permission(user_id, bucket_id, "can_view"):
+            raise HTTPException(status_code=403, detail="You don't have access to this bucket")
+
         supabase = get_supabase()
-        
-        response = supabase.table("buckets").select("*").eq("id", bucket_id).eq("user_id", user_id).single().execute()
+
+        response = supabase.table("buckets").select("*").eq("id", bucket_id).eq("user_id", effective_uid).single().execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Bucket not found")
@@ -172,8 +192,12 @@ async def delete_bucket(
 ):
     """Delete a bucket"""
     try:
+        from app.services.team_service import get_team_member_context
+        if get_team_member_context(user_id):
+            raise HTTPException(status_code=403, detail="Team members cannot delete buckets")
+
         supabase = get_supabase()
-        
+
         # Check if bucket exists and belongs to user
         response = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", user_id).single().execute()
         

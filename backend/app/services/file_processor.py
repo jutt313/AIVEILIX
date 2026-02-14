@@ -3,7 +3,9 @@ import hashlib
 import logging
 import base64
 import io
-from typing import List, Dict, Optional
+import tempfile
+from typing import List, Dict, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import fitz  # PyMuPDF
 from docx import Document
 from openai import OpenAI
@@ -71,36 +73,55 @@ def process_image_with_vision(file_path: str, filename: str = "") -> Dict:
         logger.info(f"  🤖 Calling GPT-4 Vision API for {filename}...")
         # Use GPT-4 Vision to analyze image
         response = openai_client.chat.completions.create(
-            model="gpt-4o",  # or gpt-4-vision-preview
+            model="gpt-4o",
             messages=[
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": f"""Analyze this image ({filename if filename else 'image'}) in detail. Extract ALL text you see (OCR) and describe the visual content.
+                            "text": f"""Analyze this image ({filename if filename else 'image'}) with MAXIMUM detail. Extract absolutely everything visible.
 
-Format your response as:
+Format your response EXACTLY as:
 
-TEXT CONTENT:
-[All text extracted from the image, if any]
+IMAGE TYPE:
+[One of: Photograph, Screenshot, Chart/Graph, Diagram/Flowchart, Table, Icon/Logo, Illustration, UI/Landing Page, Infographic, Map, Document Scan, Other]
 
-VISUAL DESCRIPTION:
-[Detailed description of what's in the image: objects, people, scenes, colors, layout, charts, diagrams, etc.]
+TEXT CONTENT (OCR):
+[Extract ALL text exactly as it appears - every word, number, label, caption, watermark, button text, menu item. If no text, write "No text detected"]
 
-KEY INFORMATION:
-[Any important data, numbers, names, dates, or other notable information]"""
+VISUAL LAYOUT:
+[Describe the complete layout: positioning of elements (top-left, center, bottom-right), spacing, alignment, grid structure, columns, sections, hierarchy of visual elements]
+
+COLORS & DESIGN:
+[List ALL colors used with hex codes where possible. Describe: background color, text colors, accent colors, gradients, shadows, borders, color scheme (dark/light/colorful), contrast]
+
+TYPOGRAPHY:
+[Describe fonts: serif/sans-serif, bold/regular/light, sizes (heading vs body), font colors, text alignment, any decorative text]
+
+DETAILED DESCRIPTION:
+[Comprehensive description of EVERYTHING in the image: objects, people (appearance, clothing, expressions, positions), scenes, backgrounds, foregrounds, textures, patterns, shapes, icons, buttons, UI elements, branding]
+
+DATA & NUMBERS:
+[For charts/graphs: axis labels, all data points, values, trends, percentages, comparisons. For tables: all rows and columns. For any numbers/statistics: extract them all with context]
+
+DESIGN ANALYSIS:
+[If UI/web/app screenshot: framework hints (Material, Bootstrap, Tailwind), responsive design, navigation structure, CTA placement, hero section, footer. If marketing: target audience, messaging strategy, visual hierarchy]
+
+KEY INSIGHTS:
+[Important takeaways, notable patterns, relationships between elements, anything remarkable or unusual]"""
                         },
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/{file_ext};base64,{image_data}"
+                                "url": f"data:image/{file_ext};base64,{image_data}",
+                                "detail": "high"
                             }
                         }
                     ]
                 }
             ],
-            max_tokens=1000
+            max_tokens=2000
         )
         
         analysis = response.choices[0].message.content
@@ -154,51 +175,95 @@ def extract_text_from_file(file_path: str, mime_type: str) -> Dict:
             text = ""
             images_processed = 0
             page_count = len(doc)
-            
+
+            # PHASE 1: Extract all text and collect all images (fast, local)
+            page_texts = {}
+            image_tasks = []  # List of (page_num, img_index, temp_path, label)
+
             for page_num in range(page_count):
                 page = doc[page_num]
-                
+
                 # Extract text from page
                 page_text = page.get_text()
-                text += f"\n--- Page {page_num + 1} ---\n{page_text}"
-                
-                # Extract images from page
+                page_texts[page_num] = page_text
+
+                # Extract and save all images to temp files
                 image_list = page.get_images()
                 if image_list:
                     logger.info(f"  🖼️  Found {len(image_list)} images on page {page_num + 1}")
-                    
+
                     for img_index, img in enumerate(image_list):
                         try:
                             xref = img[0]
                             base_image = doc.extract_image(xref)
                             image_bytes = base_image["image"]
                             image_ext = base_image["ext"]
-                            
+
                             # Save image temporarily
-                            import tempfile
                             with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{image_ext}') as temp_img:
                                 temp_img.write(image_bytes)
                                 temp_img_path = temp_img.name
-                            
-                            # Process image with Vision AI
-                            logger.info(f"    🔍 Processing embedded image {img_index + 1} from page {page_num + 1}")
-                            image_result = process_image_with_vision(temp_img_path, f"PDF_Page{page_num + 1}_Image{img_index + 1}")
-                            
-                            # Add image content to text
-                            text += f"\n[IMAGE {img_index + 1} on Page {page_num + 1}]:\n{image_result['text']}\n"
-                            images_processed += 1
-                            
-                            # Clean up temp file
-                            os.unlink(temp_img_path)
-                            
+
+                            label = f"PDF_Page{page_num + 1}_Image{img_index + 1}"
+                            image_tasks.append((page_num, img_index, temp_img_path, label))
+
                         except Exception as e:
-                            logger.warning(f"    ⚠️  Failed to process image {img_index + 1} on page {page_num + 1}: {str(e)}")
+                            logger.warning(f"    ⚠️  Failed to extract image {img_index + 1} on page {page_num + 1}: {str(e)}")
                             continue
-            
+
             doc.close()
+
+            total_images = len(image_tasks)
+            logger.info(f"  📊 Extracted {total_images} images from {page_count} pages - processing ALL in parallel")
+
+            # PHASE 2: Process ALL images in parallel (the speed boost)
+            image_results = {}  # (page_num, img_index) -> result text
+
+            if image_tasks:
+                def _process_single_image(task):
+                    """Worker function for parallel image processing"""
+                    page_num, img_index, temp_path, label = task
+                    try:
+                        result = process_image_with_vision(temp_path, label)
+                        return (page_num, img_index, result['text'], temp_path, None)
+                    except Exception as e:
+                        return (page_num, img_index, None, temp_path, str(e))
+
+                # All images at once - no limit
+                with ThreadPoolExecutor(max_workers=total_images) as executor:
+                    futures = {executor.submit(_process_single_image, task): task for task in image_tasks}
+
+                    for future in as_completed(futures):
+                        page_num, img_index, result_text, temp_path, error = future.result()
+
+                        # Clean up temp file
+                        try:
+                            os.unlink(temp_path)
+                        except OSError:
+                            pass
+
+                        if error:
+                            logger.warning(f"    ⚠️  Failed to process image {img_index + 1} on page {page_num + 1}: {error}")
+                        else:
+                            image_results[(page_num, img_index)] = result_text
+                            images_processed += 1
+                            logger.info(f"    ✅ Image {img_index + 1} on page {page_num + 1} done ({images_processed}/{total_images})")
+
+            # PHASE 3: Assemble final text in correct page/image order
+            for page_num in range(page_count):
+                text += f"\n{'='*60}\n=== PAGE {page_num + 1} of {page_count} ===\n{'='*60}\n{page_texts[page_num]}"
+
+                # Add image results for this page in order
+                page_images = sorted(
+                    [(idx, txt) for (pn, idx), txt in image_results.items() if pn == page_num],
+                    key=lambda x: x[0]
+                )
+                for img_index, img_text in page_images:
+                    text += f"\n{'─'*40}\n[IMAGE {img_index + 1} - Page {page_num + 1}]\n{img_text}\n{'─'*40}\n"
+
             metadata["page_count"] = page_count
             metadata["images_extracted"] = images_processed
-            logger.info(f"  ✅ PDF processed: {page_count} pages, {images_processed} images extracted")
+            logger.info(f"  ✅ PDF processed: {page_count} pages, {images_processed} images extracted (PARALLEL)")
             
         # Handle Word documents
         elif mime_type in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"] or file_ext in [".doc", ".docx"]:
@@ -447,31 +512,102 @@ def analyze_file_comprehensive(text: str, filename: str = "") -> Dict:
                 "model_used": None
             }
         
-        # Use more content for detailed analysis (up to 8000 chars for better context)
-        analysis_text = text[:8000] if len(text) > 8000 else text
+        # Use much more content for ultra-detailed analysis
+        analysis_text = text[:30000] if len(text) > 30000 else text
         file_hint = f" ({filename})" if filename else ""
-        
-        prompt = f"""Analyze the following document in comprehensive detail. Extract all important information.
+        file_ext = os.path.splitext(filename)[1].lower() if filename else ""
 
-Document{file_hint}:
+        # Count images in text
+        image_count = analysis_text.count("[IMAGE ")
+
+        # Detect file category for specialized prompts
+        design_exts = {'.fig', '.sketch', '.psd', '.ai', '.xd'}
+        is_design = file_ext in design_exts or any(kw in analysis_text.lower() for kw in ['landing page', 'hero section', 'cta', 'navbar', 'footer', 'ui design', 'wireframe', 'mockup'])
+        is_research = any(kw in analysis_text.lower() for kw in ['abstract', 'methodology', 'conclusion', 'references', 'hypothesis', 'findings', 'literature review'])
+
+        design_section = """
+DESIGN & UI ANALYSIS:
+- Color palette: List ALL colors with hex codes
+- Typography: All fonts, sizes, weights used
+- Layout structure: Grid system, columns, spacing, responsive hints
+- UI Framework: Identify if Bootstrap, Tailwind, Material UI, or custom
+- Navigation: Structure, menu items, links
+- CTA (Call-to-Action): Button text, placement, colors, urgency
+- Hero section: Headline, subheadline, imagery, value proposition
+- Visual hierarchy: What draws attention first, second, third
+- Brand elements: Logo, tagline, brand colors, tone
+- Conversion strategy: How the design drives user action""" if is_design else ""
+
+        research_section = """
+RESEARCH ANALYSIS:
+- Research question/hypothesis
+- Methodology used
+- Key findings with data points
+- Statistical results (p-values, confidence intervals, sample sizes)
+- Limitations mentioned
+- Conclusions and implications
+- Citation count and key references""" if is_research else ""
+
+        image_section = f"""
+IMAGE ANALYSIS ({image_count} images detected):
+- For EACH image found in the document, provide:
+  * Image number and page location
+  * What type of image (chart, photo, diagram, screenshot, etc.)
+  * Complete description of what it shows
+  * All data points, labels, and values if it's a chart/graph
+  * Colors, layout, and design elements
+  * How it relates to the surrounding text""" if image_count > 0 else ""
+
+        prompt = f"""You are a document analysis expert. Analyze this document with MAXIMUM detail. Your analysis must contain MORE information than the original document by being exhaustive and organized.
+
+Document{file_hint} ({len(analysis_text)} characters, {len(analysis_text.split())} words):
 {analysis_text}
 
-Provide a detailed analysis including:
-1. Main purpose and topic (3-5 sentences covering what this document is about and why it exists)
-2. Key concepts, topics, or themes discussed (list main topics)
-3. Important facts, data, or information extracted (notable details worth remembering)
-4. Document structure/type (code, documentation, data file, configuration, etc.)
-5. Any notable patterns, functions, relationships, or important details
+Create an EXHAUSTIVE analysis covering ALL of the following:
 
-Format as a clear, structured analysis that fully explains what this document contains, its purpose, and key information. This analysis will be used by an AI to understand and answer questions about this file."""
+DOCUMENT OVERVIEW:
+- Document type and category
+- Main purpose (why does this document exist?)
+- Target audience
+- Date/time references found
+- Author/source information if available
+
+COMPLETE CONTENT BREAKDOWN:
+- Section-by-section summary (cover EVERY section, not just main ones)
+- Key arguments or points made in each section
+- All headings and sub-headings listed
+
+ALL DATA & FACTS:
+- Every number, statistic, percentage, date, price, measurement
+- Names of people, companies, products, places mentioned
+- URLs, email addresses, phone numbers if present
+- Technical specifications, versions, configurations
+{image_section}
+{design_section}
+{research_section}
+KEY RELATIONSHIPS & PATTERNS:
+- How different parts of the document connect
+- Cause-effect relationships described
+- Comparisons made
+- Trends or patterns in data
+
+TERMINOLOGY & DEFINITIONS:
+- Technical terms used and their meaning in context
+- Acronyms and abbreviations
+
+COMPREHENSIVE SUMMARY:
+- 10-15 sentence summary covering all major points
+- Nothing should be left out - if someone reads only this analysis, they should know EVERYTHING in the document
+
+IMPORTANT: Be exhaustive. Include every detail, every number, every name. Your analysis should make the original document unnecessary to read."""
 
         response = deepseek_client.chat.completions.create(
             model="deepseek-chat",
             messages=[
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=500  # More tokens for detailed analysis
+            temperature=0.5,
+            max_tokens=4000
         )
         
         detailed_analysis = response.choices[0].message.content
@@ -486,6 +622,46 @@ Format as a clear, structured analysis that fully explains what this document co
             "model_used": None,
             "error": str(e)
         }
+
+
+async def enrich_summary_with_web_search(summary: str, filename: str = "") -> str:
+    """Enrich a summary with web search results for additional context"""
+    try:
+        from app.services.web_search import search_web
+
+        if not summary or len(summary) < 100:
+            return summary
+
+        # Extract key topics from summary for web search (first 500 chars)
+        topic_text = summary[:500]
+
+        # Build search query from filename and key content
+        search_query = filename.replace('.', ' ').replace('_', ' ').replace('-', ' ')
+        # Add first meaningful sentence
+        first_line = topic_text.split('\n')[0][:100] if topic_text else ""
+        if first_line:
+            search_query = f"{search_query} {first_line}"
+
+        search_query = search_query.strip()[:100]  # Limit query length
+
+        if not search_query or len(search_query) < 5:
+            return summary
+
+        logger.info(f"🌐 Enriching summary with web search: '{search_query[:50]}...'")
+
+        results = await search_web(search_query, num_results=3)
+
+        if results:
+            web_context = "\n\nADDITIONAL CONTEXT FROM WEB:\n"
+            for r in results:
+                web_context += f"- {r.get('title', '')}: {r.get('snippet', '')} (Source: {r.get('displayLink', '')})\n"
+
+            return summary + web_context
+
+        return summary
+    except Exception as e:
+        logger.warning(f"Web enrichment failed (non-critical): {e}")
+        return summary
 
 
 def generate_summary(text: str, filename: str = "", model_name: str = "deepseek-chat") -> Dict:
@@ -513,8 +689,6 @@ def fetch_full_file_content(storage_path: str, supabase) -> str:
     logger.info(f"📥 Fetching full file from storage: {storage_path}")
     
     try:
-        import tempfile
-        
         # Download file from Supabase Storage
         logger.debug(f"  🔽 Downloading from storage...")
         file_data = supabase.storage.from_("files").download(storage_path)

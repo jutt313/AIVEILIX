@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Header, Form, Query, BackgroundTasks
 from typing import Optional, List, Dict
-from app.models.files import FileResponse, FilesListResponse, FileUploadResponse, SummaryUpdateRequest, SearchResponse, SearchResult
+from app.models.files import FileResponse, FilesListResponse, FileUploadResponse, SummaryUpdateRequest, SearchResponse, SearchResult, CreateFileRequest, FileContentUpdateRequest
 from app.models.buckets import BucketResponse
 from app.services.supabase import get_supabase_auth, get_supabase
-from app.services.file_processor import extract_text_from_file, chunk_text, generate_embedding, generate_embeddings_batch, generate_summary, analyze_file_comprehensive, fetch_full_file_content
+from app.services.file_processor import extract_text_from_file, chunk_text, generate_embedding, generate_embeddings_batch, generate_summary, analyze_file_comprehensive, fetch_full_file_content, enrich_summary_with_web_search
 from app.services.semantic_search import semantic_search, hybrid_search
 from app.services.notifications import create_file_uploaded_notification, create_file_processed_notification
-from app.services.plan_limits import check_all_upload_limits
+from app.services.plan_limits import check_all_upload_limits, check_file_size_limit, check_storage_limit
 from postgrest.exceptions import APIError as PostgrestAPIError
 import asyncio
 from app.routers.buckets import get_current_user_id
@@ -20,10 +20,55 @@ import traceback
 from pathlib import Path
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import sentry_sdk
+import re
 
 router = APIRouter()
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+ALLOWED_CREATED_FILE_EXTENSIONS = {".md", ".txt"}
+
+
+def _validate_created_filename(filename: str) -> str:
+    name = (filename or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="File name is required")
+
+    if "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="File name must not include a path")
+
+    if len(name) > 255:
+        raise HTTPException(status_code=400, detail="File name is too long")
+
+    ext = Path(name).suffix.lower()
+    if not ext or ext not in ALLOWED_CREATED_FILE_EXTENSIONS:
+        # Default to .md if no extension or invalid extension
+        name = name.rsplit('.', 1)[0] + '.md' if '.' in name else name + '.md'
+
+    # Basic filename sanity (no control chars)
+    if re.search(r"[\x00-\x1f\x7f]", name):
+        raise HTTPException(status_code=400, detail="File name contains invalid characters")
+
+    return name
+
+
+async def _enforce_update_limits(user_id: str, new_size: int, existing_size: int) -> None:
+    can_upload, error = await check_file_size_limit(user_id, new_size)
+    if not can_upload:
+        raise HTTPException(status_code=402, detail={
+            "error": "file_size_limit",
+            "message": error,
+            "upgrade_required": True
+        })
+
+    delta = max(0, new_size - existing_size)
+    can_upload, error = await check_storage_limit(user_id, delta)
+    if not can_upload:
+        raise HTTPException(status_code=402, detail={
+            "error": "storage_limit",
+            "message": error,
+            "upgrade_required": True
+        })
 
 
 @retry(
@@ -161,8 +206,53 @@ def process_file_background(
 
         metadata = result["metadata"]
 
+        # Generate comprehensive summary during processing
+        logger.info(f"  6️⃣  Generating comprehensive summary...")
+        try:
+            # Get the extracted text from chunks for summary
+            chunks_res = supabase.table("chunks").select("content").eq(
+                "file_id", file_id
+            ).order("chunk_index").execute()
+            full_text = " ".join([c["content"] for c in (chunks_res.data or [])])
+
+            if full_text and len(full_text.strip()) > 50:
+                summary_result = analyze_file_comprehensive(full_text, filename)
+                summary_text = summary_result.get("summary", "")
+
+                # Enrich with web search
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                            enriched = pool.submit(
+                                asyncio.run,
+                                enrich_summary_with_web_search(summary_text, filename)
+                            ).result(timeout=15)
+                    else:
+                        enriched = asyncio.run(enrich_summary_with_web_search(summary_text, filename))
+                    summary_text = enriched
+                except Exception as web_err:
+                    logger.warning(f"Web enrichment skipped: {web_err}")
+
+                # Store summary
+                supabase.table("summaries").insert({
+                    "id": str(uuid.uuid4()),
+                    "user_id": user_id,
+                    "bucket_id": bucket_id,
+                    "file_id": file_id,
+                    "summary_type": "file",
+                    "title": f"Analysis: {filename}",
+                    "content": summary_text,
+                    "model_used": summary_result.get("model_used", "deepseek-chat")
+                }).execute()
+                logger.info(f"  ✅ Summary stored ({len(summary_text)} chars)")
+        except Exception as summary_err:
+            logger.warning(f"Summary generation failed (non-critical): {summary_err}")
+
         # Update file status to ready
-        logger.info(f"  6️⃣  Updating file status to 'ready'...")
+        logger.info(f"  7️⃣  Updating file status to 'ready'...")
         supabase.table("files").update({
             "status": "ready",
             "processed_at": "now()",
@@ -221,12 +311,19 @@ async def upload_file(
     Chat AI can read unprocessed files directly from storage.
     """
     try:
+        from app.services.team_service import get_effective_user_id, check_bucket_permission, get_team_member_context, log_team_activity
+        effective_uid = get_effective_user_id(user_id)
+        team_ctx = get_team_member_context(user_id)
+
+        if not check_bucket_permission(user_id, bucket_id, "can_upload"):
+            raise HTTPException(status_code=403, detail="You don't have upload permission for this bucket")
+
         # Use service role for bucket verification to avoid RLS propagation delays
         supabase = get_supabase()
 
-        # Verify bucket belongs to user
+        # Verify bucket belongs to effective user (owner)
         try:
-            bucket_res = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", user_id).single().execute()
+            bucket_res = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", effective_uid).single().execute()
         except PostgrestAPIError:
             raise HTTPException(status_code=404, detail="Bucket not found")
 
@@ -250,15 +347,22 @@ async def upload_file(
         file_id = str(uuid.uuid4())
         file_record = {
             "id": file_id,
-            "user_id": user_id,
+            "user_id": effective_uid,
             "bucket_id": bucket_id,
             "name": filename,
             "original_name": filename,
             "mime_type": file.content_type,
             "size_bytes": len(content),
             "storage_path": storage_path,
-            "status": "pending"  # Will be "processing" then "ready" after background task
+            "status": "pending",  # Will be "processing" then "ready" after background task
+            "source": "uploaded"
         }
+
+        # Track which team member uploaded
+        if team_ctx:
+            file_record["uploaded_by_member_id"] = team_ctx["team_member_id"]
+            file_record["uploaded_by_color"] = team_ctx["color"]
+            file_record["uploaded_by_name"] = team_ctx["name"]
 
         # Add folder_path if provided
         if folder_path:
@@ -267,7 +371,21 @@ async def upload_file(
         supabase.table("files").insert(file_record).execute()
 
         # Create file uploaded notification
-        create_file_uploaded_notification(user_id, filename, bucket_id, file_id)
+        create_file_uploaded_notification(effective_uid, filename, bucket_id, file_id)
+
+        # Log team activity
+        if team_ctx:
+            log_team_activity(
+                owner_id=effective_uid,
+                member_id=user_id,
+                team_member_id=team_ctx["team_member_id"],
+                bucket_id=bucket_id,
+                action_type="uploaded_file",
+                resource_id=file_id,
+                resource_name=filename,
+                member_color=team_ctx["color"],
+                member_name=team_ctx["name"],
+            )
 
         # Add background task for processing - DOES NOT BLOCK RESPONSE
         background_tasks.add_task(
@@ -276,7 +394,7 @@ async def upload_file(
             storage_path=storage_path,
             filename=filename,
             mime_type=file.content_type,
-            user_id=user_id,
+            user_id=effective_uid,
             bucket_id=bucket_id
         )
 
@@ -301,6 +419,207 @@ async def upload_file(
         )
 
 
+@router.post("/{bucket_id}/files/create", response_model=FileUploadResponse)
+async def create_file(
+    bucket_id: str,
+    request: CreateFileRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Create a .md or .txt file in a bucket (stored in DB + storage)."""
+    try:
+        supabase = get_supabase()
+
+        # Verify bucket belongs to user
+        try:
+            supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", user_id).single().execute()
+        except PostgrestAPIError:
+            raise HTTPException(status_code=404, detail="Bucket not found")
+
+        filename = _validate_created_filename(request.name)
+        content_text = request.content or ""
+        if not content_text.strip():
+            raise HTTPException(status_code=400, detail="File content is required")
+
+        content_bytes = content_text.encode("utf-8")
+        await check_all_upload_limits(user_id, len(content_bytes))
+
+        file_ext = Path(filename).suffix.lower()
+        mime_type = "text/markdown" if file_ext == ".md" else "text/plain"
+
+        # Check if a file with this name already exists
+        existing = supabase.table("files").select("id, source, storage_path, size_bytes").eq("bucket_id", bucket_id).eq("user_id", user_id).eq("name", filename).limit(1).execute()
+        if existing.data:
+            existing_file = existing.data[0]
+            if existing_file.get("source") != "created":
+                raise HTTPException(status_code=409, detail="A file with this name already exists")
+
+            file_id = str(existing_file["id"])
+            storage_path = existing_file["storage_path"]
+            existing_size = existing_file.get("size_bytes") or 0
+
+            await _enforce_update_limits(user_id, len(content_bytes), existing_size)
+
+            # Replace file content in storage
+            try:
+                supabase.storage.from_("files").remove([storage_path])
+            except Exception:
+                pass
+            supabase.storage.from_("files").upload(storage_path, content_bytes)
+
+            # Reset processing status and update size/mime
+            supabase.table("files").update({
+                "mime_type": mime_type,
+                "size_bytes": len(content_bytes),
+                "status": "pending",
+                "status_message": None,
+                "processed_at": None,
+                "source": "created"
+            }).eq("id", file_id).execute()
+
+            # Clear old chunks before reprocessing
+            supabase.table("chunks").delete().eq("file_id", file_id).execute()
+
+            # Reprocess in background
+            background_tasks.add_task(
+                process_file_background,
+                file_id=file_id,
+                storage_path=storage_path,
+                filename=filename,
+                mime_type=mime_type,
+                user_id=user_id,
+                bucket_id=bucket_id
+            )
+
+            return FileUploadResponse(
+                id=file_id,
+                name=filename,
+                status="pending",
+                message="File updated! Processing in background."
+            )
+
+        # Create new file in storage
+        storage_path = f"{user_id}/{bucket_id}/{uuid.uuid4()}{file_ext}"
+        supabase.storage.from_("files").upload(storage_path, content_bytes)
+
+        file_id = str(uuid.uuid4())
+        file_record = {
+            "id": file_id,
+            "user_id": user_id,
+            "bucket_id": bucket_id,
+            "name": filename,
+            "original_name": filename,
+            "mime_type": mime_type,
+            "size_bytes": len(content_bytes),
+            "storage_path": storage_path,
+            "status": "pending",
+            "source": "created"
+        }
+
+        supabase.table("files").insert(file_record).execute()
+
+        # Process in background
+        background_tasks.add_task(
+            process_file_background,
+            file_id=file_id,
+            storage_path=storage_path,
+            filename=filename,
+            mime_type=mime_type,
+            user_id=user_id,
+            bucket_id=bucket_id
+        )
+
+        return FileUploadResponse(
+            id=file_id,
+            name=filename,
+            status="pending",
+            message="File created! Processing in background."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"Error creating file: {error_trace}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.put("/{bucket_id}/files/{file_id}/content", response_model=FileUploadResponse)
+async def update_created_file_content(
+    bucket_id: str,
+    file_id: str,
+    request: FileContentUpdateRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Update content of a created file and reprocess it."""
+    try:
+        supabase = get_supabase()
+
+        file_res = supabase.table("files").select("id, name, source, storage_path, mime_type, size_bytes").eq("id", file_id).eq("bucket_id", bucket_id).eq("user_id", user_id).single().execute()
+        if not file_res.data:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if file_res.data.get("source") != "created":
+            raise HTTPException(status_code=400, detail="Only created files can be edited")
+
+        content_text = request.content or ""
+        if not content_text.strip():
+            raise HTTPException(status_code=400, detail="File content is required")
+
+        content_bytes = content_text.encode("utf-8")
+        existing_size = file_res.data.get("size_bytes") or 0
+        await _enforce_update_limits(user_id, len(content_bytes), existing_size)
+
+        storage_path = file_res.data["storage_path"]
+        mime_type = file_res.data.get("mime_type") or "text/plain"
+
+        try:
+            supabase.storage.from_("files").remove([storage_path])
+        except Exception:
+            pass
+        supabase.storage.from_("files").upload(storage_path, content_bytes)
+
+        supabase.table("files").update({
+            "size_bytes": len(content_bytes),
+            "status": "pending",
+            "status_message": None,
+            "processed_at": None
+        }).eq("id", file_id).execute()
+
+        supabase.table("chunks").delete().eq("file_id", file_id).execute()
+
+        background_tasks.add_task(
+            process_file_background,
+            file_id=file_id,
+            storage_path=storage_path,
+            filename=file_res.data.get("name"),
+            mime_type=mime_type,
+            user_id=user_id,
+            bucket_id=bucket_id
+        )
+
+        return FileUploadResponse(
+            id=str(file_id),
+            name=file_res.data.get("name"),
+            status="pending",
+            message="File updated! Processing in background."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"Error updating file content: {error_trace}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
 @router.get("/{bucket_id}/files", response_model=FilesListResponse)
 async def list_files(
     bucket_id: str,
@@ -308,16 +627,22 @@ async def list_files(
 ):
     """List all files in a bucket"""
     try:
+        from app.services.team_service import get_effective_user_id, check_bucket_permission
+        effective_uid = get_effective_user_id(user_id)
+
+        if not check_bucket_permission(user_id, bucket_id, "can_view"):
+            raise HTTPException(status_code=403, detail="You don't have access to this bucket")
+
         # Use service role for backend operations
         supabase = get_supabase()
-        
-        # Verify bucket belongs to user
-        bucket_res = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", user_id).single().execute()
+
+        # Verify bucket belongs to effective user
+        bucket_res = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", effective_uid).single().execute()
         if not bucket_res.data:
             raise HTTPException(status_code=404, detail="Bucket not found")
-        
+
         files_res = supabase.table("files").select("*").eq("bucket_id", bucket_id).order("created_at", desc=True).execute()
-        
+
         files = [
             FileResponse(
                 id=str(f["id"]),
@@ -331,12 +656,15 @@ async def list_files(
                 page_count=f.get("page_count"),
                 word_count=f.get("word_count"),
                 folder_path=f.get("folder_path"),
+                source=f.get("source"),
+                uploaded_by_color=f.get("uploaded_by_color"),
+                uploaded_by_name=f.get("uploaded_by_name"),
                 created_at=f["created_at"],
                 updated_at=f["updated_at"]
             )
             for f in files_res.data
         ]
-        
+
         return FilesListResponse(files=files, total=len(files))
         
     except HTTPException:
@@ -707,20 +1035,42 @@ async def delete_file(
 ):
     """Delete a file from a bucket"""
     try:
+        from app.services.team_service import get_effective_user_id, check_bucket_permission, get_team_member_context, log_team_activity
+        effective_uid = get_effective_user_id(user_id)
+
+        if not check_bucket_permission(user_id, bucket_id, "can_delete"):
+            raise HTTPException(status_code=403, detail="You don't have delete permission for this bucket")
+
         supabase = get_supabase_auth()
-        
-        # Verify file belongs to user and bucket
-        file_res = supabase.table("files").select("storage_path").eq("id", file_id).eq("bucket_id", bucket_id).eq("user_id", user_id).single().execute()
+
+        # Verify file belongs to effective user and bucket
+        file_res = supabase.table("files").select("storage_path, name").eq("id", file_id).eq("bucket_id", bucket_id).eq("user_id", effective_uid).single().execute()
         if not file_res.data:
             raise HTTPException(status_code=404, detail="File not found")
         
         # Delete from storage
         storage_path = file_res.data["storage_path"]
+        file_name = file_res.data.get("name", "")
         get_supabase().storage.from_("files").remove([storage_path])
-        
+
         # Delete file record (cascade will delete chunks)
         supabase.table("files").delete().eq("id", file_id).execute()
-        
+
+        # Log team activity
+        team_ctx = get_team_member_context(user_id)
+        if team_ctx:
+            log_team_activity(
+                owner_id=effective_uid,
+                member_id=user_id,
+                team_member_id=team_ctx["team_member_id"],
+                bucket_id=bucket_id,
+                action_type="deleted_file",
+                resource_id=file_id,
+                resource_name=file_name,
+                member_color=team_ctx["color"],
+                member_name=team_ctx["name"],
+            )
+
         return {"success": True, "message": "File deleted"}
         
     except HTTPException:

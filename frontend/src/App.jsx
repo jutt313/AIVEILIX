@@ -15,6 +15,7 @@ import Tokusho from './pages/Tokusho'
 import Doc from './pages/Doc'
 import LoginPageGif from './pages/LoginPageGif'
 import BucketFullWorkflowGif from './pages/BucketFullWorkflowGif'
+import OAuthAuthorize from './pages/OAuthAuthorize'
 
 function App() {
   return (
@@ -36,6 +37,7 @@ function App() {
             <Route path="/doc" element={<Doc />} />
             <Route path="/login-page-gif" element={<LoginPageGif />} />
             <Route path="/bucket-workflow-gif" element={<BucketFullWorkflowGif />} />
+            <Route path="/oauth/authorize" element={<OAuthAuthorize />} />
 
             {/* Protected routes */}
             <Route

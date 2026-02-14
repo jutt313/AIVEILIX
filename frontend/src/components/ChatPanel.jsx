@@ -8,6 +8,7 @@ export default function ChatPanel({
   conversationId: externalConversationId,
   onConversationCreated,
   onFilesUpdate,
+  files = [],
   selectedFiles = [],
   onSelectedFilesChange
 }) {
@@ -25,6 +26,12 @@ export default function ChatPanel({
   const [isTyping, setIsTyping] = useState(false) // Show typing cursor
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [upgradeError, setUpgradeError] = useState(null)
+  const [createFileMode, setCreateFileMode] = useState(false)
+  const [createFileName, setCreateFileName] = useState('')
+  const [createFileError, setCreateFileError] = useState('')
+  const [createFileSaving, setCreateFileSaving] = useState(false)
+  const [createFileDraftReady, setCreateFileDraftReady] = useState(false)
+  const [lastCreatedFileName, setLastCreatedFileName] = useState('')
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const uploadMenuRef = useRef(null)
@@ -88,6 +95,10 @@ export default function ChatPanel({
       // New chat selected - clear everything
       setConversationId(null)
       setMessages([])
+      setCreateFileMode(false)
+      setCreateFileName('')
+      setCreateFileError('')
+      setCreateFileDraftReady(false)
     }
   }, [externalConversationId])
 
@@ -101,7 +112,9 @@ export default function ChatPanel({
         role: msg.role,
         content: msg.content,
         sources: msg.sources || [],
-        timestamp: new Date(msg.created_at)
+        timestamp: new Date(msg.created_at),
+        sent_by_color: msg.sent_by_color || null,
+        sent_by_name: msg.sent_by_name || null,
       }))
 
       setMessages(formattedMessages)
@@ -200,9 +213,181 @@ export default function ChatPanel({
     folderInputRef.current?.click()
   }
 
+  const handleCreateDocClick = () => {
+    setShowUploadMenu(false)
+    setCreateFileMode(true)
+    setCreateFileError('')
+    setCreateFileDraftReady(false)
+  }
+
   const removeSelectedFile = (fileId) => {
     if (onSelectedFilesChange) {
       onSelectedFilesChange(selectedFiles.filter(f => f.id !== fileId))
+    }
+  }
+
+  const detectCreateIntent = (text) => {
+    const trimmed = (text || '').trim()
+    if (!trimmed) return null
+    const lower = trimmed.toLowerCase()
+    if (lower.includes('/createfile')) {
+      return { mode: 'create', name: '' }
+    }
+    const nameMatch = trimmed.match(/([A-Za-z0-9_.-]+\.(md|txt))/i)
+    const createMatch = /(create|make|generate|write|save)\s+(a\s+)?(file|doc|document|note|summary)/i.test(trimmed)
+    const updateMatch = /(update|edit|revise|rewrite|improve|refine)\s+(the\s+)?(file|doc|document|note|summary)/i.test(trimmed)
+    if (nameMatch || createMatch || updateMatch) {
+      return {
+        mode: updateMatch ? 'update' : 'create',
+        name: nameMatch ? nameMatch[1] : ''
+      }
+    }
+    return null
+  }
+
+  const requestFileDraft = async (prompt, intent, conversationIdForDraft) => {
+    setLoading(true)
+    setLoadingMessage('Creating file...')
+    setCreateFileMode(true)
+    setCreateFileDraftReady(false)
+    setCreateFileError('')
+
+    try {
+      const response = await chatAPI.sendMessage(
+        bucketId,
+        prompt,
+        conversationIdForDraft,
+        null,
+        null,
+        {
+          mode: intent.mode === 'update' ? 'file_update' : 'file_draft',
+          file_name_hint: intent.name || (intent.mode === 'update' ? lastCreatedFileName : '')
+        }
+      )
+      const data = response.data
+
+      if (data.conversation_id && data.conversation_id !== conversationIdForDraft) {
+        isCreatingConversation.current = true
+        setConversationId(data.conversation_id)
+        if (onConversationCreated) {
+          onConversationCreated(data.conversation_id)
+        }
+      }
+
+      if (data.file_draft && data.file_draft.file_name && data.file_draft.file_content) {
+        // Auto-create file directly (no draft review)
+        const fileName = data.file_draft.file_name
+        const fileContent = data.file_draft.file_content
+
+        try {
+          const existing = files.find(f => f.name === fileName && f.source === 'created')
+          if (existing) {
+            await filesAPI.updateContent(bucketId, existing.id, fileContent)
+          } else {
+            await filesAPI.create(bucketId, fileName, fileContent)
+          }
+
+          if (onFilesUpdate) await onFilesUpdate()
+
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.message || (existing ? `Updated file: ${fileName}` : `Created file: ${fileName}`),
+            sources: data.sources,
+            timestamp: new Date()
+          }])
+
+          setLastCreatedFileName(fileName)
+          setCreateFileMode(false)
+          setCreateFileName('')
+          setCreateFileDraftReady(false)
+          setInput('')
+        } catch (createError) {
+          console.error('Auto-create file failed:', createError)
+          // Fallback: show draft for manual review
+          setCreateFileName(fileName)
+          setInput(fileContent)
+          setCreateFileDraftReady(true)
+          setCreateFileError(createError.response?.data?.detail || 'Auto-create failed. Review and try again.')
+
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.message || 'File drafted. Review and press Create.',
+            sources: data.sources,
+            timestamp: new Date()
+          }])
+        }
+      } else {
+        setCreateFileError('AI failed to generate file. Try again with a clearer description.')
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: data.message || 'Could not generate file.',
+          sources: data.sources,
+          timestamp: new Date()
+        }])
+      }
+    } catch (error) {
+      console.error('File creation error:', error)
+      setCreateFileError(error.response?.data?.detail || error.message || 'Failed to create file')
+    } finally {
+      setLoading(false)
+      setCurrentPhase('idle')
+      setThinkingContent('')
+      setIsTyping(false)
+    }
+  }
+
+  const handleCreateFile = async () => {
+    if (createFileSaving) return
+    const name = createFileName.trim()
+    const content = input.trim()
+
+    if (!name) {
+      setCreateFileError('Filename is required (e.g., notes.md)')
+      return
+    }
+    if (!name.toLowerCase().endsWith('.md') && !name.toLowerCase().endsWith('.txt')) {
+      setCreateFileError('Only .md and .txt files are supported')
+      return
+    }
+    if (!content) {
+      setCreateFileError('File content is required')
+      return
+    }
+
+    setCreateFileError('')
+    setCreateFileSaving(true)
+
+    try {
+      const existing = files.find(f => f.name === name && f.source === 'created')
+      if (existing) {
+        await filesAPI.updateContent(bucketId, existing.id, content)
+      } else {
+        await filesAPI.create(bucketId, name, content)
+      }
+
+      if (onFilesUpdate) {
+        await onFilesUpdate()
+      }
+
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: existing ? `Updated file: ${name}` : `Created file: ${name}`,
+          timestamp: new Date()
+        }
+      ])
+
+      setInput('')
+      setCreateFileName('')
+      setCreateFileMode(false)
+      setCreateFileDraftReady(false)
+      setLastCreatedFileName(name)
+    } catch (error) {
+      console.error('Create file failed:', error)
+      setCreateFileError(error.response?.data?.detail || error.message || 'Failed to create file')
+    } finally {
+      setCreateFileSaving(false)
     }
   }
 
@@ -222,7 +407,14 @@ export default function ChatPanel({
 
   const handleSend = async (e) => {
     e.preventDefault()
-    if ((!input.trim() && selectedFiles.length === 0) || loading) return
+    if (loading) return
+
+    if (createFileMode && createFileDraftReady) {
+      await handleCreateFile()
+      return
+    }
+
+    if ((!input.trim() && selectedFiles.length === 0)) return
 
     // Build message with file references
     let userMessage = input.trim()
@@ -231,6 +423,61 @@ export default function ChatPanel({
       userMessage = fileRefs + (userMessage ? ` ${userMessage}` : '')
     }
 
+    if (createFileMode && !createFileDraftReady) {
+      const prompt = userMessage
+      const newUserMessage = {
+        role: 'user',
+        content: prompt,
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, newUserMessage])
+
+      setInput('')
+      if (onSelectedFilesChange) {
+        onSelectedFilesChange([])
+      }
+      if (textareaRef.current) {
+        textareaRef.current.style.height = '24px'
+      }
+
+      await requestFileDraft(prompt, { mode: 'create', name: '' }, conversationId)
+      return
+    }
+
+    // Auto-detect create/update intent when mode is not active
+    const createIntent = detectCreateIntent(userMessage)
+    if (createIntent) {
+      if (createIntent.mode === 'update' && !createIntent.name && !lastCreatedFileName) {
+        setCreateFileMode(true)
+        setCreateFileError('No created file to update yet.')
+        return
+      }
+      const cleaned = userMessage.replace('/createfile', '').trim()
+      const prompt = cleaned || userMessage
+      if (!prompt.trim()) {
+        setCreateFileMode(true)
+        setCreateFileError('Describe the file you want to create.')
+        return
+      }
+
+      const newUserMessage = {
+        role: 'user',
+        content: prompt,
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, newUserMessage])
+
+      setInput('')
+      if (onSelectedFilesChange) {
+        onSelectedFilesChange([])
+      }
+      if (textareaRef.current) {
+        textareaRef.current.style.height = '24px'
+      }
+
+      await requestFileDraft(prompt, createIntent, conversationId)
+      return
+    }
     setInput('')
     // Clear selected files after sending
     if (onSelectedFilesChange) {
@@ -427,15 +674,23 @@ export default function ChatPanel({
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-3xl px-4 py-2 ${msg.role === 'user'
+                  className={`group/msg max-w-[85%] rounded-3xl px-4 py-2 ${msg.role === 'user'
                     ? isDark
-                      ? 'bg-[#2DFFB7]/20 text-dark-text border border-[#2DFFB7]'
-                      : 'bg-[#1FE0A5]/20 text-[#062A33] border border-[#1FE0A5]'
+                      ? `bg-[${msg.sent_by_color || '#2DFFB7'}]/20 text-dark-text border`
+                      : `bg-[${msg.sent_by_color || '#1FE0A5'}]/20 text-[#062A33] border`
                     : isDark
                       ? 'text-dark-text'
                       : 'text-[#062A33]'
                     }`}
+                  style={msg.role === 'user' && msg.sent_by_color ? {
+                    backgroundColor: `${msg.sent_by_color}20`,
+                    borderColor: msg.sent_by_color
+                  } : undefined}
                 >
+                  {/* Team member name - shows on hover only */}
+                  {msg.sent_by_color && msg.sent_by_name && (
+                    <span className="block text-xs opacity-0 group-hover/msg:opacity-50 transition-opacity mb-1">{msg.sent_by_name}</span>
+                  )}
                   {/* Thinking Section (Collapsible) - Only for assistant messages with thinking */}
                   {msg.role === 'assistant' && msg.thinking && (
                     <div className={`mb-3 pb-3 border-b ${isDark ? 'border-white/10' : 'border-[#1FE0A5]/20'}`}>
@@ -612,7 +867,57 @@ export default function ChatPanel({
             </div>
           )}
 
+          {/* Create File Mode Chip */}
+          {createFileMode && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${isDark
+                ? 'bg-yellow-500/15 border border-yellow-500/40'
+                : 'bg-yellow-500/10 border border-yellow-500/30'
+                }`}
+              >
+                <span className={isDark ? 'text-yellow-300' : 'text-yellow-700'}>
+                  {createFileDraftReady ? 'Draft ready' : '/createfile'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateFileMode(false)
+                    setCreateFileError('')
+                    setCreateFileDraftReady(false)
+                  }}
+                  className="ml-1 hover:bg-yellow-500/20 rounded-full p-0.5 transition-colors"
+                  title="Exit create file mode"
+                >
+                  <svg className="w-3 h-3 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSend}>
+            {/* Create File Name Input */}
+            {createFileMode && createFileDraftReady && (
+              <div className="mb-2">
+                <input
+                  type="text"
+                  value={createFileName}
+                  onChange={(e) => setCreateFileName(e.target.value)}
+                  placeholder="filename.md or filename.txt"
+                  className={`w-full px-3 py-2 rounded-xl bg-transparent border ${isDark
+                    ? 'border-white/10 text-dark-text placeholder:text-dark-text/50'
+                    : 'border-[#1FE0A5]/30 text-[#062A33] placeholder:text-[#062A33]/50'
+                    } focus:outline-none focus:ring-1 focus:ring-dark-accent/50 transition-all`}
+                />
+                {createFileError && (
+                  <p className="mt-1 text-xs text-red-400">{createFileError}</p>
+                )}
+              </div>
+            )}
+            {createFileMode && !createFileDraftReady && createFileError && (
+              <p className="mb-2 text-xs text-red-400">{createFileError}</p>
+            )}
             {/* Hidden file inputs */}
             <input
               ref={fileInputRef}
@@ -668,6 +973,12 @@ export default function ChatPanel({
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                       Upload Folder
                     </button>
+                    <button type="button" onClick={handleCreateDocClick} className={`w-full px-4 py-2 text-left text-sm transition-colors flex items-center gap-2 ${isDark ? 'text-dark-text hover:bg-white/10' : 'text-[#062A33] hover:bg-black/10'}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Create Doc
+                    </button>
                   </div>
                 )}
               </div>
@@ -677,7 +988,9 @@ export default function ChatPanel({
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about your documents..."
+                placeholder={createFileMode
+                  ? (createFileDraftReady ? 'Edit file content...' : 'Describe the file to create...')
+                  : 'Ask about your documents...'}
                 className={`flex-1 min-w-0 bg-transparent focus:outline-none resize-none overflow-y-auto text-[16px] leading-6 px-3 ${isDark
                     ? 'text-dark-text placeholder:text-dark-text/50'
                     : 'text-[#062A33] placeholder:text-[#062A33]/50'
@@ -698,10 +1011,16 @@ export default function ChatPanel({
               <button
                 type={loading ? "button" : "submit"}
                 onClick={loading ? handleStop : undefined}
-                disabled={!loading && (!input.trim() && selectedFiles.length === 0)}
+                disabled={!loading && (createFileMode
+                  ? (createFileDraftReady
+                    ? (!input.trim() || !createFileName.trim())
+                    : (!input.trim())
+                  )
+                  : (!input.trim() && selectedFiles.length === 0)
+                )}
                 className={`flex-shrink-0 w-8 h-8 mr-2 rounded-full text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${loading ? 'bg-red-500 hover:bg-red-600' : 'bg-dark-accent hover:bg-dark-accent/90'
                   }`}
-                title={loading ? "Stop generation" : "Send message"}
+                title={loading ? "Stop generation" : (createFileMode ? (createFileDraftReady ? "Create file" : "Generate draft") : "Send message")}
               >
                 {loading ? (
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>

@@ -5,6 +5,11 @@ import { useAuth } from '../context/AuthContext';
 import NeuralGlow from '../components/NeuralGlow';
 import DashboardPreview from '../components/DashboardPreview';
 import ProblemSection from '../components/ProblemSection';
+import ScrollReveal from '../components/landing/ScrollReveal';
+import TextReveal from '../components/landing/TextReveal';
+import ScrollMarquee from '../components/landing/ScrollMarquee';
+import { SpotlightGrid, SpotlightCard } from '../components/landing/SpotlightGrid';
+import NumberCounter from '../components/landing/NumberCounter';
 import '../styles/landing.css';
 
 const headlines = [
@@ -125,28 +130,45 @@ const Landing = () => {
       {/* Problem Section */}
       <ProblemSection />
 
+      {/* Marquee Divider */}
+      <section className="marquee-divider">
+        <ScrollMarquee baseVelocity={-1.5}>
+          {['KNOWLEDGE', 'MCP', 'VECTORS', 'SEMANTIC SEARCH', 'BUCKETS', 'AI MEMORY', 'CITATIONS', 'EMBEDDINGS'].map((word) => (
+            <span key={word} className="marquee-text">{word}</span>
+          ))}
+        </ScrollMarquee>
+      </section>
+
       {/* Solution Section */}
       <section className="solution-section">
         <div className="section-inner">
           <div className="section-header">
-            <span className="section-eyebrow">SOLUTION</span>
-            <h2>AIveilix is the <span>Unified Knowledge Layer</span></h2>
-            <p>One vault, one API, one source of truth for every AI tool you use.</p>
+            <ScrollReveal>
+              <span className="section-eyebrow">SOLUTION</span>
+            </ScrollReveal>
+            <TextReveal
+              text="AIveilix is the Unified Knowledge Layer"
+              className="section-header-h2"
+              staggerDelay={0.04}
+            />
+            <ScrollReveal delay={0.2}>
+              <p>One vault, one API, one source of truth for every AI tool you use.</p>
+            </ScrollReveal>
           </div>
-          <div className="solution-grid">
-            <div className="solution-card">
-              <h3>Active Storage</h3>
-              <p>Files are processed, indexed, and always ready for AI retrieval.</p>
-            </div>
-            <div className="solution-card">
-              <h3>Universal Access</h3>
-              <p>Connect via MCP and instantly access your docs in Claude, Cursor, ChatGPT, and more.</p>
-            </div>
-            <div className="solution-card">
-              <h3>Persistent Memory</h3>
-              <p>Your context stays alive across sessions and tools with citation‑backed answers.</p>
-            </div>
-          </div>
+          <SpotlightGrid className="solution-grid">
+            {[
+              { title: 'Active Storage', desc: 'Files are processed, indexed, and always ready for AI retrieval.' },
+              { title: 'Universal Access', desc: 'Connect via MCP and instantly access your docs in Claude, Cursor, ChatGPT, and more.' },
+              { title: 'Persistent Memory', desc: 'Your context stays alive across sessions and tools with citation‑backed answers.' },
+            ].map((card, i) => (
+              <ScrollReveal key={card.title} delay={i * 0.12} direction="up">
+                <SpotlightCard>
+                  <h3>{card.title}</h3>
+                  <p>{card.desc}</p>
+                </SpotlightCard>
+              </ScrollReveal>
+            ))}
+          </SpotlightGrid>
         </div>
       </section>
 
@@ -154,26 +176,37 @@ const Landing = () => {
       <section className="how-section">
         <div className="section-inner">
           <div className="section-header">
-            <span className="section-eyebrow">HOW IT WORKS</span>
-            <h2>Three steps to <span>AI‑ready</span> knowledge</h2>
-            <p>Upload once, generate a key, and connect everywhere.</p>
+            <ScrollReveal>
+              <span className="section-eyebrow">HOW IT WORKS</span>
+            </ScrollReveal>
+            <TextReveal
+              text="Three steps to AI-ready knowledge"
+              className="section-header-h2"
+              staggerDelay={0.04}
+            />
+            <ScrollReveal delay={0.2}>
+              <p>Upload once, generate a key, and connect everywhere.</p>
+            </ScrollReveal>
           </div>
-          <div className="how-steps">
-            <div className="how-step">
-              <div className="step-index">01</div>
-              <h3>Upload</h3>
-              <p>Drag files or folders into AIveilix.</p>
-            </div>
-            <div className="how-step">
-              <div className="step-index">02</div>
-              <h3>Generate Key</h3>
-              <p>Create an MCP API key for your tools.</p>
-            </div>
-            <div className="how-step">
-              <div className="step-index">03</div>
-              <h3>Connect</h3>
-              <p>Paste the key into Claude, Cursor, or any MCP client.</p>
-            </div>
+          <div className="timeline-container">
+            <div className="timeline-line" />
+            {[
+              { num: 1, title: 'Upload', desc: 'Drag files or folders into AIveilix. We process PDFs, images, code, docs, and 50+ formats automatically.' },
+              { num: 2, title: 'Generate Key', desc: 'Create an MCP API key with scoped permissions for your tools.' },
+              { num: 3, title: 'Connect', desc: 'Paste the key into Claude, Cursor, or any MCP client. Your knowledge is instantly available.' },
+            ].map((step, i) => (
+              <ScrollReveal key={step.num} delay={i * 0.15} direction={i % 2 === 0 ? 'left' : 'right'}>
+                <div className="timeline-step">
+                  <div className="timeline-dot">
+                    <NumberCounter value={step.num} />
+                  </div>
+                  <div className="timeline-content">
+                    <h3>{step.title}</h3>
+                    <p>{step.desc}</p>
+                  </div>
+                </div>
+              </ScrollReveal>
+            ))}
           </div>
         </div>
       </section>
@@ -182,35 +215,32 @@ const Landing = () => {
       <section className="features-section">
         <div className="section-inner">
           <div className="section-header">
-            <span className="section-eyebrow">FEATURES</span>
-            <h2>Everything you need to <span>scale intelligence</span></h2>
+            <ScrollReveal>
+              <span className="section-eyebrow">FEATURES</span>
+            </ScrollReveal>
+            <TextReveal
+              text="Everything you need to scale intelligence"
+              className="section-header-h2"
+              staggerDelay={0.04}
+            />
           </div>
-          <div className="features-grid">
-            <div className="feature-card">
-              <h3>50+ Formats</h3>
-              <p>PDF, DOCX, images with OCR, code, CSV, and more.</p>
-            </div>
-            <div className="feature-card">
-              <h3>Vector Search</h3>
-              <p>Semantic retrieval with hybrid ranking for accuracy.</p>
-            </div>
-            <div className="feature-card">
-              <h3>Buckets</h3>
-              <p>Organize by project, team, or topic with scoped access.</p>
-            </div>
-            <div className="feature-card">
-              <h3>Citations</h3>
-              <p>Every answer can show the exact source paragraph.</p>
-            </div>
-            <div className="feature-card">
-              <h3>Fast Indexing</h3>
-              <p>Most files are ready to query in seconds.</p>
-            </div>
-            <div className="feature-card">
-              <h3>Cost Savings</h3>
-              <p>Process once, reuse everywhere to reduce tokens.</p>
-            </div>
-          </div>
+          <SpotlightGrid className="features-grid">
+            {[
+              { title: '50+ Formats', desc: 'PDF, DOCX, images with OCR, code, CSV, and more.' },
+              { title: 'Vector Search', desc: 'Semantic retrieval with hybrid ranking for accuracy.' },
+              { title: 'Buckets', desc: 'Organize by project, team, or topic with scoped access.' },
+              { title: 'Citations', desc: 'Every answer can show the exact source paragraph.' },
+              { title: 'Fast Indexing', desc: 'Most files are ready to query in seconds.' },
+              { title: 'Cost Savings', desc: 'Process once, reuse everywhere to reduce tokens.' },
+            ].map((card, i) => (
+              <ScrollReveal key={card.title} delay={i * 0.08} direction="up">
+                <SpotlightCard>
+                  <h3>{card.title}</h3>
+                  <p>{card.desc}</p>
+                </SpotlightCard>
+              </ScrollReveal>
+            ))}
+          </SpotlightGrid>
         </div>
       </section>
 
@@ -218,17 +248,26 @@ const Landing = () => {
       <section className="integrations-section">
         <div className="section-inner">
           <div className="section-header">
-            <span className="section-eyebrow">INTEGRATIONS</span>
-            <h2>MCP connects to <span>everything</span></h2>
+            <ScrollReveal>
+              <span className="section-eyebrow">INTEGRATIONS</span>
+            </ScrollReveal>
+            <TextReveal
+              text="MCP connects to everything"
+              className="section-header-h2"
+              staggerDelay={0.04}
+            />
           </div>
-          <div className="integrations-grid">
-            <div className="integration-pill">Claude Desktop</div>
-            <div className="integration-pill">Cursor</div>
-            <div className="integration-pill">ChatGPT (coming soon)</div>
-            <div className="integration-pill">Custom MCP Apps</div>
-            <div className="integration-pill">REST API</div>
-            <div className="integration-pill">Any MCP Client</div>
-          </div>
+          <ScrollReveal>
+            <div className="integration-marquee-wrapper">
+              <div className="integration-marquee-track">
+                {[...Array(2)].map((_, setIdx) => (
+                  ['Claude Desktop', 'Cursor', 'ChatGPT (coming soon)', 'Custom MCP Apps', 'REST API', 'Any MCP Client', 'Windsurf', 'VS Code'].map((name) => (
+                    <div key={`${setIdx}-${name}`} className="integration-pill">{name}</div>
+                  ))
+                ))}
+              </div>
+            </div>
+          </ScrollReveal>
         </div>
       </section>
 
@@ -236,23 +275,29 @@ const Landing = () => {
       <section className="security-section">
         <div className="section-inner">
           <div className="section-header">
-            <span className="section-eyebrow">SECURITY</span>
-            <h2>Private by design</h2>
+            <ScrollReveal>
+              <span className="section-eyebrow">SECURITY</span>
+            </ScrollReveal>
+            <TextReveal
+              text="Private by design"
+              className="section-header-h2"
+              staggerDelay={0.05}
+            />
           </div>
-          <div className="security-grid">
-            <div className="security-card">
-              <h3>TLS 1.3 In‑Transit</h3>
-              <p>Bank‑grade encryption for every request.</p>
-            </div>
-            <div className="security-card">
-              <h3>AES‑256 At‑Rest</h3>
-              <p>Your vault is encrypted end‑to‑end.</p>
-            </div>
-            <div className="security-card">
-              <h3>Right to be Forgotten</h3>
-              <p>Delete means delete: files, vectors, metadata.</p>
-            </div>
-          </div>
+          <SpotlightGrid className="security-grid">
+            {[
+              { title: 'TLS 1.3 In‑Transit', desc: 'Bank‑grade encryption for every request.' },
+              { title: 'AES‑256 At‑Rest', desc: 'Your vault is encrypted end‑to‑end.' },
+              { title: 'Right to be Forgotten', desc: 'Delete means delete: files, vectors, metadata.' },
+            ].map((card, i) => (
+              <ScrollReveal key={card.title} delay={i * 0.12} direction="up">
+                <SpotlightCard>
+                  <h3>{card.title}</h3>
+                  <p>{card.desc}</p>
+                </SpotlightCard>
+              </ScrollReveal>
+            ))}
+          </SpotlightGrid>
         </div>
       </section>
 
@@ -260,39 +305,52 @@ const Landing = () => {
       <section className="usecases-section">
         <div className="section-inner">
           <div className="section-header">
-            <span className="section-eyebrow">USE CASES</span>
-            <h2>Built for <span>every workflow</span></h2>
+            <ScrollReveal>
+              <span className="section-eyebrow">USE CASES</span>
+            </ScrollReveal>
+            <TextReveal
+              text="Built for every workflow"
+              className="section-header-h2"
+              staggerDelay={0.04}
+            />
           </div>
-          <div className="usecases-grid">
-            <div className="usecase-card">
-              <h3>Developers</h3>
-              <p>Ask your IDE about legacy docs and specs instantly.</p>
-            </div>
-            <div className="usecase-card">
-              <h3>Researchers</h3>
-              <p>Summarize consensus across dozens of papers.</p>
-            </div>
-            <div className="usecase-card">
-              <h3>Students</h3>
-              <p>Turn your notes into custom quizzes and study guides.</p>
-            </div>
-            <div className="usecase-card">
-              <h3>Teams</h3>
-              <p>Share buckets with scoped permissions for collaboration.</p>
-            </div>
-          </div>
+          <SpotlightGrid className="usecases-grid">
+            {[
+              { title: 'Developers', desc: 'Ask your IDE about legacy docs and specs instantly.' },
+              { title: 'Researchers', desc: 'Summarize consensus across dozens of papers.' },
+              { title: 'Students', desc: 'Turn your notes into custom quizzes and study guides.' },
+              { title: 'Teams', desc: 'Share buckets with scoped permissions for collaboration.' },
+            ].map((card, i) => (
+              <ScrollReveal key={card.title} delay={i * 0.1} direction={i % 2 === 0 ? 'left' : 'right'}>
+                <SpotlightCard>
+                  <h3>{card.title}</h3>
+                  <p>{card.desc}</p>
+                </SpotlightCard>
+              </ScrollReveal>
+            ))}
+          </SpotlightGrid>
         </div>
       </section>
 
       {/* Final CTA */}
-      <section className="final-cta">
-        <div className="section-inner cta-inner">
-          <h2>Ready to build your AI memory?</h2>
-          <p>Upload once. Connect everywhere. Stay in flow.</p>
-          <div className="cta-actions">
-            <button onClick={() => navigate('/signup')} className="cta-primary">Get Started Free</button>
-            <button onClick={() => navigate('/doc')} className="cta-secondary">Read Docs</button>
-          </div>
+      <section className="final-cta final-cta-animated">
+        <div className="section-inner cta-inner" style={{ position: 'relative', zIndex: 1 }}>
+          <TextReveal
+            text="Ready to build your AI memory?"
+            as="h2"
+            letterAnime
+            staggerDelay={0.03}
+            className="cta-headline"
+          />
+          <ScrollReveal delay={0.3}>
+            <p>Upload once. Connect everywhere. Stay in flow.</p>
+          </ScrollReveal>
+          <ScrollReveal delay={0.5}>
+            <div className="cta-actions">
+              <button onClick={() => navigate('/signup')} className="cta-primary">Get Started Free</button>
+              <button onClick={() => navigate('/doc')} className="cta-secondary">Read Docs</button>
+            </div>
+          </ScrollReveal>
         </div>
       </section>
     </div>
