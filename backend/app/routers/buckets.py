@@ -99,6 +99,10 @@ async def create_bucket(
         if get_team_member_context(user_id):
             raise HTTPException(status_code=403, detail="Team members cannot create buckets")
 
+        # Check bucket limit
+        from app.services.plan_limits import enforce_bucket_limit
+        await enforce_bucket_limit(user_id)
+
         # Use service role to bypass RLS (we've already validated user_id)
         supabase = get_supabase()
         

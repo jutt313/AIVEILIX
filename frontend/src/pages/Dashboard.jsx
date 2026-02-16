@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { bucketsAPI, filesAPI, teamAPI } from '../services/api'
+import TrialBanner from '../components/TrialBanner'
+import UpgradeModal from '../components/UpgradeModal'
 import StatCard from '../components/StatCard'
 import DashboardGraph from '../components/DashboardGraph'
 import BucketsTable from '../components/BucketsTable'
@@ -24,6 +26,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [upgradeError, setUpgradeError] = useState(null)
   const [teamMemberCount, setTeamMemberCount] = useState(0)
 
   const loadData = async () => {
@@ -85,6 +89,10 @@ export default function Dashboard() {
       
       // Upload files if any were provided
       if (files.length > 0) {
+        const batchMeta = {
+          count: files.length,
+          totalBytes: files.reduce((sum, f) => sum + (f.size || 0), 0),
+        }
         for (const file of files) {
           try {
             // Extract folder path from webkitRelativePath if available
@@ -95,7 +103,7 @@ export default function Dashboard() {
                 folderPath = pathParts.slice(0, -1).join('/')
               }
             }
-            await filesAPI.upload(bucketId, file, folderPath)
+            await filesAPI.upload(bucketId, file, folderPath, batchMeta)
           } catch (error) {
             console.error(`Failed to upload ${file.name}:`, error)
             // Continue with other files even if one fails
@@ -106,6 +114,11 @@ export default function Dashboard() {
       await loadData()
     } catch (error) {
       console.error('Failed to create bucket:', error)
+      if (error.response?.status === 402 || error.response?.status === 429) {
+        setUpgradeError(error.response.data?.detail || { error: 'bucket_limit', message: 'Plan limit reached' })
+        setShowUpgradeModal(true)
+        return
+      }
       throw error
     }
   }
@@ -206,6 +219,9 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="relative z-10 max-w-7xl mx-auto px-4 py-8">
+        {/* Trial / Early Bird Banner */}
+        <TrialBanner />
+
         {/* Team Member Banner */}
         {isTeamMember && (
           <div className={`mb-6 p-4 rounded-2xl border ${isDark ? 'bg-dark-accent/10 border-dark-accent/20' : 'bg-light-accent/10 border-light-accent/20'}`}>
@@ -306,6 +322,13 @@ export default function Dashboard() {
       <ProfileModal
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
+      />
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        error={upgradeError}
       />
     </div>
   )

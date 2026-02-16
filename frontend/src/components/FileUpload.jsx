@@ -8,9 +8,15 @@ export default function FileUpload({ bucketId, onUploadSuccess }) {
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return
 
+    const allFiles = Array.from(files)
+    const batchMeta = {
+      count: allFiles.length,
+      totalBytes: allFiles.reduce((sum, f) => sum + (f.size || 0), 0),
+    }
+
     setUploading(true)
     try {
-      for (const file of Array.from(files)) {
+      for (const file of allFiles) {
         // Extract folder path from webkitRelativePath if available
         let folderPath = null
         if (file.webkitRelativePath) {
@@ -19,7 +25,7 @@ export default function FileUpload({ bucketId, onUploadSuccess }) {
             folderPath = pathParts.slice(0, -1).join('/')
           }
         }
-        await filesAPI.upload(bucketId, file, folderPath)
+        await filesAPI.upload(bucketId, file, folderPath, batchMeta)
       }
       if (onUploadSuccess) onUploadSuccess()
     } catch (error) {

@@ -364,6 +364,10 @@ async def chat_with_bucket(
         if not check_bucket_permission(user_id, bucket_id, "can_chat"):
             raise HTTPException(status_code=403, detail="You don't have chat permission for this bucket")
 
+        # Enforce chat limits
+        from app.services.plan_limits import enforce_chat_limits, increment_metric
+        await enforce_chat_limits(effective_uid, bucket_id)
+
         # Use service role for backend operations
         supabase = get_supabase()
 
@@ -502,6 +506,10 @@ async def chat_with_bucket(
         # Create conversation if new
         conversation_id = request.conversation_id
         if not conversation_id:
+            # Check conversation limit before creating
+            from app.services.plan_limits import enforce_conversation_limit
+            await enforce_conversation_limit(effective_uid, bucket_id)
+
             conv_res = supabase.table("conversations").insert({
                 "id": str(uuid.uuid4()),
                 "user_id": effective_uid,
@@ -796,6 +804,14 @@ Your response (keywords only or NO_SEARCH):"""
                     "sources": used_sources[:10],
                     "metadata": message_metadata
                 }).execute()
+
+                # Increment chat usage metrics
+                try:
+                    await increment_metric(effective_uid, "chat_messages", "daily")
+                    await increment_metric(effective_uid, "bucket_chat", "daily")
+                    await increment_metric(effective_uid, "bucket_chat", "hourly")
+                except Exception:
+                    pass
 
                 # Log team activity for chat
                 if team_ctx:

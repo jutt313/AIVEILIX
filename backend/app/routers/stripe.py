@@ -255,60 +255,65 @@ async def get_usage(
         raise HTTPException(status_code=500, detail={"error": "usage_fetch_failed", "message": str(e)})
 
 
+PLAN_PRICES = {
+    "starter": 12.78,
+    "pro": 24.13,
+    "premium": 49.99,
+}
+
+
+def _format_limit(val, unit=""):
+    """Human-readable limit value."""
+    if val == -1:
+        return "Unlimited"
+    if unit == "bytes":
+        gb = val / (1024 ** 3)
+        if gb >= 1:
+            return f"{gb:g}GB"
+        return f"{val / (1024 ** 2):g}MB"
+    if unit == "file_bytes":
+        mb = val / (1024 ** 2)
+        return f"{mb:g}MB"
+    return f"{val:,}"
+
+
+def _build_features(limits: dict) -> list:
+    """Derive feature list from a PLAN_LIMITS entry."""
+    features = [
+        f"{_format_limit(limits['storage_bytes'], 'bytes')} storage",
+        f"{_format_limit(limits['max_file_size_bytes'], 'file_bytes')} max file size",
+        f"{_format_limit(limits['max_buckets'])} buckets",
+        f"{_format_limit(limits['max_team_members'])} team members",
+        f"{_format_limit(limits['chat_messages_per_day'])} chat messages/day",
+        f"{_format_limit(limits['mcp_queries_per_day'])} MCP queries/day",
+        f"{_format_limit(limits['api_calls_per_day'])} API calls/day",
+        "MCP server access",
+    ]
+    return features
+
+
 @router.get("/prices")
 async def get_prices():
-    """Get available subscription prices (public endpoint)"""
+    """Get available subscription prices — derived from PLAN_LIMITS (single source of truth)"""
+    from app.services.plan_limits import PLAN_LIMITS
+
+    paid_plans = []
+    for plan_id in ("starter", "pro", "premium"):
+        limits = PLAN_LIMITS[plan_id]
+        paid_plans.append({
+            "id": plan_id,
+            "name": plan_limits.PLAN_NAMES.get(plan_id, plan_id),
+            "price": PLAN_PRICES[plan_id],
+            "currency": "usd",
+            "interval": "month",
+            **({"popular": True} if plan_id == "pro" else {}),
+            "features": _build_features(limits),
+        })
+
     return {
-        "plans": [
-            {
-                "id": "starter",
-                "name": "Starter",
-                "price": 12.78,
-                "currency": "usd",
-                "interval": "month",
-                "features": [
-                    "3GB storage",
-                    "200 documents",
-                    "25MB max file size",
-                    "100 API calls/day",
-                    "MCP server access",
-                    "Community support"
-                ]
-            },
-            {
-                "id": "pro",
-                "name": "Pro",
-                "price": 24.13,
-                "currency": "usd",
-                "interval": "month",
-                "popular": True,
-                "features": [
-                    "10GB storage",
-                    "Unlimited documents",
-                    "50MB max file size",
-                    "1000 API calls/day",
-                    "MCP server access",
-                    "Full API access",
-                    "Priority support"
-                ]
-            },
-            {
-                "id": "premium",
-                "name": "Premium",
-                "price": 49.99,
-                "currency": "usd",
-                "interval": "month",
-                "features": [
-                    "50GB storage",
-                    "Unlimited documents",
-                    "100MB max file size",
-                    "5000 API calls/day",
-                    "MCP server access",
-                    "Full API access",
-                    "Dedicated support",
-                    "Advanced analytics"
-                ]
-            }
-        ],
-        "trial_days": 14
+        "plans": paid_plans,
+        "trial_days": 14,
+        "free_trial": {
+            "features": _build_features(PLAN_LIMITS["free_trial"]),
+        },
     }

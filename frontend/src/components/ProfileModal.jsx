@@ -475,68 +475,63 @@ export default function ProfileModal({ isOpen, onClose }) {
           </div>
         </div>
 
+        {/* Early Bird Badge */}
+        {usage?.early_bird_active && (
+          <div className={`p-4 rounded-xl border ${
+            isDark ? 'bg-amber-500/10 border-amber-500/30' : 'bg-amber-50 border-amber-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span>🎉</span>
+              <span className={`font-semibold text-sm ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+                Early Bird Bonus — 2x All Limits This Month!
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Usage Stats */}
         {usage && (
           <div>
             <h3 className="text-lg font-semibold dark:text-dark-text text-light-text mb-4">
               Usage
             </h3>
-            <div className="space-y-4">
-              {/* Storage */}
-              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
-                <div className="flex justify-between mb-2">
-                  <span className="dark:text-dark-text text-light-text">Storage</span>
-                  <span className="dark:text-dark-text/70 text-light-text/70">
-                    {formatBytes(usage.usage?.storage?.used_bytes)} / {formatBytes(usage.usage?.storage?.limit_bytes)}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full dark:bg-white/10 bg-black/10 overflow-hidden">
-                  <div
-                    className="h-full rounded-full dark:bg-dark-accent bg-light-accent transition-all"
-                    style={{ width: `${Math.min(usage.usage?.storage?.percentage || 0, 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Documents */}
-              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
-                <div className="flex justify-between mb-2">
-                  <span className="dark:text-dark-text text-light-text">Documents</span>
-                  <span className="dark:text-dark-text/70 text-light-text/70">
-                    {usage.usage?.documents?.count || 0} / {usage.usage?.documents?.limit === -1 ? 'Unlimited' : usage.usage?.documents?.limit}
-                  </span>
-                </div>
-                {usage.usage?.documents?.limit !== -1 && (
-                  <div className="h-2 rounded-full dark:bg-white/10 bg-black/10 overflow-hidden">
-                    <div
-                      className="h-full rounded-full dark:bg-dark-accent bg-light-accent transition-all"
-                      style={{ width: `${Math.min(usage.usage?.documents?.percentage || 0, 100)}%` }}
-                    />
+            <div className="space-y-3">
+              {/* Usage bar helper */}
+              {[
+                { label: 'Storage', value: formatBytes(usage.usage?.storage?.used_bytes), limit: formatBytes(usage.usage?.storage?.limit_bytes), pct: usage.usage?.storage?.percentage },
+                { label: 'Buckets', value: usage.usage?.buckets?.count, limit: usage.usage?.buckets?.limit === -1 ? '∞' : usage.usage?.buckets?.limit, pct: usage.usage?.buckets?.percentage },
+                { label: 'Team Members', value: usage.usage?.team_members?.count, limit: usage.usage?.team_members?.limit === -1 ? '∞' : usage.usage?.team_members?.limit, pct: usage.usage?.team_members?.percentage },
+                { label: 'Documents', value: usage.usage?.documents?.count, limit: usage.usage?.documents?.limit === -1 ? '∞' : usage.usage?.documents?.limit, pct: usage.usage?.documents?.percentage },
+                { label: 'Chat Messages (Today)', value: usage.usage?.chat_messages?.today, limit: usage.usage?.chat_messages?.limit, pct: usage.usage?.chat_messages?.percentage },
+                { label: 'Bucket Chat (Today)', value: usage.usage?.bucket_chat?.today, limit: usage.usage?.bucket_chat?.limit, pct: usage.usage?.bucket_chat?.percentage },
+                { label: 'MCP Queries (Today)', value: usage.usage?.mcp_queries?.today, limit: usage.usage?.mcp_queries?.limit, pct: usage.usage?.mcp_queries?.percentage },
+                { label: 'API Calls (Today)', value: usage.usage?.api_calls?.today, limit: usage.usage?.api_calls?.limit, pct: usage.usage?.api_calls?.percentage },
+              ].map(({ label, value, limit, pct }) => (
+                <div key={label} className="p-3 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
+                  <div className="flex justify-between mb-1.5">
+                    <span className="text-sm dark:text-dark-text text-light-text">{label}</span>
+                    <span className="text-sm dark:text-dark-text/70 text-light-text/70">
+                      {value ?? 0} / {limit ?? 0}
+                    </span>
                   </div>
-                )}
-              </div>
-
-              {/* API Calls */}
-              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
-                <div className="flex justify-between mb-2">
-                  <span className="dark:text-dark-text text-light-text">API Calls (Today)</span>
-                  <span className="dark:text-dark-text/70 text-light-text/70">
-                    {usage.usage?.api_calls?.today || 0} / {usage.usage?.api_calls?.limit || 0}
-                  </span>
+                  {limit !== '∞' && (
+                    <div className="h-1.5 rounded-full dark:bg-white/10 bg-black/10 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          (pct || 0) >= 90 ? 'bg-red-500' : (pct || 0) >= 70 ? 'bg-amber-500' : 'dark:bg-dark-accent bg-light-accent'
+                        }`}
+                        style={{ width: `${Math.min(pct || 0, 100)}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
-                <div className="h-2 rounded-full dark:bg-white/10 bg-black/10 overflow-hidden">
-                  <div
-                    className="h-full rounded-full dark:bg-dark-accent bg-light-accent transition-all"
-                    style={{ width: `${Math.min(usage.usage?.api_calls?.percentage || 0, 100)}%` }}
-                  />
-                </div>
-              </div>
+              ))}
 
-              {/* Max File Size */}
-              <div className="p-4 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
+              {/* Max File Size (non-bar) */}
+              <div className="p-3 rounded-xl dark:bg-black/10 bg-light-surface/80 dark:border-white/10 border-black/10 border">
                 <div className="flex justify-between">
-                  <span className="dark:text-dark-text text-light-text">Max File Size</span>
-                  <span className="dark:text-dark-text/70 text-light-text/70">
+                  <span className="text-sm dark:text-dark-text text-light-text">Max File Size</span>
+                  <span className="text-sm dark:text-dark-text/70 text-light-text/70">
                     {usage.usage?.max_file_size_mb || 0} MB
                   </span>
                 </div>

@@ -102,12 +102,50 @@ export const bucketsAPI = {
 }
 
 export const filesAPI = {
-  upload: (bucketId, file, folderPath = null) => {
+  upload: async (bucketId, file, folderPath = null, batchMeta = null) => {
+    // Try direct-to-Supabase upload for files > 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      try {
+        const { supabase } = await import('../lib/supabase')
+        const userId = JSON.parse(localStorage.getItem('user') || '{}').id
+        if (!userId) throw new Error('No user ID')
+
+        const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : ''
+        const storagePath = `${userId}/${bucketId}/${crypto.randomUUID()}${ext}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('files')
+          .upload(storagePath, file)
+
+        if (uploadError) throw uploadError
+
+        // Register with backend
+        const formData = new FormData()
+        formData.append('storage_path', storagePath)
+        formData.append('filename', file.name)
+        formData.append('size_bytes', file.size.toString())
+        formData.append('mime_type', file.type || 'application/octet-stream')
+        if (folderPath) formData.append('folder_path', folderPath)
+        if (batchMeta?.count) formData.append('batch_count', String(batchMeta.count))
+        if (batchMeta?.totalBytes) formData.append('batch_total_bytes', String(batchMeta.totalBytes))
+
+        return api.post(`/api/buckets/${bucketId}/register-upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+      } catch (directErr) {
+        console.warn('Direct upload failed, falling back to backend upload:', directErr)
+        // Fall through to backend upload
+      }
+    }
+
+    // Standard backend upload (small files or fallback)
     const formData = new FormData()
     formData.append('file', file)
     if (folderPath) {
       formData.append('folder_path', folderPath)
     }
+    if (batchMeta?.count) formData.append('batch_count', String(batchMeta.count))
+    if (batchMeta?.totalBytes) formData.append('batch_total_bytes', String(batchMeta.totalBytes))
     return api.post(`/api/buckets/${bucketId}/upload`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
@@ -136,7 +174,16 @@ export const chatAPI = {
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      // Parse error body for 402/429 upgrade/rate-limit errors
+      let detail = null
+      try {
+        const errBody = await response.json()
+        detail = errBody.detail || errBody
+      } catch {}
+      const err = new Error(`HTTP ${response.status}`)
+      err.status = response.status
+      err.detail = detail
+      throw err
     }
 
     const reader = response.body.getReader()

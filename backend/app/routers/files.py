@@ -21,12 +21,16 @@ from pathlib import Path
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import sentry_sdk
 import re
+import io
+import zipfile
+import fitz
 
 router = APIRouter()
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 ALLOWED_CREATED_FILE_EXTENSIONS = {".md", ".txt"}
+IMAGE_FILE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 
 
 def _validate_created_filename(filename: str) -> str:
@@ -69,6 +73,48 @@ async def _enforce_update_limits(user_id: str, new_size: int, existing_size: int
             "message": error,
             "upgrade_required": True
         })
+
+
+def _count_images_in_file(content: bytes, mime_type: str, filename: str) -> int:
+    """Best-effort image count per single file for plan enforcement."""
+    if not content:
+        return 0
+
+    mt = (mime_type or "").lower()
+    ext = Path(filename or "").suffix.lower()
+
+    # Single image files
+    if mt.startswith("image/") or ext in IMAGE_FILE_EXTENSIONS:
+        return 1
+
+    # PDF: count embedded images
+    if mt == "application/pdf" or ext == ".pdf":
+        try:
+            doc = fitz.open(stream=content, filetype="pdf")
+            count = 0
+            for page in doc:
+                count += len(page.get_images(full=False))
+            doc.close()
+            return count
+        except Exception:
+            return 0
+
+    # DOCX: count media images in zip package
+    if mt in (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+    ) or ext == ".docx":
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                return len([
+                    n for n in zf.namelist()
+                    if n.startswith("word/media/")
+                    and Path(n).suffix.lower() in IMAGE_FILE_EXTENSIONS
+                ])
+        except Exception:
+            return 0
+
+    return 0
 
 
 @retry(
@@ -302,6 +348,8 @@ async def upload_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     folder_path: Optional[str] = Form(None),
+    batch_count: Optional[int] = Form(None),
+    batch_total_bytes: Optional[int] = Form(None),
     user_id: str = Depends(get_current_user_id)
 ):
     """
@@ -331,8 +379,18 @@ async def upload_file(
         content = await file.read()
         file_ext = Path(file.filename).suffix
 
-        # Check plan limits before upload (storage, document count, file size)
-        await check_all_upload_limits(user_id, len(content))
+        image_count = _count_images_in_file(content, file.content_type or "", file.filename or "")
+        effective_batch_count = max(1, int(batch_count or 1))
+        effective_batch_total = int(batch_total_bytes or len(content))
+
+        # Check plan limits before upload (storage, document count, file size, image/file, batch)
+        await check_all_upload_limits(
+            user_id,
+            len(content),
+            batch_count=effective_batch_count,
+            batch_total_bytes=effective_batch_total,
+            image_count=image_count
+        )
 
         # Store file in Supabase Storage (this is fast)
         storage_path = f"{user_id}/{bucket_id}/{uuid.uuid4()}{file_ext}"
@@ -413,6 +471,134 @@ async def upload_file(
     except Exception as e:
         error_trace = traceback.format_exc()
         logger.error(f"Error in files router: {error_trace}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.post("/{bucket_id}/register-upload", response_model=FileUploadResponse)
+async def register_direct_upload(
+    bucket_id: str,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id),
+    storage_path: str = Form(...),
+    filename: str = Form(...),
+    size_bytes: int = Form(...),
+    mime_type: str = Form("application/octet-stream"),
+    folder_path: Optional[str] = Form(None),
+    batch_count: Optional[int] = Form(None),
+    batch_total_bytes: Optional[int] = Form(None),
+):
+    """
+    Register a file that was uploaded directly to Supabase Storage from the frontend.
+    Creates the file record and triggers background processing.
+    """
+    try:
+        from app.services.team_service import get_effective_user_id, check_bucket_permission, get_team_member_context, log_team_activity
+        effective_uid = get_effective_user_id(user_id)
+        team_ctx = get_team_member_context(user_id)
+
+        if not check_bucket_permission(user_id, bucket_id, "can_upload"):
+            raise HTTPException(status_code=403, detail="You don't have upload permission for this bucket")
+
+        supabase = get_supabase()
+
+        # Verify bucket belongs to effective user
+        try:
+            supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", effective_uid).single().execute()
+        except PostgrestAPIError:
+            raise HTTPException(status_code=404, detail="Bucket not found")
+
+        # Direct uploads don't include file bytes in this request; fetch once for image-count checks
+        image_count = 0
+        try:
+            file_data = supabase.storage.from_("files").download(storage_path)
+            image_count = _count_images_in_file(file_data, mime_type, filename)
+        except Exception as e:
+            logger.warning(f"Could not inspect direct-upload file for image count: {e}")
+
+        effective_batch_count = max(1, int(batch_count or 1))
+        effective_batch_total = int(batch_total_bytes or size_bytes)
+
+        # Check plan limits
+        await check_all_upload_limits(
+            user_id,
+            size_bytes,
+            batch_count=effective_batch_count,
+            batch_total_bytes=effective_batch_total,
+            image_count=image_count
+        )
+
+        # Clean filename
+        clean_name = filename
+        if '/' in clean_name:
+            clean_name = clean_name.split('/')[-1]
+
+        # Create file record
+        file_id = str(uuid.uuid4())
+        file_record = {
+            "id": file_id,
+            "user_id": effective_uid,
+            "bucket_id": bucket_id,
+            "name": clean_name,
+            "original_name": clean_name,
+            "mime_type": mime_type,
+            "size_bytes": size_bytes,
+            "storage_path": storage_path,
+            "status": "pending",
+            "source": "uploaded"
+        }
+
+        if team_ctx:
+            file_record["uploaded_by_member_id"] = team_ctx["team_member_id"]
+            file_record["uploaded_by_color"] = team_ctx["color"]
+            file_record["uploaded_by_name"] = team_ctx["name"]
+
+        if folder_path:
+            file_record["folder_path"] = folder_path
+
+        supabase.table("files").insert(file_record).execute()
+
+        create_file_uploaded_notification(effective_uid, clean_name, bucket_id, file_id)
+
+        if team_ctx:
+            log_team_activity(
+                owner_id=effective_uid,
+                member_id=user_id,
+                team_member_id=team_ctx["team_member_id"],
+                bucket_id=bucket_id,
+                action_type="uploaded_file",
+                resource_id=file_id,
+                resource_name=clean_name,
+                member_color=team_ctx["color"],
+                member_name=team_ctx["name"],
+            )
+
+        background_tasks.add_task(
+            process_file_background,
+            file_id=file_id,
+            storage_path=storage_path,
+            filename=clean_name,
+            mime_type=mime_type,
+            user_id=effective_uid,
+            bucket_id=bucket_id
+        )
+
+        logger.info(f"⚡ DIRECT UPLOAD REGISTERED: {clean_name} (processing in background)")
+
+        return FileUploadResponse(
+            id=file_id,
+            name=clean_name,
+            status="pending",
+            message="File registered! Processing in background."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"Error registering direct upload: {error_trace}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"

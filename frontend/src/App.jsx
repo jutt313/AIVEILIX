@@ -16,6 +16,7 @@ import Doc from './pages/Doc'
 import LoginPageGif from './pages/LoginPageGif'
 import BucketFullWorkflowGif from './pages/BucketFullWorkflowGif'
 import OAuthAuthorize from './pages/OAuthAuthorize'
+import AuthCallback from './pages/AuthCallback'
 
 function App() {
   return (
@@ -37,6 +38,7 @@ function App() {
             <Route path="/doc" element={<Doc />} />
             <Route path="/login-page-gif" element={<LoginPageGif />} />
             <Route path="/bucket-workflow-gif" element={<BucketFullWorkflowGif />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/oauth/authorize" element={<OAuthAuthorize />} />
 
             {/* Protected routes */}

@@ -11,9 +11,15 @@ export default function FilesSidebar({ bucketId, files, onFilesUpdate, categorie
   const handleFileUpload = async (fileList) => {
     if (!fileList || fileList.length === 0) return
 
+    const allFiles = Array.from(fileList)
+    const batchMeta = {
+      count: allFiles.length,
+      totalBytes: allFiles.reduce((sum, f) => sum + (f.size || 0), 0),
+    }
+
     setUploading(true)
     try {
-      for (const file of Array.from(fileList)) {
+      for (const file of allFiles) {
         // Extract folder path from webkitRelativePath if available
         let folderPath = null
         if (file.webkitRelativePath) {
@@ -22,7 +28,7 @@ export default function FilesSidebar({ bucketId, files, onFilesUpdate, categorie
             folderPath = pathParts.slice(0, -1).join('/')
           }
         }
-        await filesAPI.upload(bucketId, file, folderPath)
+        await filesAPI.upload(bucketId, file, folderPath, batchMeta)
       }
       if (onFilesUpdate) onFilesUpdate()
     } catch (error) {

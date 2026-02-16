@@ -332,6 +332,91 @@ const Landing = () => {
         </div>
       </section>
 
+      {/* Pricing Section */}
+      <section className="pricing-section" id="pricing">
+        <div className="section-inner">
+          <div className="section-header">
+            <ScrollReveal>
+              <span className="section-eyebrow">PRICING</span>
+            </ScrollReveal>
+            <TextReveal
+              text="Simple, transparent pricing"
+              className="section-header-h2"
+              staggerDelay={0.04}
+            />
+            <ScrollReveal delay={0.2}>
+              <p>Start free for 14 days. Subscribe within 24 hours for 2x limits on your first month.</p>
+            </ScrollReveal>
+          </div>
+
+          <ScrollReveal delay={0.1}>
+            <div className="pricing-grid">
+              {[
+                {
+                  name: 'Free Trial',
+                  price: '$0',
+                  period: '14 days',
+                  features: ['1GB Storage', '50MB max file', '5 Buckets', '0 Team members', '50 Chat/day', '50 MCP queries/day', '50 API calls/day'],
+                  cta: 'Get Started',
+                  highlight: false,
+                },
+                {
+                  name: 'Starter',
+                  price: '$12.78',
+                  period: '/month',
+                  features: ['5GB Storage', '100MB max file', '25 Buckets', '3 Team members', '200 Chat/day', '300 MCP queries/day', '300 API calls/day'],
+                  cta: 'Start Starter',
+                  highlight: false,
+                },
+                {
+                  name: 'Pro',
+                  price: '$24.13',
+                  period: '/month',
+                  features: ['12GB Storage', '250MB max file', '100 Buckets', '10 Team members', '1,000 Chat/day', '1,500 MCP queries/day', '1,500 API calls/day'],
+                  cta: 'Go Pro',
+                  highlight: true,
+                  badge: 'Most Popular',
+                },
+                {
+                  name: 'Premium',
+                  price: '$49.99',
+                  period: '/month',
+                  features: ['25GB Storage', '500MB max file', 'Unlimited Buckets', '30 Team members', '5,000 Chat/day', '5,000 MCP queries/day', '5,000 API calls/day'],
+                  cta: 'Go Premium',
+                  highlight: false,
+                },
+              ].map((plan) => (
+                <div key={plan.name} className={`pricing-card ${plan.highlight ? 'pricing-card-highlight' : ''}`}>
+                  {plan.badge && <span className="pricing-badge">{plan.badge}</span>}
+                  <h3 className="pricing-plan-name">{plan.name}</h3>
+                  <div className="pricing-price">
+                    <span className="pricing-amount">{plan.price}</span>
+                    <span className="pricing-period">{plan.period}</span>
+                  </div>
+                  <ul className="pricing-features">
+                    {plan.features.map((f) => (
+                      <li key={f}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button onClick={() => navigate('/signup')} className={`pricing-cta ${plan.highlight ? 'pricing-cta-primary' : ''}`}>
+                    {plan.cta}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </ScrollReveal>
+
+          <ScrollReveal delay={0.3}>
+            <p className="pricing-bonus-note">
+              ⚡ Subscribe within 24 hours of signing up and get <strong>2x all limits</strong> for your first month!
+            </p>
+          </ScrollReveal>
+        </div>
+      </section>
+
       {/* Final CTA */}
       <section className="final-cta final-cta-animated">
         <div className="section-inner cta-inner" style={{ position: 'relative', zIndex: 1 }}>

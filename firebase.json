@@ -1,12 +1,19 @@
 {
   "hosting": {
     "public": "frontend/dist",
+    "predeploy": [
+      "npm --prefix frontend run build"
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ],
     "rewrites": [
+      { "source": "/tokusho", "destination": "/tokusho.html" },
+      { "source": "/tokusho/", "destination": "/tokusho.html" },
+      { "source": "/specified-commercial-transactions", "destination": "/tokusho.html" },
+      { "source": "/specified-commercial-transactions/", "destination": "/tokusho.html" },
       { "source": "**", "destination": "/index.html" }
     ]
   }

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { authAPI } from '../services/api'
+import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
@@ -11,11 +12,42 @@ export function AuthProvider({ children }) {
     // Check for existing session
     const storedUser = localStorage.getItem('user')
     const token = localStorage.getItem('access_token')
-    
+
     if (storedUser && token) {
       setUser(JSON.parse(storedUser))
     }
     setLoading(false)
+
+    // Listen for OAuth sign-in (Google redirect lands here with hash tokens)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session && !localStorage.getItem('access_token')) {
+        localStorage.setItem('access_token', session.access_token)
+        localStorage.setItem('refresh_token', session.refresh_token)
+
+        const userData = {
+          id: session.user.id,
+          email: session.user.email,
+          full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || '',
+        }
+
+        try {
+          const meRes = await authAPI.getMe()
+          const meData = meRes.data
+          userData.is_team_member = meData.is_team_member || false
+          userData.team_owner_id = meData.team_owner_id || null
+          userData.team_member_id = meData.team_member_id || null
+          userData.team_member_color = meData.team_member_color || null
+          userData.team_member_name = meData.team_member_name || null
+        } catch {}
+
+        localStorage.setItem('user', JSON.stringify(userData))
+        setUser(userData)
+        // Redirect to dashboard
+        window.location.href = '/dashboard'
+      }
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   const signup = async (email, password, fullName) => {
@@ -87,6 +119,58 @@ export function AuthProvider({ children }) {
     }
   }
 
+  const signInWithGoogle = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+      if (error) {
+        return { success: false, message: error.message }
+      }
+      return { success: true }
+    } catch (error) {
+      return { success: false, message: error.message || 'Google sign-in failed' }
+    }
+  }
+
+  const handleOAuthCallback = async () => {
+    try {
+      const { data, error } = await supabase.auth.getSession()
+      if (error) throw error
+      if (data.session) {
+        localStorage.setItem('access_token', data.session.access_token)
+        localStorage.setItem('refresh_token', data.session.refresh_token)
+
+        const userData = {
+          id: data.session.user.id,
+          email: data.session.user.email,
+          full_name: data.session.user.user_metadata?.full_name || data.session.user.user_metadata?.name || '',
+        }
+
+        // Enrich with team info
+        try {
+          const meRes = await authAPI.getMe()
+          const meData = meRes.data
+          userData.is_team_member = meData.is_team_member || false
+          userData.team_owner_id = meData.team_owner_id || null
+          userData.team_member_id = meData.team_member_id || null
+          userData.team_member_color = meData.team_member_color || null
+          userData.team_member_name = meData.team_member_name || null
+        } catch {}
+
+        localStorage.setItem('user', JSON.stringify(userData))
+        setUser(userData)
+        return { success: true }
+      }
+      return { success: false, message: 'No session found' }
+    } catch (error) {
+      return { success: false, message: error.message || 'OAuth callback failed' }
+    }
+  }
+
   const logout = async () => {
     try {
       await authAPI.logout()
@@ -105,6 +189,8 @@ export function AuthProvider({ children }) {
     loading,
     signup,
     login,
+    signInWithGoogle,
+    handleOAuthCallback,
     forgotPassword,
     logout,
     isAuthenticated: !!user,

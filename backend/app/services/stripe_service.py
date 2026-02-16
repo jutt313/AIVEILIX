@@ -257,7 +257,10 @@ async def handle_webhook_event(payload: bytes, sig_header: str) -> Dict[str, Any
             # Get subscription details from Stripe
             stripe_sub = stripe.Subscription.retrieve(subscription_id)
 
-            supabase.table("subscriptions").update({
+            from datetime import datetime, timezone, timedelta
+
+            now = datetime.now(timezone.utc)
+            update_data = {
                 "plan": plan,
                 "status": "active",
                 "stripe_customer_id": customer_id,
@@ -265,7 +268,23 @@ async def handle_webhook_event(payload: bytes, sig_header: str) -> Dict[str, Any
                 "current_period_start": stripe_sub["current_period_start"],
                 "current_period_end": stripe_sub["current_period_end"],
                 "trial_end": None,  # Clear trial
-            }).eq("user_id", user_id).execute()
+                "subscribed_at": now.isoformat(),
+            }
+
+            # Check 24-hour early-bird bonus: if user subscribed within 24hrs of signup
+            try:
+                sub_row = supabase.table("subscriptions").select("created_at").eq("user_id", user_id).single().execute()
+                if sub_row.data and sub_row.data.get("created_at"):
+                    created = datetime.fromisoformat(str(sub_row.data["created_at"]).replace("Z", "+00:00"))
+                    hours_since_signup = (now - created).total_seconds() / 3600
+                    if hours_since_signup <= 24:
+                        update_data["early_bird"] = True
+                        update_data["early_bird_end"] = (now + timedelta(days=30)).isoformat()
+                        logger.info(f"Early-bird bonus activated for user {user_id} (subscribed {hours_since_signup:.1f}h after signup)")
+            except Exception as eb_err:
+                logger.warning(f"Early-bird check failed: {eb_err}")
+
+            supabase.table("subscriptions").update(update_data).eq("user_id", user_id).execute()
 
             logger.info(f"Activated subscription for user {user_id}, plan {plan}")
 

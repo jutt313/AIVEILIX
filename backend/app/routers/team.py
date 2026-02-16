@@ -51,6 +51,10 @@ async def add_team_member(
     try:
         supabase = get_supabase()
 
+        # Enforce team seat limit by plan
+        from app.services.plan_limits import enforce_team_member_limit
+        await enforce_team_member_limit(user_id)
+
         # Check if real_email already exists as a team member for this owner
         existing = supabase.table("team_members").select("id").eq(
             "owner_id", user_id

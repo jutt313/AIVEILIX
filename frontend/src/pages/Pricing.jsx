@@ -11,6 +11,7 @@ export default function Pricing() {
   const { isDark, toggleTheme } = useTheme()
 
   const [plans, setPlans] = useState([])
+  const [freeTrial, setFreeTrial] = useState(null)
   const [loading, setLoading] = useState(true)
   const [checkoutLoading, setCheckoutLoading] = useState(null)
   const [currentPlan, setCurrentPlan] = useState(null)
@@ -35,6 +36,7 @@ export default function Pricing() {
     try {
       const response = await stripeAPI.getPrices()
       setPlans(response.data.plans || [])
+      setFreeTrial(response.data.free_trial || null)
     } catch (error) {
       console.error('Failed to load prices:', error)
     } finally {
@@ -183,7 +185,10 @@ export default function Pricing() {
             14-Day Free Trial
           </div>
           <p className={`${isDark ? 'text-dark-text/70' : 'text-light-text/70'}`}>
-            1GB storage, 50 documents, 10MB max file size, 50 API calls/day
+            {freeTrial?.features ? freeTrial.features.slice(0, 4).join(' · ') : 'Try all features free for 14 days'}
+          </p>
+          <p className={`text-sm mt-2 ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+            ⚡ Subscribe within 24 hours for 2x limits on your first month!
           </p>
         </div>
 

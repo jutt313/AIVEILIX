@@ -153,13 +153,19 @@ export default function ChatPanel({
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return
 
+    const allFiles = Array.from(files)
+    const batchMeta = {
+      count: allFiles.length,
+      totalBytes: allFiles.reduce((sum, f) => sum + (f.size || 0), 0),
+    }
+
     setUploading(true)
     setShowUploadMenu(false)
     let successCount = 0
     let errorCount = 0
     let limitError = null
 
-    for (const file of Array.from(files)) {
+    for (const file of allFiles) {
       try {
         let folderPath = null
         if (file.webkitRelativePath) {
@@ -168,11 +174,11 @@ export default function ChatPanel({
             folderPath = pathParts.slice(0, -1).join('/')
           }
         }
-        await filesAPI.upload(bucketId, file, folderPath)
+        await filesAPI.upload(bucketId, file, folderPath, batchMeta)
         successCount++
       } catch (error) {
         console.error(`Upload failed for ${file.name}:`, error)
-        if (error.response?.status === 402) {
+        if (error.response?.status === 402 || error.response?.status === 429) {
           limitError = error.response.data?.detail || { error: 'limit_exceeded', message: 'Plan limit reached' }
           break
         }
@@ -633,6 +639,17 @@ export default function ChatPanel({
       }
 
       console.error('Chat error:', error)
+
+      // Handle 402/429 upgrade/rate-limit errors
+      if (error.status === 402 || error.status === 429) {
+        const detail = error.detail || { error: 'limit_exceeded', message: 'Plan limit reached. Please upgrade.' }
+        setUpgradeError(detail)
+        setShowUpgradeModal(true)
+        // Remove empty assistant message
+        setMessages(prev => prev.slice(0, -1))
+        return
+      }
+
       // Update last message with error
       setMessages(prev => {
         const newMessages = [...prev]

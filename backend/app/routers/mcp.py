@@ -282,10 +282,14 @@ async def query_bucket(
 ):
     """Search/query bucket content using semantic search"""
     try:
+        # Enforce MCP limits
+        from app.services.plan_limits import enforce_mcp_limits, increment_metric
+        await enforce_mcp_limits(api_user.user_id)
+
         # Validate UUID format
         if not validate_uuid(bucket_id):
             raise HTTPException(status_code=400, detail="Invalid bucket ID format")
-        
+
         # Validate query length
         if len(request.query.strip()) == 0:
             raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -376,12 +380,16 @@ async def query_bucket(
         results.sort(key=lambda x: x.relevance_score, reverse=True)
         results = results[:request.max_results]
         
+        # Increment MCP usage metrics
+        await increment_metric(api_user.user_id, "mcp_queries", "daily")
+        await increment_metric(api_user.user_id, "mcp_queries", "minute")
+
         return MCPQueryResponse(
             results=results,
             total=len(results),
             query=request.query
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -401,17 +409,22 @@ async def chat_with_bucket(
 ):
     """Chat with bucket using AI"""
     try:
+        # Enforce MCP + bucket chat limits
+        from app.services.plan_limits import enforce_mcp_limits, enforce_chat_limits, increment_metric
+        await enforce_mcp_limits(api_user.user_id)
+        await enforce_chat_limits(api_user.user_id, bucket_id)
+
         # Validate UUID format
         if not validate_uuid(bucket_id):
             raise HTTPException(status_code=400, detail="Invalid bucket ID format")
-        
+
         # Validate message
         if len(request.message.strip()) == 0:
             raise HTTPException(status_code=400, detail="Message cannot be empty")
-        
+
         if not deepseek_client:
             raise HTTPException(status_code=503, detail="AI service is not available")
-        
+
         supabase = get_supabase()
         
         # Check bucket access
@@ -615,12 +628,19 @@ async def chat_with_bucket(
             "sources": [{"file_name": s.file_name, "file_id": s.file_id, "type": s.type} for s in sources[:10]]
         }).execute()
         
+        # Increment usage metrics
+        await increment_metric(api_user.user_id, "mcp_queries", "daily")
+        await increment_metric(api_user.user_id, "mcp_queries", "minute")
+        await increment_metric(api_user.user_id, "chat_messages", "daily")
+        await increment_metric(api_user.user_id, "bucket_chat", "daily")
+        await increment_metric(api_user.user_id, "bucket_chat", "hourly")
+
         return MCPChatResponse(
             response=ai_response,
             sources=sources[:10],
             conversation_id=str(conversation_id)
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
