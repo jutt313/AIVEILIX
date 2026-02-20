@@ -5,17 +5,44 @@ from fastapi.exceptions import RequestValidationError
 from app.config import get_settings
 import traceback
 import logging
+import uuid
+from collections import deque
+from datetime import datetime
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from app.utils.limiter import limiter
 
 settings = get_settings()
 
+# ── Local dev error store ─────────────────────────────────────────────────────
+# Keeps the last 200 errors in memory. View at GET /dev/errors (localhost only).
+_error_store: deque = deque(maxlen=200)
+
+def _capture_error(request: Request, exc: Exception, context: str = "") -> str:
+    error_id = str(uuid.uuid4())[:8]
+    _error_store.appendleft({
+        "id": error_id,
+        "timestamp": datetime.now().isoformat(),
+        "type": type(exc).__name__,
+        "message": str(exc),
+        "traceback": traceback.format_exc(),
+        "context": context,
+        "request": {
+            "method": request.method,
+            "path": request.url.path,
+            "url": str(request.url),
+            "origin": request.headers.get("origin", ""),
+            "content_type": request.headers.get("content-type", ""),
+        },
+    })
+    return error_id
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Setup rate limiter (disabled for OPTIONS/CORS preflight)
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"], enabled=True)
+limiter.default_limits = ["200/minute"]
 
 # Setup Sentry error tracking (before anything else)
 if settings.sentry_dsn:
@@ -52,23 +79,21 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS for frontend and OAuth
 _cors_origins = [
     settings.frontend_url,
-    # Production frontend origins
+    # Production frontend
     "https://aiveilix.com",
     "https://www.aiveilix.com",
-    "https://aiveilix-427f3.web.app",
-    "https://aiveilix-427f3.firebaseapp.com",
     # Production backend (for same-origin requests)
     "https://api.aiveilix.com",
-    "https://aiveilix-backend-28789706085.us-central1.run.app",
     # Local development
     "http://localhost:6677",
     "http://localhost:5173",
     "http://localhost:3000",
     "http://127.0.0.1:6677",
     "http://127.0.0.1:5173",
-    # OAuth partners
+    # OAuth / MCP partners
     "https://chat.openai.com",
     "https://chatgpt.com",
+    "https://claude.ai",
 ]
 # Remove None values
 _cors_origins = [o for o in _cors_origins if o]
@@ -83,8 +108,8 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    expose_headers=["Content-Length", "Content-Range"],
 )
 
 
@@ -113,7 +138,8 @@ async def detailed_request_logging(request: Request, call_next):
     try:
         response = await call_next(request)
     except Exception as e:
-        logger.error(f"💥 EXCEPTION in middleware chain:")
+        error_id = _capture_error(request, e, context="middleware")
+        logger.error(f"💥 [{error_id}] EXCEPTION in middleware chain:")
         logger.error(f"   Method: {method}")
         logger.error(f"   Path: {path}")
         logger.error(f"   Error: {e}")
@@ -201,26 +227,22 @@ async def openid_configuration(request: Request):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Handle all unhandled exceptions"""
-    import uuid
-    error_id = str(uuid.uuid4())[:8]
-
-    # Log with error ID
+    error_id = _capture_error(request, exc, context="global_exception_handler")
     logger.error(f"[{error_id}] Unhandled exception: {exc}", exc_info=True)
 
-    # Capture to Sentry with context
-    sentry_sdk.set_context("request", {
-        "url": str(request.url),
-        "method": request.method,
-        "error_id": error_id,
-    })
-    sentry_sdk.capture_exception(exc)
+    if settings.sentry_dsn:
+        sentry_sdk.set_context("request", {
+            "url": str(request.url),
+            "method": request.method,
+            "error_id": error_id,
+        })
+        sentry_sdk.capture_exception(exc)
 
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "detail": "An internal error occurred",
-            "error_id": error_id,  # User can report this ID
-            "type": type(exc).__name__,
+            "error_id": error_id,
         }
     )
 
@@ -251,6 +273,28 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
+
+# ── Dev error viewer endpoints (development only) ─────────────────────────────
+@app.get("/dev/errors", tags=["dev"])
+async def get_dev_errors(request: Request, limit: int = 50):
+    """View recent backend errors (local dev only). Latest first."""
+    if settings.app_env != "development":
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    errors = list(_error_store)[:limit]
+    return {
+        "total": len(_error_store),
+        "showing": len(errors),
+        "errors": errors,
+    }
+
+@app.delete("/dev/errors", tags=["dev"])
+async def clear_dev_errors(request: Request):
+    """Clear the in-memory error store."""
+    if settings.app_env != "development":
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    _error_store.clear()
+    return {"message": "Error store cleared"}
+# ─────────────────────────────────────────────────────────────────────────────
 
 # Routers
 from app.routers import auth, buckets, files, chat, api_keys, mcp, mcp_server, oauth, notifications, stripe, team

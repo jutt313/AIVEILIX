@@ -13,6 +13,7 @@ from app.services.supabase import get_supabase_auth, get_supabase
 from app.routers.buckets import get_current_user_id
 from app.config import get_settings
 from app.utils.error_logger import log_error, get_correlation_id
+from app.utils.limiter import limiter
 from app.services import email_service
 import logging
 import traceback
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/signup", response_model=AuthResponse)
+@limiter.limit("5/minute")
 async def signup(signup_request: SignupRequest, request: Request):
     """Create a new user account"""
     correlation_id = get_correlation_id(request)
@@ -74,6 +76,7 @@ async def signup(signup_request: SignupRequest, request: Request):
 
 
 @router.post("/login", response_model=AuthResponse)
+@limiter.limit("5/minute")
 async def login(login_request: LoginRequest, request: Request):
     """Login with email and password"""
     correlation_id = get_correlation_id(request)
@@ -115,6 +118,7 @@ async def login(login_request: LoginRequest, request: Request):
 
 
 @router.post("/forgot-password", response_model=AuthResponse)
+@limiter.limit("3/minute")
 async def forgot_password(request: ForgotPasswordRequest, http_request: Request):
     """Send password reset email"""
     correlation_id = get_correlation_id(http_request)
