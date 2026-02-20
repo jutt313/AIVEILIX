@@ -6,9 +6,9 @@ l---
   - Privacy Policy page
   - Terms of Service page
   - Tokusho page
-  - Cookie consent banner
-  - GDPR: 72-hour breach notification plan
-  - Document all subprocessors (Supabase, OpenAI, DeepSeek)
+  - [x] Cookie consent banner (exempt - only strictly necessary auth cookies used, no tracking/analytics)
+  - [x] GDPR: 72-hour breach notification plan (added to Privacy Policy section 12)
+  - [x] Document all subprocessors (internal doc only - available on request)
 
   2. Security
 
@@ -18,9 +18,9 @@ l---
   - [x] Restrict CORS headers (done - specific headers, removed old URLs, added claude.ai)
   - [x] Remove stack traces from error responses (done - removed type leak, blocked /dev/errors in prod)
   - [x] Run pip audit + npm audit (fixed axios, cryptography, pillow, setuptools, pip - ecdsa unfixable upstream)
-  - HTTPS enforced
-  - RLS on all tables
-  - API keys hashed with SHA-256
+  - [x] HTTPS enforced (auto by Firebase + Cloud Run)
+  - [x] RLS on all tables (verified in Supabase)
+  - [x] API keys hashed with SHA-256 (confirmed in code)
 
   3. Email
 
@@ -31,32 +31,32 @@ l---
 
   4. SEO
 
-  - Meta tags, OG tags, Twitter cards
-  - sitemap.xml
-  - robots.txt
-  - Structured data (JSON-LD)
-  - Submit to Google Search Console
+  - [x] Meta tags, OG tags, Twitter cards (improved - benefit-focused, no internal tech)
+  - [x] sitemap.xml (8 pages, submitted to Google)
+  - [x] robots.txt (AI crawlers allowed)
+  - [x] Structured data (JSON-LD) (featureList instead of fake rating)
+  - [x] Submit to Google Search Console (done - 8 pages discovered)
 
   5. Performance
 
-  - CDN for frontend assets
-  - Enable gzip/Brotli compression
-  - Database connection pooling (Supabase Pooler)
-  - Vite build minified
+  - [x] CDN for frontend assets (Firebase auto CDN)
+  - [x] Enable gzip/Brotli compression (Firebase auto)
+  - [x] Database connection pooling (Supabase Pooler port 6543 + pgbouncer=true)
+  - [x] Vite build minified (npm run build in deploy command)
 
   6. Monitoring
 
-  - Error tracking (Sentry or similar)
-  - Uptime monitoring with alerting
-  - Disable verbose logging in production
+  - [x] Error tracking (using Google Cloud Logging - free, built into Cloud Run, zero setup)
+  - [x] Uptime monitoring with alerting (UptimeRobot - free, monitors aiveilix.com + api.aiveilix.com/health)
+  - [x] Disable verbose logging in production (OPTIONS + 400 verbose logs silenced in prod)
   - Health endpoint exists (/health)
 
   7. Database
 
-  - Verify automated backups enabled
-  - Test backup restoration once
-  - Verify all 6 migrations applied
-  - Indexes: IVFFlat, GIN, B-tree
+  - [ ] Automated backups (requires Supabase Pro - upgrade before full launch)
+  - [ ] Test backup restoration (do after upgrading to Pro)
+  - [x] All 11 migrations applied (verified)
+  - [x] Indexes: IVFFlat, GIN, B-tree (in schema)
 
   8. Stripe & Payments
 
@@ -70,10 +70,10 @@ l---
   9. Authentication
 
   - [x] Rate limit login attempts (5/min on login & signup, 3/min on forgot-password)
-  - Prevent user enumeration
-  - Email verification on signup
-  - Password reset with expiring tokens
-  - JWT token management
+  - [x] Prevent user enumeration (generic error messages across all auth endpoints)
+  - [x] Email verification on signup (Supabase handles)
+  - [x] Password reset with expiring tokens (Supabase handles)
+  - [x] JWT token management (implemented)
 
   10. Deployment
 

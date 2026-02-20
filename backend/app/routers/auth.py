@@ -365,7 +365,7 @@ async def delete_account(
             admin_user = supabase_service.auth.admin.get_user_by_id(user_id)
             user_email = admin_user.user.email
         except Exception:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
         
         # Verify password by attempting login
         try:

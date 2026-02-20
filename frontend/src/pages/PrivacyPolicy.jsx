@@ -178,7 +178,36 @@ export default function PrivacyPolicy() {
           {/* 12 */}
           <section>
             <h2 className="text-xl font-semibold text-[#E6F1F5] mb-4 pb-2 border-b border-[#2DFFB7]/30">
-              12. Contact
+              12. Data Breach Notification (GDPR)
+            </h2>
+            <p>
+              In the event of a personal data breach, AIveilix will act promptly in accordance with applicable law, including the EU General Data Protection Regulation (GDPR).
+            </p>
+            <h3 className="text-lg font-medium text-[#E6F1F5] mt-4 mb-2">What we will do:</h3>
+            <ul className="list-disc pl-6 space-y-1">
+              <li><strong>Detect and contain:</strong> Upon becoming aware of a breach, we will immediately assess the scope, contain it, and begin investigation.</li>
+              <li><strong>Notify authorities:</strong> If the breach is likely to result in a risk to individuals' rights and freedoms, we will notify the relevant supervisory authority within <strong>72 hours</strong> of becoming aware.</li>
+              <li><strong>Notify affected users:</strong> If the breach is likely to result in a high risk to individuals, we will notify affected users without undue delay, clearly explaining what happened, what data was affected, and what steps we are taking.</li>
+              <li><strong>Document:</strong> All breaches, regardless of severity, will be documented internally including the facts, effects, and remedial actions taken.</li>
+            </ul>
+            <h3 className="text-lg font-medium text-[#E6F1F5] mt-4 mb-2">What a breach notification will include:</h3>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>A description of the nature of the breach</li>
+              <li>The categories and approximate number of individuals and records affected</li>
+              <li>The likely consequences of the breach</li>
+              <li>Measures taken or proposed to address the breach</li>
+              <li>Contact details for our data protection inquiries</li>
+            </ul>
+            <p className="mt-3">
+              To report a suspected security issue, contact us immediately at{' '}
+              <a href="mailto:info@aiveilix.com" className="text-[#2DFFB7] hover:underline">info@aiveilix.com</a>.
+            </p>
+          </section>
+
+          {/* 13 */}
+          <section>
+            <h2 className="text-xl font-semibold text-[#E6F1F5] mb-4 pb-2 border-b border-[#2DFFB7]/30">
+              13. Contact
             </h2>
             <p>
               For privacy questions, requests, or complaints, contact us at:

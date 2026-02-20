@@ -122,17 +122,14 @@ async def detailed_request_logging(request: Request, call_next):
     origin = request.headers.get("origin", "no-origin")
     content_type = request.headers.get("content-type", "no-content-type")
 
-    # Log all OPTIONS requests in detail
-    if method == "OPTIONS":
+    # Log OPTIONS requests only in development
+    if method == "OPTIONS" and settings.app_env == "development":
         origin_allowed = origin in _cors_origins
         logger.warning(f"🔍 OPTIONS REQUEST:")
         logger.warning(f"   Path: {path}")
         logger.warning(f"   Origin: {origin}")
         logger.warning(f"   Origin in allowed list: {origin_allowed}")
-        logger.warning(f"   Allowed origins: {_cors_origins}")
         logger.warning(f"   Access-Control-Request-Method: {request.headers.get('access-control-request-method', 'none')}")
-        logger.warning(f"   Access-Control-Request-Headers: {request.headers.get('access-control-request-headers', 'none')}")
-        logger.warning(f"   All Headers: {dict(request.headers)}")
 
     # Process request
     try:
@@ -146,16 +143,9 @@ async def detailed_request_logging(request: Request, call_next):
         logger.error(f"   Traceback: {traceback.format_exc()}")
         raise
 
-    # Log 400 errors with full details
+    # Log 400 errors
     if response.status_code == 400:
-        logger.error(f"❌ 400 BAD REQUEST:")
-        logger.error(f"   Method: {method}")
-        logger.error(f"   Path: {path}")
-        logger.error(f"   Origin: {origin}")
-        logger.error(f"   Origin in allowed list: {origin in _cors_origins}")
-        logger.error(f"   Content-Type: {content_type}")
-        logger.error(f"   All Request Headers: {dict(request.headers)}")
-        logger.error(f"   Response Headers: {dict(response.headers)}")
+        logger.error(f"❌ 400 BAD REQUEST: {method} {path}")
 
     return response
 
