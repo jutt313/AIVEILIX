@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from app.services.supabase import get_supabase_auth, get_supabase
 from app.routers.buckets import get_current_user_id
 from postgrest.exceptions import APIError as PostgrestAPIError
+from app.utils.tracer import Tracer
 import logging
 import traceback
 
@@ -44,34 +45,39 @@ async def get_notifications(
     unread_only: bool = False
 ):
     """Get all notifications for the current user"""
+    t = Tracer("GET /api/notifications", user_id=user_id)
     try:
         supabase = get_supabase_auth()
-        
+
         query = supabase.table("notifications").select("*").eq("user_id", user_id)
-        
+
         if unread_only:
             query = query.eq("is_read", False)
-        
+
         query = query.order("created_at", desc=True).limit(limit).offset(offset)
-        
+
         result = query.execute()
-        
-        # Get unread count
+        t.step("DB query notifications", count=len(result.data) if result.data else 0)
+
         unread_result = supabase.table("notifications").select("id", count="exact").eq("user_id", user_id).eq("is_read", False).execute()
         unread_count = unread_result.count if hasattr(unread_result, 'count') else 0
-        
+        t.step("DB query unread count", unread=unread_count)
+
+        t.done()
         return {
             "notifications": result.data or [],
             "unread_count": unread_count,
             "total": len(result.data) if result.data else 0
         }
-        
+
     except Exception as e:
+        t.error("get notifications failed", e)
+        t.done(status_code=500)
         error_trace = traceback.format_exc()
         logger.error(f"Error getting notifications: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -93,7 +99,7 @@ async def get_unread_count(
         logger.error(f"Error getting unread count: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -130,7 +136,7 @@ async def create_notification(
         logger.error(f"Error creating notification: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -160,7 +166,7 @@ async def mark_as_read(
         logger.error(f"Error marking notification as read: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -181,7 +187,7 @@ async def mark_all_as_read(
         logger.error(f"Error marking all notifications as read: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -211,7 +217,7 @@ async def delete_notification(
         logger.error(f"Error deleting notification: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -232,5 +238,5 @@ async def delete_all_read(
         logger.error(f"Error deleting read notifications: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )

@@ -1,14 +1,19 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../context/ThemeContext'
+import { useToast } from '../context/ToastContext'
 
 export default function DateRangePicker({ onDateRangeChange, defaultDays = 30 }) {
   const { isDark } = useTheme()
+  const { showToast } = useToast()
   const [isOpen, setIsOpen] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const pickerRef = useRef(null)
+  // Keep stable ref to callback to avoid re-render loop
+  const onDateRangeChangeRef = useRef(onDateRangeChange)
+  useEffect(() => { onDateRangeChangeRef.current = onDateRangeChange }, [onDateRangeChange])
 
-  // Set default dates and trigger initial load
+  // Set default dates and trigger initial load ONCE (only when defaultDays changes)
   useEffect(() => {
     const end = new Date()
     const start = new Date()
@@ -20,11 +25,10 @@ export default function DateRangePicker({ onDateRangeChange, defaultDays = 30 })
     setEndDate(endStr)
     setStartDate(startStr)
 
-    // Trigger initial date range change
-    if (onDateRangeChange) {
-      onDateRangeChange(startStr, endStr)
+    if (onDateRangeChangeRef.current) {
+      onDateRangeChangeRef.current(startStr, endStr)
     }
-  }, [defaultDays, onDateRangeChange])
+  }, [defaultDays])
 
   // Close picker when clicking outside
   useEffect(() => {
@@ -49,7 +53,7 @@ export default function DateRangePicker({ onDateRangeChange, defaultDays = 30 })
         onDateRangeChange(startDate, endDate)
         setIsOpen(false)
       } else {
-        alert('Start date must be before or equal to end date')
+        showToast('Start date must be before or equal to end date', 'warning')
       }
     }
   }

@@ -17,12 +17,19 @@ class Settings(BaseSettings):
 
     # Gemini (optional)
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     
     # DeepSeek API
     deepseek_api_key: str = ""
 
-    # OpenAI API (for high-quality embeddings)
+    # OpenAI API (for high-quality embeddings only)
     openai_api_key: str = ""
+
+    # Kimi K2.5 API (for vision/image processing)
+    kimi_api_key: str = ""
+
+    # Voyage AI API (for embeddings)
+    voyage_api_key: str = ""
 
     # Google Custom Search API (for web search in chat)
     google_search_api_key: str = ""
@@ -34,6 +41,11 @@ class Settings(BaseSettings):
 
     # Error Tracking
     sentry_dsn: str = ""  # Get from sentry.io
+
+    # Investigation experience flags
+    auto_first_reply_enabled: bool = True
+    investigation_events_enabled: bool = False  # Deprecated: old DB event writes disabled
+    processing_stream_commentary_enabled: bool = True  # SSE live commentary
 
     # Server
     backend_port: int = Field(default=7223, env="PORT")  # Render sets PORT automatically

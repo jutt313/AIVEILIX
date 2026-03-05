@@ -32,6 +32,15 @@ class FileResponse(BaseModel):
     word_count: Optional[int] = None
     folder_path: Optional[str] = None
     source: Optional[str] = None
+    progress_stage: Optional[str] = None
+    progress_label: Optional[str] = None
+    progress_current: Optional[int] = None
+    progress_total: Optional[int] = None
+    progress_percent: Optional[float] = None
+    progress_meta: Optional[dict] = None
+    investigation_conversation_id: Optional[str] = None
+    auto_summary_posted_at: Optional[datetime] = None
+    auto_summary_error: Optional[str] = None
     uploaded_by_color: Optional[str] = None
     uploaded_by_name: Optional[str] = None
     created_at: datetime

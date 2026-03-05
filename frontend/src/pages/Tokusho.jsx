@@ -11,7 +11,7 @@ export default function Tokusho() {
       <div className="relative border-b border-white/10 bg-[#0E1F24]/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/login" className="hover:opacity-90 transition-opacity">
-            <img src="/logo-with-name..png" alt="AIveilix" className="h-10 w-auto max-w-[200px] object-contain" />
+            <img src="/logo-with-name.png" alt="AIveilix" className="h-10 w-auto max-w-[200px] object-contain" />
           </Link>
           <Link to="/login" className="text-xs text-[#E6F1F5]/70 hover:text-[#E6F1F5] transition-colors">
             Back to app

@@ -4,74 +4,136 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Storage Warning</title>
+    <title>Storage Warning - AIveilix</title>
+    <style>
+        @media only screen and (max-width: 620px) {
+            .email-wrapper { padding: 12px !important; }
+            .email-card { width: 100% !important; }
+            .email-content { padding: 32px 24px !important; }
+            .email-header { padding: 32px 24px !important; }
+            .cta-button { display: block !important; text-align: center !important; }
+        }
+    </style>
 </head>
 
-<body
-    style="margin:0;padding:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background-color:#0A1215;color:#FFF">
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#0A1215">
+<body style="margin:0;padding:0;background-color:#F5F5F5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Inter',Arial,sans-serif;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#F5F5F5;">
         <tr>
-            <td align="center" style="padding:20px 0">
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600"
-                    style="max-width:600px;background-color:#0F1A1E">
+            <td class="email-wrapper" align="center" style="padding:40px 20px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" class="email-card" style="max-width:600px;width:100%;background-color:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+
+                    <!-- Header -->
                     <tr>
-                        <td
-                            style="background:linear-gradient(135deg,#0B3C49 0%,#062A33 100%);padding:40px 20px;text-align:center">
-                            <img src="{{logo_url}}" alt="AIveilix" style="max-width:180px;height:auto">
+                        <td class="email-header" align="center" style="background:linear-gradient(135deg,#0B3C49 0%,#062A33 100%);padding:40px 40px;">
+                            <img src="{{logo_url}}" alt="AIveilix" style="max-width:160px;height:auto;display:block;margin:0 auto;">
                         </td>
                     </tr>
+
+                    <!-- Content -->
                     <tr>
-                        <td style="padding:40px 30px;background-color:#0F1A1E">
-                            <h1 style="color:#FFA500;font-size:28px;font-weight:700;margin:0 0 20px 0">Storage
-                                {{usage_percent}}% Full</h1>
-                            <p style="color:rgba(255,255,255,0.86);font-size:16px;line-height:1.6;margin:0 0 16px 0">
-                                Hi {{user_name}},
-                            </p>
-                            <p style="color:rgba(255,255,255,0.86);font-size:16px;line-height:1.6;margin:0 0 16px 0">
-                                You're running low on storage space. Your {{plan}} plan storage is {{usage_percent}}%
-                                full.
-                            </p>
-                            <div
-                                style="background-color:rgba(255,165,0,0.1);border-left:4px solid #FFA500;padding:20px;margin:20px 0;border-radius:4px">
-                                <div style="margin-bottom:12px">
-                                    <div
-                                        style="background-color:rgba(255,255,255,0.1);height:12px;border-radius:6px;overflow:hidden">
-                                        <div
-                                            style="width:{{usage_percent}}%;height:100%;background:linear-gradient(90deg,#FFA500 0%,#FF6B6B 100%)">
-                                        </div>
-                                    </div>
+                        <td class="email-content" style="padding:48px 40px;background-color:#FFFFFF;">
+
+                            <!-- Icon -->
+                            <div style="text-align:center;margin-bottom:32px;">
+                                <div style="display:inline-block;width:64px;height:64px;background-color:#FFF8E8;border-radius:50%;text-align:center;line-height:64px;">
+                                    <span style="font-size:28px;">&#128190;</span>
                                 </div>
-                                <p style="color:rgba(255,255,255,0.86);font-size:14px;margin:0">
-                                    <strong>{{usage_percent}}%</strong> of your storage is being used.
+                            </div>
+
+                            <h1 style="color:#0B3C49;font-size:26px;font-weight:700;margin:0 0 8px 0;text-align:center;letter-spacing:-0.5px;">Your storage is {{usage_percent}}% full</h1>
+                            <p style="color:#6B7280;font-size:15px;margin:0 0 32px 0;text-align:center;">Time to free up space or upgrade your plan</p>
+
+                            <p style="color:#1A1A1A;font-size:16px;line-height:1.6;margin:0 0 16px 0;">Hi <strong>{{user_name}}</strong>,</p>
+
+                            <p style="color:#1A1A1A;font-size:16px;line-height:1.6;margin:0 0 32px 0;">
+                                You're running low on storage space. Your <strong>{{plan}}</strong> plan is currently <strong>{{usage_percent}}% full</strong>. To keep uploading documents without interruption, consider freeing up space or upgrading your plan.
+                            </p>
+
+                            <!-- Storage bar -->
+                            <div style="background-color:#E8FBF5;border-left:4px solid #00A67E;border-radius:4px;padding:20px 24px;margin:0 0 24px 0;">
+                                <p style="color:#00A67E;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin:0 0 12px 0;">Storage Usage</p>
+                                <!-- Progress bar track -->
+                                <div style="background-color:#E5E7EB;height:12px;border-radius:6px;overflow:hidden;margin-bottom:10px;">
+                                    <!-- Progress bar fill - width driven by template variable -->
+                                    <div style="width:{{usage_percent}}%;height:100%;background-color:#00A67E;border-radius:6px;"></div>
+                                </div>
+                                <p style="color:#1A1A1A;font-size:14px;margin:0;">
+                                    <strong style="color:#00A67E;">{{usage_percent}}%</strong> of your storage is currently in use on the <strong>{{plan}}</strong> plan.
                                 </p>
                             </div>
-                            <p style="color:rgba(255,255,255,0.7);font-size:15px;line-height:1.6;margin:20px 0">
-                                <strong>What you can do:</strong>
-                            </p>
-                            <ul
-                                style="color:rgba(255,255,255,0.7);font-size:15px;line-height:1.8;margin:0 0 20px 0;padding-left:20px">
-                                <li>Delete unused documents</li>
-                                <li>Upgrade to a plan with more storage</li>
-                            </ul>
-                            <div style="text-align:center;margin:30px 0">
-                                <a href="{{upgrade_url}}"
-                                    style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#2DFFB7 0%,#1FE0A5 100%);color:#050B0D!important;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px">
+
+                            <!-- Action steps -->
+                            <div style="background-color:#F9FAFB;border-radius:8px;padding:20px 24px;margin:0 0 32px 0;">
+                                <p style="color:#0B3C49;font-size:15px;font-weight:700;margin:0 0 16px 0;">What you can do right now:</p>
+                                <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                                    <tr>
+                                        <td style="padding:8px 0;border-bottom:1px solid #F0F0F0;">
+                                            <table cellpadding="0" cellspacing="0">
+                                                <tr>
+                                                    <td style="width:28px;vertical-align:top;padding-top:2px;">
+                                                        <div style="width:20px;height:20px;background-color:#E8FBF5;border-radius:50%;text-align:center;line-height:20px;">
+                                                            <span style="color:#00A67E;font-size:11px;font-weight:700;">1</span>
+                                                        </div>
+                                                    </td>
+                                                    <td style="padding-left:10px;">
+                                                        <p style="color:#4B5563;font-size:14px;line-height:1.5;margin:0;"><strong style="color:#1A1A1A;">Delete unused documents</strong> &mdash; Remove files you no longer need from your knowledge vaults</p>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding:8px 0;">
+                                            <table cellpadding="0" cellspacing="0">
+                                                <tr>
+                                                    <td style="width:28px;vertical-align:top;padding-top:2px;">
+                                                        <div style="width:20px;height:20px;background-color:#E8FBF5;border-radius:50%;text-align:center;line-height:20px;">
+                                                            <span style="color:#00A67E;font-size:11px;font-weight:700;">2</span>
+                                                        </div>
+                                                    </td>
+                                                    <td style="padding-left:10px;">
+                                                        <p style="color:#4B5563;font-size:14px;line-height:1.5;margin:0;"><strong style="color:#1A1A1A;">Upgrade your plan</strong> &mdash; Get more storage capacity and additional features instantly</p>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+
+                            <!-- CTA Button -->
+                            <div style="text-align:center;margin:0 0 24px 0;">
+                                <a href="{{upgrade_url}}" class="cta-button" style="display:inline-block;padding:15px 36px;background-color:#00A67E;color:#FFFFFF;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;letter-spacing:0.2px;">
                                     Upgrade for More Storage
                                 </a>
                             </div>
+
+                            <p style="color:#6B7280;font-size:14px;line-height:1.6;margin:0;text-align:center;">
+                                Need help? <a href="mailto:support@aiveilix.com" style="color:#00A67E;text-decoration:none;">Contact our support team</a>
+                            </p>
+
                         </td>
                     </tr>
+
+                    <!-- Divider -->
                     <tr>
-                        <td
-                            style="padding:30px 20px;text-align:center;background-color:#050B0D;border-top:1px solid rgba(45,255,183,0.1)">
-                            <p style="color:rgba(255,255,255,0.6);font-size:14px;margin:8px 0">
-                                <strong>AIveilix</strong> - Your AI-Powered Knowledge Vault
+                        <td style="padding:0 40px;">
+                            <div style="height:1px;background-color:#F0F0F0;"></div>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding:28px 40px;background-color:#F9F9F9;">
+                            <p style="color:#9CA3AF;font-size:13px;line-height:1.6;margin:0 0 8px 0;text-align:center;">
+                                <strong style="color:#6B7280;">AIveilix</strong> &mdash; Your AI-Powered Knowledge Vault
                             </p>
-                            <p style="color:rgba(255,255,255,0.6);font-size:14px;margin:8px 0">
-                                © 2026 AIveilix Inc. All rights reserved.
+                            <p style="color:#9CA3AF;font-size:12px;margin:0;text-align:center;">
+                                &copy; 2026 AIveilix Inc. All rights reserved.
                             </p>
                         </td>
                     </tr>
+
                 </table>
             </td>
         </tr>

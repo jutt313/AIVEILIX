@@ -1,27 +1,32 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { chatAPI, filesAPI } from '../services/api'
 import { useTheme } from '../context/ThemeContext'
+import { useToast } from '../context/ToastContext'
 import UpgradeModal from './UpgradeModal'
 
 export default function ChatPanel({
   bucketId,
   conversationId: externalConversationId,
   onConversationCreated,
+  onConversationsRefresh,
   onFilesUpdate,
+  initialQueuedUploads = [],
+  onQueuedUploadsConsumed,
   files = [],
   selectedFiles = [],
   onSelectedFilesChange
 }) {
   const { isDark } = useTheme()
+  const { showToast } = useToast()
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState('Thinking...')
   const [conversationId, setConversationId] = useState(externalConversationId)
   const [showUploadMenu, setShowUploadMenu] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [currentPhase, setCurrentPhase] = useState('idle') // idle, thinking, response
+  const [currentPhase, setCurrentPhase] = useState('idle') // idle, investigation, thinking, response
   const [thinkingContent, setThinkingContent] = useState('')
+  const [investigationContent, setInvestigationContent] = useState('')
   const [expandedThinking, setExpandedThinking] = useState({}) // per message: { [msgIdx]: true/false }
   const [isTyping, setIsTyping] = useState(false) // Show typing cursor
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
@@ -39,6 +44,8 @@ export default function ChatPanel({
   const folderInputRef = useRef(null)
   const isCreatingConversation = useRef(false)
   const abortControllerRef = useRef(null)
+  const conversationIdRef = useRef(externalConversationId || null)
+  const [pendingAttachments, setPendingAttachments] = useState([]) // files staged before send
 
   // Toggle thinking expansion for a specific message
   const toggleThinking = (msgIdx) => {
@@ -70,6 +77,11 @@ export default function ChatPanel({
     scrollToBottom()
   }, [messages])
 
+  useEffect(() => {
+    conversationIdRef.current = conversationId
+  }, [conversationId])
+
+
   // Cleanup: abort any pending request on unmount
   useEffect(() => {
     return () => {
@@ -99,8 +111,14 @@ export default function ChatPanel({
       setCreateFileName('')
       setCreateFileError('')
       setCreateFileDraftReady(false)
+      setPendingAttachments([])
     }
   }, [externalConversationId])
+
+  useEffect(() => {
+    if (!initialQueuedUploads || initialQueuedUploads.length === 0) return
+    if (onQueuedUploadsConsumed) onQueuedUploadsConsumed()
+  }, [initialQueuedUploads, onQueuedUploadsConsumed])
 
   const loadConversationMessages = async (convId) => {
     try {
@@ -150,59 +168,20 @@ export default function ChatPanel({
     }
   }, [showUploadMenu])
 
-  const handleFileUpload = async (files) => {
-    if (!files || files.length === 0) return
-
-    const allFiles = Array.from(files)
-    const batchMeta = {
-      count: allFiles.length,
-      totalBytes: allFiles.reduce((sum, f) => sum + (f.size || 0), 0),
-    }
-
-    setUploading(true)
-    setShowUploadMenu(false)
-    let successCount = 0
-    let errorCount = 0
-    let limitError = null
-
-    for (const file of allFiles) {
-      try {
-        let folderPath = null
-        if (file.webkitRelativePath) {
-          const pathParts = file.webkitRelativePath.split('/')
-          if (pathParts.length > 1) {
-            folderPath = pathParts.slice(0, -1).join('/')
-          }
-        }
-        await filesAPI.upload(bucketId, file, folderPath, batchMeta)
-        successCount++
-      } catch (error) {
-        console.error(`Upload failed for ${file.name}:`, error)
-        if (error.response?.status === 402 || error.response?.status === 429) {
-          limitError = error.response.data?.detail || { error: 'limit_exceeded', message: 'Plan limit reached' }
-          break
-        }
-        errorCount++
-      }
-    }
-
-    if (onFilesUpdate) onFilesUpdate()
-
-    if (limitError) {
-      setUpgradeError(limitError)
-      setShowUpgradeModal(true)
-    } else if (errorCount > 0) {
-      alert(`Upload complete: ${successCount} successful, ${errorCount} failed`)
-    }
-
-    setUploading(false)
-  }
 
   const handleFileInput = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleFileUpload(e.target.files)
+      const newFiles = Array.from(e.target.files).map(f => ({
+        id: `${f.name}-${f.size}-${Date.now()}`,
+        file: f,
+        name: f.name,
+        folderPath: f.webkitRelativePath
+          ? f.webkitRelativePath.split('/').slice(0, -1).join('/')
+          : null,
+      }))
+      setPendingAttachments(prev => [...prev, ...newFiles])
+      setShowUploadMenu(false)
     }
-    // Reset input so same file can be selected again
     e.target.value = ''
   }
 
@@ -278,6 +257,7 @@ export default function ChatPanel({
         if (onConversationCreated) {
           onConversationCreated(data.conversation_id)
         }
+        if (onConversationsRefresh) onConversationsRefresh()
       }
 
       if (data.file_draft && data.file_draft.file_name && data.file_draft.file_content) {
@@ -338,6 +318,7 @@ export default function ChatPanel({
       setLoading(false)
       setCurrentPhase('idle')
       setThinkingContent('')
+      setInvestigationContent('')
       setIsTyping(false)
     }
   }
@@ -404,6 +385,7 @@ export default function ChatPanel({
       setLoading(false)
       setCurrentPhase('idle')
       setThinkingContent('')
+      setInvestigationContent('')
       setIsTyping(false)
 
       // Remove the user message since we're canceling
@@ -420,7 +402,7 @@ export default function ChatPanel({
       return
     }
 
-    if ((!input.trim() && selectedFiles.length === 0)) return
+    if ((!input.trim() && selectedFiles.length === 0 && pendingAttachments.length === 0)) return
 
     // Build message with file references
     let userMessage = input.trim()
@@ -502,6 +484,41 @@ export default function ChatPanel({
     setMessages(prev => [...prev, newUserMessage])
     setLoading(true)
 
+    // Upload any pending attachments first, with live commentary
+    if (pendingAttachments.length > 0) {
+      const toUpload = [...pendingAttachments]
+      setPendingAttachments([])
+      const batchMeta = { count: toUpload.length, totalBytes: toUpload.reduce((s, a) => s + (a.file.size || 0), 0) }
+
+      for (const att of toUpload) {
+        const ext = att.name.split('.').pop()?.toLowerCase() || ''
+        const imageExts = ['jpg','jpeg','png','gif','bmp','webp','tiff']
+        const codeExts = ['py','js','ts','jsx','tsx','java','cpp','c','go','rs','rb','php']
+        let commentary = `Reading ${att.name}...`
+        if (imageExts.includes(ext)) commentary = `Looking at this image carefully...`
+        else if (ext === 'pdf') commentary = `Opening the PDF, going through the pages...`
+        else if (codeExts.includes(ext)) commentary = `Going through the code in ${att.name}...`
+        else if (ext === 'csv') commentary = `Reading through the data...`
+        else if (['docx','doc'].includes(ext)) commentary = `Reading through the document...`
+
+        setLoadingMessage(commentary)
+        try {
+          await filesAPI.upload(bucketId, att.file, att.folderPath, batchMeta, conversationId)
+        } catch (uploadErr) {
+          if (uploadErr.response?.status === 402 || uploadErr.response?.status === 429) {
+            setUpgradeError(uploadErr.response.data?.detail || { error: 'limit_exceeded', message: 'Plan limit reached' })
+            setShowUpgradeModal(true)
+            setLoading(false)
+            return
+          }
+          console.error(`Upload failed for ${att.name}:`, uploadErr)
+        }
+      }
+      if (onFilesUpdate) onFilesUpdate()
+      setLoadingMessage('Putting it together...')
+      await new Promise(r => setTimeout(r, 400))
+    }
+
     // Determine loading message based on query
     const queryLower = userMessage.toLowerCase()
     const searchKeywords = ['search', 'look up', 'find', 'what is', 'who is', 'how to', 'current', 'latest', 'today', 'recent', 'news', 'weather', 'price', 'now', 'stock']
@@ -539,6 +556,7 @@ export default function ChatPanel({
     // Reset phase state
     setCurrentPhase('idle')
     setThinkingContent('')
+    setInvestigationContent('')
 
     try {
       const response = await chatAPI.sendMessage(
@@ -556,12 +574,23 @@ export default function ChatPanel({
 
               case 'phase_change':
                 setCurrentPhase(chunk.phase)
-                if (chunk.phase === 'thinking') {
+                if (chunk.phase === 'investigation') {
+                  setLoadingMessage('Investigating your file...')
+                  setIsTyping(false)
+                } else if (chunk.phase === 'thinking') {
                   setLoadingMessage('Reasoning...')
                   setIsTyping(false)
                 } else if (chunk.phase === 'response') {
                   setLoadingMessage('')
                   setIsTyping(true) // Start showing typing cursor
+                }
+                break
+
+              case 'investigation':
+                if (chunk.content) {
+                  setInvestigationContent(prev => `${prev}${chunk.content}`)
+                  const lastLine = chunk.content.trim()
+                  if (lastLine) setLoadingMessage(lastLine)
                 }
                 break
 
@@ -628,6 +657,7 @@ export default function ChatPanel({
         if (onConversationCreated) {
           onConversationCreated(data.conversation_id)
         }
+        if (onConversationsRefresh) onConversationsRefresh()
       }
     } catch (error) {
       // Don't show error if request was aborted by user
@@ -664,6 +694,7 @@ export default function ChatPanel({
       setLoading(false)
       setCurrentPhase('idle')
       setThinkingContent('')
+      setInvestigationContent('')
       setIsTyping(false)
     }
   }
@@ -693,8 +724,8 @@ export default function ChatPanel({
                 <div
                   className={`group/msg max-w-[85%] rounded-3xl px-4 py-2 ${msg.role === 'user'
                     ? isDark
-                      ? `bg-[${msg.sent_by_color || '#2DFFB7'}]/20 text-dark-text border`
-                      : `bg-[${msg.sent_by_color || '#1FE0A5'}]/20 text-[#062A33] border`
+                      ? `bg-[${msg.sent_by_color || '#2DFFB7'}]/20 text-dark-text${msg.sent_by_color ? ' border' : ''}`
+                      : `bg-[${msg.sent_by_color || '#1FE0A5'}]/20 text-[#062A33]${msg.sent_by_color ? ' border' : ''}`
                     : isDark
                       ? 'text-dark-text'
                       : 'text-[#062A33]'
@@ -708,8 +739,8 @@ export default function ChatPanel({
                   {msg.sent_by_color && msg.sent_by_name && (
                     <span className="block text-xs opacity-0 group-hover/msg:opacity-50 transition-opacity mb-1">{msg.sent_by_name}</span>
                   )}
-                  {/* Thinking Section (Collapsible) - Only for assistant messages with thinking */}
-                  {msg.role === 'assistant' && msg.thinking && (
+                  {/* Thinking Section (Collapsible) - Only show after response is complete, not while streaming */}
+                  {msg.role === 'assistant' && msg.thinking && !(loading && idx === messages.length - 1) && (
                     <div className={`mb-3 pb-3 border-b ${isDark ? 'border-white/10' : 'border-[#1FE0A5]/20'}`}>
                       <button
                         onClick={() => toggleThinking(idx)}
@@ -835,17 +866,30 @@ export default function ChatPanel({
                     <svg className="w-5 h-5 animate-pulse text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-2.3l-.85-.6A4.997 4.997 0 017 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z" />
                     </svg>
+                  ) : currentPhase === 'investigation' ? (
+                    // Investigation phase indicator (radar pulse)
+                    <svg className="w-5 h-5 animate-pulse text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <circle cx="11" cy="11" r="8" strokeWidth="2"></circle>
+                      <path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35"></path>
+                    </svg>
                   ) : (
                     // Default spinner
                     <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-dark-accent"></div>
                   )}
                   <span className={`text-sm ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`}>{loadingMessage}</span>
                 </div>
-                {/* Show live thinking content if in thinking phase */}
-                {currentPhase === 'thinking' && thinkingContent && (
-                  <div className={`mt-2 text-xs max-w-md p-2 rounded-lg ${isDark ? 'bg-yellow-500/10 text-white/50' : 'bg-yellow-500/10 text-gray-500'
+                {/* Show live investigation feed while file is processing */}
+                {currentPhase === 'investigation' && investigationContent && (
+                  <div className={`mt-2 text-sm max-w-2xl max-h-60 overflow-y-auto p-3 rounded-lg leading-relaxed whitespace-pre-wrap ${isDark ? 'bg-cyan-500/10 text-white/70' : 'bg-cyan-500/10 text-gray-700'
                     }`}>
-                    {thinkingContent.slice(-200)}...
+                    {investigationContent}
+                  </div>
+                )}
+                {/* Show full live thinking content while reasoning */}
+                {currentPhase === 'thinking' && thinkingContent && (
+                  <div className={`mt-2 text-sm max-w-2xl max-h-60 overflow-y-auto p-3 rounded-lg leading-relaxed whitespace-pre-wrap ${isDark ? 'bg-yellow-500/10 text-white/60' : 'bg-yellow-500/10 text-gray-600'
+                    }`}>
+                    {thinkingContent}
                   </div>
                 )}
               </div>
@@ -858,6 +902,36 @@ export default function ChatPanel({
       {/* Input Area */}
       <div className="pt-0 px-[16px] pb-0">
         <div className="max-w-4xl mx-auto">
+          {/* Pending Attachments (staged before send) */}
+          {pendingAttachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {pendingAttachments.map((att) => (
+                <div
+                  key={att.id}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${
+                    isDark
+                      ? 'bg-white/10 border border-white/20'
+                      : 'bg-[#062A33]/8 border border-[#062A33]/20'
+                  }`}
+                >
+                  <svg className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-dark-text/60' : 'text-[#062A33]/60'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                  <span className={`max-w-[140px] truncate ${isDark ? 'text-dark-text/80' : 'text-[#062A33]/80'}`}>{att.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingAttachments(prev => prev.filter(a => a.id !== att.id))}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-black/10 transition-colors"
+                  >
+                    <svg className={`w-3 h-3 ${isDark ? 'text-dark-text/50' : 'text-[#062A33]/50'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Selected Files Mentions */}
           {selectedFiles.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
@@ -942,7 +1016,7 @@ export default function ChatPanel({
               multiple
               className="hidden"
               onChange={handleFileInput}
-              disabled={uploading}
+              disabled={loading}
             />
             <input
               ref={folderInputRef}
@@ -952,7 +1026,7 @@ export default function ChatPanel({
               multiple
               className="hidden"
               onChange={handleFileInput}
-              disabled={uploading}
+              disabled={loading}
             />
 
             {/* Input Bar - Dynamic layout */}
@@ -966,20 +1040,18 @@ export default function ChatPanel({
                 <button
                   type="button"
                   onClick={handleUploadClick}
-                  disabled={uploading}
+                  disabled={loading}
                   className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Upload files"
                 >
-                  {uploading ? (
-                    <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-dark-accent"></div>
-                  ) : (
+                  {false ? null : (
                     <svg className={`w-5 h-5 ${isDark ? 'text-dark-text/70' : 'text-[#062A33]/70'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
                   )}
                 </button>
                 {/* Upload Menu Dropdown */}
-                {showUploadMenu && !uploading && (
+                {showUploadMenu && (
                   <div className={`absolute bottom-full left-0 mb-2 w-48 rounded-lg backdrop-blur-xl border shadow-lg py-2 z-50 ${isDark ? 'bg-black/20 border-white/10' : 'bg-white/90 border-[#1FE0A5]/20'
                     }`}>
                     <button type="button" onClick={handleUploadFileClick} className={`w-full px-4 py-2 text-left text-sm transition-colors flex items-center gap-2 ${isDark ? 'text-dark-text hover:bg-white/10' : 'text-[#062A33] hover:bg-black/10'}`}>

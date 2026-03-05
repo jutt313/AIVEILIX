@@ -63,7 +63,7 @@ export default function AuthLayout({ children, lightConfig = 'login' }) {
         {/* Logo */}
         <div className="shrink-0 mb-6 text-center">
           <img
-            src="/logo-with-name..png"
+            src="/logo-with-name.png"
             alt="AIveilix"
             className="h-14 w-auto max-w-[280px] object-contain mx-auto"
           />

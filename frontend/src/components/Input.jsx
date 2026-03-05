@@ -13,7 +13,7 @@ export default function Input({
   const { isDark } = useTheme()
   
   return (
-    <div className="mb-4">
+    <div className="mb-3">
       {label && (
         <label className={`block text-sm font-medium mb-2 ${
           isDark ? 'text-dark-text' : 'text-[#062A33]'

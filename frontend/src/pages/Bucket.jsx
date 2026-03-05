@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { bucketsAPI, filesAPI } from '../services/api'
@@ -10,6 +10,7 @@ import ConversationsSidebar from '../components/ConversationsSidebar'
 export default function Bucket() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { isTeamMember, user } = useAuth()
   const { isDark } = useTheme()
   
@@ -18,14 +19,27 @@ export default function Bucket() {
   const [loading, setLoading] = useState(true)
   const [selectedFiles, setSelectedFiles] = useState([])
   const [currentConversationId, setCurrentConversationId] = useState(null)
+  const [conversationsRefreshKey, setConversationsRefreshKey] = useState(0)
+  const [queuedUploads, setQueuedUploads] = useState(location.state?.queuedUploads || [])
 
   useEffect(() => {
-    loadData()
+    const uploads = location.state?.queuedUploads || []
+    if (uploads.length > 0) {
+      setQueuedUploads(uploads)
+    }
+  }, [location.state])
+
+  useEffect(() => {
+    loadData({ silent: false })
   }, [id])
 
-  const loadData = async () => {
+  const handleOptimisticFileDelete = (fileId) => {
+    setFiles(prev => prev.filter(f => f.id !== fileId))
+  }
+
+  const loadData = async ({ silent = true } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const [bucketRes, filesRes] = await Promise.all([
         bucketsAPI.get(id),
         filesAPI.list(id)
@@ -34,9 +48,11 @@ export default function Bucket() {
       setFiles(filesRes.data.files || [])
     } catch (error) {
       console.error('Failed to load data:', error)
-      navigate('/dashboard')
+      if (!silent) {
+        navigate('/dashboard')
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -78,6 +94,7 @@ export default function Bucket() {
         <ConversationsSidebar
           bucket={bucket}
           bucketId={id}
+          refreshKey={conversationsRefreshKey}
           currentConversationId={currentConversationId}
           onConversationSelect={(convId) => setCurrentConversationId(convId)}
           onNewChat={() => setCurrentConversationId(null)}
@@ -90,8 +107,11 @@ export default function Bucket() {
           bucketId={id} 
           conversationId={currentConversationId}
           onConversationCreated={(convId) => setCurrentConversationId(convId)}
-          onFilesUpdate={loadData}
+          onConversationsRefresh={() => setConversationsRefreshKey((v) => v + 1)}
+          onFilesUpdate={() => loadData({ silent: true })}
           files={files}
+          initialQueuedUploads={queuedUploads}
+          onQueuedUploadsConsumed={() => setQueuedUploads([])}
           selectedFiles={selectedFiles}
           onSelectedFilesChange={setSelectedFiles}
         />
@@ -102,7 +122,8 @@ export default function Bucket() {
         <FilesCard
           bucketId={id}
           files={files}
-          onFilesUpdate={loadData}
+          onFilesUpdate={() => loadData({ silent: true })}
+          onOptimisticFileDelete={handleOptimisticFileDelete}
           selectedFiles={selectedFiles}
           onFileSelect={(file) => {
             // Toggle file selection

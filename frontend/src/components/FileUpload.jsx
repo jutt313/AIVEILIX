@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { filesAPI } from '../services/api'
+import { useToast } from '../context/ToastContext'
 
 export default function FileUpload({ bucketId, onUploadSuccess }) {
+  const { showToast } = useToast()
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
 
@@ -30,7 +32,7 @@ export default function FileUpload({ bucketId, onUploadSuccess }) {
       if (onUploadSuccess) onUploadSuccess()
     } catch (error) {
       console.error('Upload failed:', error)
-      alert('Upload failed: ' + (error.response?.data?.detail || error.message))
+      showToast('Upload failed. Please try again.', 'error', () => handleFileUpload(files))
     } finally {
       setUploading(false)
     }

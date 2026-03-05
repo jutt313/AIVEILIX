@@ -3,6 +3,9 @@ Plan limits enforcement service
 """
 import logging
 import traceback
+import time
+import asyncio
+from threading import Lock
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException
@@ -12,6 +15,21 @@ from app.services.supabase import get_supabase
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────────────────────
+# In-memory TTL cache for subscription rows (avoids 5-10x DB hits per request)
+# ──────────────────────────────────────────────────────────────
+_subscription_cache: Dict[str, tuple] = {}
+_subscription_cache_lock = Lock()
+_SUBSCRIPTION_CACHE_TTL = 60  # seconds
+
+_usage_cache: Dict[str, tuple] = {}
+_usage_cache_lock = Lock()
+_USAGE_CACHE_TTL = 10  # seconds
+
+_usage_summary_cache: Dict[str, tuple] = {}
+_usage_summary_cache_lock = Lock()
+_USAGE_SUMMARY_CACHE_TTL = 60  # seconds
 
 # ──────────────────────────────────────────────────────────────
 # Plan limits configuration (all tiers)
@@ -133,7 +151,14 @@ def _build_upgrade_detail(error_type: str, message: str, plan: str) -> dict:
 # 24-hour early-bird bonus helpers
 # ──────────────────────────────────────────────────────────────
 async def _get_subscription_row(user_id: str) -> Optional[dict]:
-    """Fetch subscription row for user."""
+    """Fetch subscription row for user (cached 60s to avoid repeated DB hits per request)."""
+    now = time.monotonic()
+    with _subscription_cache_lock:
+        if user_id in _subscription_cache:
+            data, ts = _subscription_cache[user_id]
+            if now - ts < _SUBSCRIPTION_CACHE_TTL:
+                return data
+
     supabase = get_supabase()
     try:
         result = (
@@ -143,9 +168,13 @@ async def _get_subscription_row(user_id: str) -> Optional[dict]:
             .single()
             .execute()
         )
-        return result.data
+        data = result.data
     except Exception:
-        return None
+        data = None
+
+    with _subscription_cache_lock:
+        _subscription_cache[user_id] = (data, time.monotonic())
+    return data
 
 
 async def is_early_bird_active(user_id: str) -> bool:
@@ -218,8 +247,37 @@ def get_plan_limits(plan: str) -> Dict[str, Any]:
 # Usage helpers
 # ──────────────────────────────────────────────────────────────
 async def get_user_usage(user_id: str) -> Dict[str, Any]:
-    """Get user's current usage stats."""
+    """Get user's current usage stats (cached 10s, 3 queries run in parallel)."""
+    now = time.monotonic()
+    with _usage_cache_lock:
+        if user_id in _usage_cache:
+            data, ts = _usage_cache[user_id]
+            if now - ts < _USAGE_CACHE_TTL:
+                return data
+
     supabase = get_supabase()
+
+    def _fetch_buckets():
+        return supabase.table("buckets").select("file_count, total_size_bytes").eq("user_id", user_id).execute()
+
+    def _fetch_team_members():
+        return (
+            supabase.table("team_members")
+            .select("id", count="exact")
+            .eq("owner_id", user_id)
+            .eq("is_active", True)
+            .execute()
+        )
+
+    def _fetch_api_usage():
+        return supabase.rpc("get_daily_api_usage", {"p_user_id": user_id}).execute()
+
+    results = await asyncio.gather(
+        asyncio.to_thread(_fetch_buckets),
+        asyncio.to_thread(_fetch_team_members),
+        asyncio.to_thread(_fetch_api_usage),
+        return_exceptions=True,
+    )
 
     total_storage = 0
     total_documents = 0
@@ -227,41 +285,32 @@ async def get_user_usage(user_id: str) -> Dict[str, Any]:
     team_member_count = 0
     api_calls_today = 0
 
-    try:
-        buckets_result = supabase.table("buckets").select("file_count, total_size_bytes").eq("user_id", user_id).execute()
-        if buckets_result.data:
-            bucket_count = len(buckets_result.data)
-            for bucket in buckets_result.data:
-                total_storage += bucket.get("total_size_bytes", 0) or 0
-                total_documents += bucket.get("file_count", 0) or 0
-    except Exception as e:
-        logger.error(f"[get_user_usage] Error fetching buckets: {e}")
+    buckets_result = results[0]
+    if not isinstance(buckets_result, Exception) and buckets_result.data:
+        bucket_count = len(buckets_result.data)
+        for bucket in buckets_result.data:
+            total_storage += bucket.get("total_size_bytes", 0) or 0
+            total_documents += bucket.get("file_count", 0) or 0
 
-    try:
-        tm_res = (
-            supabase.table("team_members")
-            .select("id", count="exact")
-            .eq("owner_id", user_id)
-            .eq("is_active", True)
-            .execute()
-        )
-        team_member_count = tm_res.count if tm_res.count is not None else len(tm_res.data or [])
-    except Exception as e:
-        logger.warning(f"[get_user_usage] Error fetching team members: {e}")
+    tm_result = results[1]
+    if not isinstance(tm_result, Exception):
+        team_member_count = tm_result.count if tm_result.count is not None else len(tm_result.data or [])
 
-    try:
-        api_usage = supabase.rpc("get_daily_api_usage", {"p_user_id": user_id}).execute()
-        api_calls_today = api_usage.data if api_usage.data else 0
-    except Exception:
-        api_calls_today = 0
+    api_result = results[2]
+    if not isinstance(api_result, Exception):
+        api_calls_today = api_result.data if api_result.data else 0
 
-    return {
+    result = {
         "storage_bytes": total_storage,
         "document_count": total_documents,
         "bucket_count": bucket_count,
         "team_member_count": team_member_count,
         "api_calls_today": api_calls_today,
     }
+
+    with _usage_cache_lock:
+        _usage_cache[user_id] = (result, time.monotonic())
+    return result
 
 
 async def get_metric_count(user_id: str, metric: str, period: str = "daily") -> int:
@@ -513,7 +562,7 @@ async def check_concurrent_jobs(user_id: str) -> Tuple[bool, Optional[str]]:
             supabase.table("files")
             .select("id", count="exact")
             .eq("user_id", user_id)
-            .eq("status", "processing")
+            .in_("status", ["pending", "processing"])
             .execute()
         )
         count = result.count if result.count is not None else len(result.data or [])
@@ -660,15 +709,24 @@ async def check_and_send_usage_alerts(user_id: str, additional_bytes: int = 0) -
 # Usage summary (for frontend / settings page)
 # ──────────────────────────────────────────────────────────────
 async def get_usage_summary(user_id: str) -> Dict[str, Any]:
-    """Return comprehensive usage summary for the frontend."""
-    plan, limits = await get_plan_limits_for_user(user_id)
-    usage = await get_user_usage(user_id)
-    early_bird = await is_early_bird_active(user_id)
+    """Return comprehensive usage summary for the frontend (cached 60s)."""
+    now = time.monotonic()
+    with _usage_summary_cache_lock:
+        if user_id in _usage_summary_cache:
+            data, ts = _usage_summary_cache[user_id]
+            if now - ts < _USAGE_SUMMARY_CACHE_TTL:
+                return data
 
-    # Fetch chat / mcp counts
-    chat_today = await get_metric_count(user_id, "chat_messages", "daily")
-    mcp_today = await get_metric_count(user_id, "mcp_queries", "daily")
-    bucket_chat_today = await get_metric_count(user_id, "bucket_chat", "daily")
+    (plan, limits), usage, early_bird, (chat_today, mcp_today, bucket_chat_today) = await asyncio.gather(
+        get_plan_limits_for_user(user_id),
+        get_user_usage(user_id),
+        is_early_bird_active(user_id),
+        asyncio.gather(
+            get_metric_count(user_id, "chat_messages", "daily"),
+            get_metric_count(user_id, "mcp_queries", "daily"),
+            get_metric_count(user_id, "bucket_chat", "daily"),
+        ),
+    )
 
     # Trial info
     row = await _get_subscription_row(user_id)
@@ -685,7 +743,7 @@ async def get_usage_summary(user_id: str) -> Dict[str, Any]:
             return 0
         return round((used / limit) * 100, 1)
 
-    return {
+    result = {
         "plan": plan,
         "plan_name": PLAN_NAMES.get(plan, plan),
         "early_bird_active": early_bird,
@@ -739,3 +797,7 @@ async def get_usage_summary(user_id: str) -> Dict[str, Any]:
             "max_file_size_mb": limits["max_file_size_bytes"] / (1024 * 1024),
         },
     }
+
+    with _usage_summary_cache_lock:
+        _usage_summary_cache[user_id] = (result, time.monotonic())
+    return result

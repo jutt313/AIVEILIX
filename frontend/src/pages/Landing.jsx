@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
+import {
+  FileText, Search, FolderOpen, Link2, Zap, DollarSign,
+  Database, Globe, Brain, Lock, Shield, Trash2,
+  Code2, BookOpen, GraduationCap, Users, Quote, Mail
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NeuralGlow from '../components/NeuralGlow';
 import DashboardPreview from '../components/DashboardPreview';
@@ -58,7 +63,7 @@ const Landing = () => {
       <nav className="landing-nav">
         <div className="nav-left">
           <Link to="/">
-            <img src="/logo-with-name..png" alt="AIveilix" className="nav-logo-img" />
+            <img src="/logo-with-name.png" alt="AIveilix" className="nav-logo-img" />
           </Link>
         </div>
 
@@ -157,12 +162,13 @@ const Landing = () => {
           </div>
           <SpotlightGrid className="solution-grid">
             {[
-              { title: 'Active Storage', desc: 'Files are processed, indexed, and always ready for AI retrieval.' },
-              { title: 'Universal Access', desc: 'Connect via MCP and instantly access your docs in Claude, Cursor, ChatGPT, and more.' },
-              { title: 'Persistent Memory', desc: 'Your context stays alive across sessions and tools with citation‑backed answers.' },
+              { title: 'Active Storage', desc: 'Files are processed, indexed, and always ready for AI retrieval.', icon: Database },
+              { title: 'Universal Access', desc: 'Connect via MCP and instantly access your docs in Claude, Cursor, ChatGPT, and more.', icon: Globe },
+              { title: 'Persistent Memory', desc: 'Your context stays alive across sessions and tools with citation‑backed answers.', icon: Brain },
             ].map((card, i) => (
               <ScrollReveal key={card.title} delay={i * 0.12} direction="up">
                 <SpotlightCard>
+                  <card.icon size={28} color="#2DFFB7" style={{ marginBottom: 14, opacity: 0.9 }} />
                   <h3>{card.title}</h3>
                   <p>{card.desc}</p>
                 </SpotlightCard>
@@ -226,15 +232,16 @@ const Landing = () => {
           </div>
           <SpotlightGrid className="features-grid">
             {[
-              { title: '50+ Formats', desc: 'PDF, DOCX, images with OCR, code, CSV, and more.' },
-              { title: 'Vector Search', desc: 'Semantic retrieval with hybrid ranking for accuracy.' },
-              { title: 'Buckets', desc: 'Organize by project, team, or topic with scoped access.' },
-              { title: 'Citations', desc: 'Every answer can show the exact source paragraph.' },
-              { title: 'Fast Indexing', desc: 'Most files are ready to query in seconds.' },
-              { title: 'Cost Savings', desc: 'Process once, reuse everywhere to reduce tokens.' },
+              { title: '50+ Formats', desc: 'PDF, DOCX, images with OCR, code, CSV, and more.', icon: FileText },
+              { title: 'Vector Search', desc: 'Semantic retrieval with hybrid ranking for accuracy.', icon: Search },
+              { title: 'Buckets', desc: 'Organize by project, team, or topic with scoped access.', icon: FolderOpen },
+              { title: 'Citations', desc: 'Every answer can show the exact source paragraph.', icon: Link2 },
+              { title: 'Fast Indexing', desc: 'Most files are ready to query in seconds.', icon: Zap },
+              { title: 'Cost Savings', desc: 'Process once, reuse everywhere to reduce tokens.', icon: DollarSign },
             ].map((card, i) => (
               <ScrollReveal key={card.title} delay={i * 0.08} direction="up">
                 <SpotlightCard>
+                  <card.icon size={26} color="#2DFFB7" style={{ marginBottom: 12, opacity: 0.85 }} />
                   <h3>{card.title}</h3>
                   <p>{card.desc}</p>
                 </SpotlightCard>
@@ -244,28 +251,29 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* Integrations */}
-      <section className="integrations-section">
+      {/* Works With */}
+      <section className="works-with-section">
         <div className="section-inner">
-          <div className="section-header">
-            <ScrollReveal>
-              <span className="section-eyebrow">INTEGRATIONS</span>
-            </ScrollReveal>
-            <TextReveal
-              text="MCP connects to everything"
-              className="section-header-h2"
-              staggerDelay={0.04}
-            />
-          </div>
           <ScrollReveal>
-            <div className="integration-marquee-wrapper">
-              <div className="integration-marquee-track">
-                {[...Array(2)].map((_, setIdx) => (
-                  ['Claude Desktop', 'Cursor', 'ChatGPT (coming soon)', 'Custom MCP Apps', 'REST API', 'Any MCP Client', 'Windsurf', 'VS Code'].map((name) => (
-                    <div key={`${setIdx}-${name}`} className="integration-pill">{name}</div>
-                  ))
-                ))}
-              </div>
+            <p className="works-with-label">WORKS WITH YOUR FAVORITE AI TOOLS</p>
+          </ScrollReveal>
+          <ScrollReveal delay={0.1}>
+            <div className="works-with-grid">
+              {[
+                { name: 'Claude Desktop', abbr: 'C', color: '#FF9500', bg: 'rgba(255,149,0,0.12)' },
+                { name: 'Cursor IDE', abbr: '↗', color: '#58A6FF', bg: 'rgba(88,166,255,0.12)' },
+                { name: 'ChatGPT', abbr: 'G', color: '#19C37D', bg: 'rgba(25,195,125,0.12)' },
+                { name: 'Windsurf', abbr: 'W', color: '#A78BFA', bg: 'rgba(167,139,250,0.12)' },
+                { name: 'VS Code', abbr: '◈', color: '#0098FF', bg: 'rgba(0,152,255,0.12)' },
+                { name: 'Any MCP Client', abbr: '⚡', color: '#2DFFB7', bg: 'rgba(45,255,183,0.12)' },
+              ].map((tool) => (
+                <div key={tool.name} className="works-with-item">
+                  <div className="works-with-icon" style={{ background: tool.bg, border: `1px solid ${tool.color}55` }}>
+                    <span style={{ color: tool.color, fontWeight: 800, fontSize: 20, lineHeight: 1 }}>{tool.abbr}</span>
+                  </div>
+                  <span className="works-with-name">{tool.name}</span>
+                </div>
+              ))}
             </div>
           </ScrollReveal>
         </div>
@@ -286,12 +294,13 @@ const Landing = () => {
           </div>
           <SpotlightGrid className="security-grid">
             {[
-              { title: 'TLS 1.3 In‑Transit', desc: 'Bank‑grade encryption for every request.' },
-              { title: 'AES‑256 At‑Rest', desc: 'Your vault is encrypted end‑to‑end.' },
-              { title: 'Right to be Forgotten', desc: 'Delete means delete: files, vectors, metadata.' },
+              { title: 'TLS 1.3 In‑Transit', desc: 'Bank‑grade encryption for every request.', icon: Lock },
+              { title: 'AES‑256 At‑Rest', desc: 'Your vault is encrypted end‑to‑end.', icon: Shield },
+              { title: 'Right to be Forgotten', desc: 'Delete means delete: files, vectors, metadata.', icon: Trash2 },
             ].map((card, i) => (
               <ScrollReveal key={card.title} delay={i * 0.12} direction="up">
                 <SpotlightCard>
+                  <card.icon size={28} color="#2DFFB7" style={{ marginBottom: 14, opacity: 0.9 }} />
                   <h3>{card.title}</h3>
                   <p>{card.desc}</p>
                 </SpotlightCard>
@@ -316,19 +325,69 @@ const Landing = () => {
           </div>
           <SpotlightGrid className="usecases-grid">
             {[
-              { title: 'Developers', desc: 'Ask your IDE about legacy docs and specs instantly.' },
-              { title: 'Researchers', desc: 'Summarize consensus across dozens of papers.' },
-              { title: 'Students', desc: 'Turn your notes into custom quizzes and study guides.' },
-              { title: 'Teams', desc: 'Share buckets with scoped permissions for collaboration.' },
+              { title: 'Developers', desc: 'Ask your IDE about legacy docs and specs instantly.', icon: Code2 },
+              { title: 'Researchers', desc: 'Summarize consensus across dozens of papers.', icon: BookOpen },
+              { title: 'Students', desc: 'Turn your notes into custom quizzes and study guides.', icon: GraduationCap },
+              { title: 'Teams', desc: 'Share buckets with scoped permissions for collaboration.', icon: Users },
             ].map((card, i) => (
               <ScrollReveal key={card.title} delay={i * 0.1} direction={i % 2 === 0 ? 'left' : 'right'}>
                 <SpotlightCard>
+                  <card.icon size={26} color="#2DFFB7" style={{ marginBottom: 12, opacity: 0.85 }} />
                   <h3>{card.title}</h3>
                   <p>{card.desc}</p>
                 </SpotlightCard>
               </ScrollReveal>
             ))}
           </SpotlightGrid>
+        </div>
+      </section>
+
+      {/* Testimonials */}
+      <section className="testimonials-section">
+        <div className="section-inner">
+          <div className="section-header">
+            <ScrollReveal>
+              <span className="section-eyebrow">TESTIMONIALS</span>
+            </ScrollReveal>
+            <TextReveal
+              text="What early users are saying"
+              className="section-header-h2"
+              staggerDelay={0.04}
+            />
+          </div>
+          <div className="testimonials-grid">
+            {[
+              {
+                quote: "AIveilix completely changed how I work with Cursor. My entire codebase docs are always available — no more switching tabs to re-upload specs.",
+                name: "Alex K.",
+                role: "Full-Stack Developer",
+              },
+              {
+                quote: "I process 50+ research papers a week. The semantic search finds exactly the paragraph I need in milliseconds. It's like having a second brain.",
+                name: "Dr. Jordan M.",
+                role: "ML Researcher",
+              },
+              {
+                quote: "We shared one bucket across our whole team. Everyone has the same context now. Onboarding new members went from hours to minutes.",
+                name: "Sam L.",
+                role: "Product Lead",
+              },
+            ].map((t, i) => (
+              <ScrollReveal key={i} delay={i * 0.12} direction="up">
+                <div className="testimonial-card">
+                  <Quote size={22} color="#2DFFB7" style={{ marginBottom: 16, opacity: 0.6 }} />
+                  <p className="testimonial-quote">"{t.quote}"</p>
+                  <div className="testimonial-author">
+                    <div className="testimonial-avatar">{t.name.charAt(0)}</div>
+                    <div>
+                      <div className="testimonial-name">{t.name}</div>
+                      <div className="testimonial-role">{t.role}</div>
+                    </div>
+                  </div>
+                </div>
+              </ScrollReveal>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -438,6 +497,38 @@ const Landing = () => {
           </ScrollReveal>
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="site-footer">
+        <div className="footer-inner">
+          <div className="footer-brand">
+            <img src="/logo-with-name.png" alt="AIveilix" className="footer-logo" />
+            <p className="footer-tagline">Your AI-powered knowledge vault. Upload once, access everywhere via MCP protocol.</p>
+            <a href="mailto:hello@aiveilix.com" className="footer-email">
+              <Mail size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+              hello@aiveilix.com
+            </a>
+          </div>
+          <div className="footer-links">
+            <div className="footer-col">
+              <h4>Product</h4>
+              <Link to="/doc">Documentation</Link>
+              <a href="#pricing">Pricing</a>
+              <Link to="/signup">Get Started Free</Link>
+              <Link to="/login">Login</Link>
+            </div>
+            <div className="footer-col">
+              <h4>Legal</h4>
+              <Link to="/privacy">Privacy Policy</Link>
+              <Link to="/terms">Terms of Service</Link>
+              <Link to="/tokusho">Tokusho</Link>
+            </div>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <span>© {new Date().getFullYear()} AIveilix · All rights reserved.</span>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -24,10 +24,8 @@ l---
 
   3. Email
 
-  - Verify SPF record for sending domain
-  - Configure DKIM
-  - Configure DMARC
-  - Test all transactional emails (signup, reset, notifications)
+  - [ ] SPF, DKIM, DMARC (PENDING - waiting for Google Workspace approval)
+  - [x] All 8 transactional email templates built, tested and ready
 
   4. SEO
 

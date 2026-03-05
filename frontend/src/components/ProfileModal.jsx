@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { useToast } from '../context/ToastContext'
 import { authAPI, bucketsAPI, apiKeysAPI, oauthAPI, stripeAPI, teamAPI } from '../services/api'
 import Input from './Input'
 import Button from './Button'
@@ -15,6 +16,7 @@ import TeamActivityFeed from './TeamActivityFeed'
 export default function ProfileModal({ isOpen, onClose }) {
   const { user, logout, isTeamMember } = useAuth()
   const { isDark, toggleTheme } = useTheme()
+  const { showToast } = useToast()
   const [activeTab, setActiveTab] = useState('profile')
   
   // Profile form state
@@ -102,8 +104,16 @@ export default function ProfileModal({ isOpen, onClose }) {
     }
   }
 
-  const handleAddMember = async (name, realEmail, password, color) => {
-    await teamAPI.addMember(name, realEmail, password, color)
+  const handleAddMember = async (name, realEmail, password, color, selectedBuckets = [], permissions = {}) => {
+    const res = await teamAPI.addMember(name, realEmail, password, color)
+    const memberId = res.data?.id
+    if (memberId && selectedBuckets.length > 0) {
+      const bucketPermissions = selectedBuckets.map(bucketId => ({
+        bucket_id: bucketId,
+        ...permissions,
+      }))
+      await teamAPI.assignBuckets(memberId, bucketPermissions)
+    }
     loadTeamMembers()
   }
 
@@ -113,7 +123,7 @@ export default function ProfileModal({ isOpen, onClose }) {
       await teamAPI.removeMember(memberId)
       loadTeamMembers()
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to remove member')
+      showToast(err.response?.data?.detail || 'Failed to remove member', 'error')
     }
   }
 
@@ -122,7 +132,7 @@ export default function ProfileModal({ isOpen, onClose }) {
       await teamAPI.updateMember(memberId, { show_name: !currentValue })
       loadTeamMembers()
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to update')
+      showToast(err.response?.data?.detail || 'Failed to update', 'error')
     }
   }
 
@@ -147,7 +157,7 @@ export default function ProfileModal({ isOpen, onClose }) {
       const response = await stripeAPI.getPortal()
       window.location.href = response.data.url
     } catch (error) {
-      alert(error.response?.data?.detail || 'Failed to open billing portal')
+      showToast(error.response?.data?.detail || 'Failed to open billing portal', 'error')
     }
   }
 
@@ -160,7 +170,7 @@ export default function ProfileModal({ isOpen, onClose }) {
       await stripeAPI.cancelSubscription()
       loadSubscriptionData()
     } catch (error) {
-      alert(error.response?.data?.detail || 'Failed to cancel subscription')
+      showToast(error.response?.data?.detail || 'Failed to cancel subscription', 'error')
     } finally {
       setCancelLoading(false)
     }
@@ -172,7 +182,7 @@ export default function ProfileModal({ isOpen, onClose }) {
       await stripeAPI.reactivateSubscription()
       loadSubscriptionData()
     } catch (error) {
-      alert(error.response?.data?.detail || 'Failed to reactivate subscription')
+      showToast(error.response?.data?.detail || 'Failed to reactivate subscription', 'error')
     } finally {
       setCancelLoading(false)
     }
@@ -237,7 +247,7 @@ export default function ProfileModal({ isOpen, onClose }) {
       await apiKeysAPI.delete(keyId)
       loadAPIKeys() // Refresh list
     } catch (error) {
-      alert(error.response?.data?.detail || 'Failed to delete API key')
+      showToast(error.response?.data?.detail || 'Failed to delete API key', 'error')
     }
   }
 
@@ -267,7 +277,7 @@ export default function ProfileModal({ isOpen, onClose }) {
       await oauthAPI.delete(clientId)
       loadOAuthClients() // Refresh list
     } catch (error) {
-      alert(error.response?.data?.detail || 'Failed to revoke OAuth client')
+      showToast(error.response?.data?.detail || 'Failed to revoke OAuth client', 'error')
     }
   }
 
@@ -282,7 +292,7 @@ export default function ProfileModal({ isOpen, onClose }) {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text)
-    alert('API key copied to clipboard!')
+    showToast('API key copied to clipboard!', 'success')
   }
 
   if (!isOpen) return null
@@ -318,7 +328,7 @@ export default function ProfileModal({ isOpen, onClose }) {
         setCurrentPassword('')
         setNewPassword('')
         setConfirmPassword('')
-        alert('Password changed successfully')
+        showToast('Password changed successfully', 'success')
       } else {
         const msg = response.data.message || 'Failed to change password'
         setPasswordError(msg)
@@ -363,7 +373,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           setShowPasswordConfirm(false)
           setConfirmPasswordValue('')
           setDangerAction(null)
-          alert(`Success: ${response.data.message}`)
+          showToast(response.data.message || 'All buckets deleted successfully', 'success')
           window.location.reload() // Reload to refresh bucket list
           return
         } else {

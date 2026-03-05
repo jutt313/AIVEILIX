@@ -15,7 +15,7 @@ export default function NotificationIcon() {
   // Load unread count on mount and periodically
   useEffect(() => {
     loadUnreadCount()
-    const interval = setInterval(loadUnreadCount, 30000) // Poll every 30 seconds
+    const interval = setInterval(loadUnreadCount, 120000) // Poll every 2 minutes
     return () => clearInterval(interval)
   }, [])
 

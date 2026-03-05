@@ -73,13 +73,14 @@ export function AuthProvider({ children }) {
       const data = response.data
       
       if (data.success && data.session) {
-        // Store tokens and user
+        // Store tokens and user immediately — no waiting
         localStorage.setItem('access_token', data.session.access_token)
         localStorage.setItem('refresh_token', data.session.refresh_token)
+        localStorage.setItem('user', JSON.stringify(data.user))
+        setUser(data.user)
 
-        // Fetch team info from /me endpoint
-        try {
-          const meRes = await authAPI.getMe()
+        // Enrich with team info in background (non-blocking)
+        authAPI.getMe().then(meRes => {
           const meData = meRes.data
           const enrichedUser = {
             ...data.user,
@@ -91,10 +92,7 @@ export function AuthProvider({ children }) {
           }
           localStorage.setItem('user', JSON.stringify(enrichedUser))
           setUser(enrichedUser)
-        } catch {
-          localStorage.setItem('user', JSON.stringify(data.user))
-          setUser(data.user)
-        }
+        }).catch(() => {})
 
         return { success: true }
       }

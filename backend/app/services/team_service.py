@@ -5,6 +5,13 @@ from app.services.supabase import get_supabase, get_supabase_auth
 from typing import Optional, Dict, List
 import logging
 import re
+import time
+from threading import Lock
+
+# TTL cache for team member context (avoids 2 DB queries per call, called 3-5x per request)
+_team_context_cache: Dict[str, tuple] = {}
+_team_context_lock = Lock()
+_TEAM_CONTEXT_TTL = 30  # seconds
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +20,16 @@ def get_team_member_context(user_id: str) -> Optional[Dict]:
     """
     Check if user_id belongs to a team member.
     Returns {owner_id, team_member_id, color, name, show_name} or None if not a team member.
+    Cached for 30s to avoid 2 DB queries per call (called 3-5x per request).
     """
+    now = time.monotonic()
+    with _team_context_lock:
+        if user_id in _team_context_cache:
+            data, ts = _team_context_cache[user_id]
+            if now - ts < _TEAM_CONTEXT_TTL:
+                return data
+
+    result = None
     try:
         supabase = get_supabase()
         profile = supabase.table("profiles").select(
@@ -21,30 +37,34 @@ def get_team_member_context(user_id: str) -> Optional[Dict]:
         ).eq("id", user_id).single().execute()
 
         if not profile.data or not profile.data.get("is_team_member"):
-            return None
+            result = None
+        else:
+            owner_id = profile.data.get("team_owner_id")
+            if not owner_id:
+                result = None
+            else:
+                # Get the team_members record
+                member = supabase.table("team_members").select(
+                    "id, color, name, show_name, is_active"
+                ).eq("member_id", user_id).eq("owner_id", owner_id).eq("is_active", True).single().execute()
 
-        owner_id = profile.data.get("team_owner_id")
-        if not owner_id:
-            return None
-
-        # Get the team_members record
-        member = supabase.table("team_members").select(
-            "id, color, name, show_name, is_active"
-        ).eq("member_id", user_id).eq("owner_id", owner_id).eq("is_active", True).single().execute()
-
-        if not member.data:
-            return None
-
-        return {
-            "owner_id": str(owner_id),
-            "team_member_id": str(member.data["id"]),
-            "color": member.data["color"],
-            "name": member.data["name"],
-            "show_name": member.data["show_name"],
-        }
+                if not member.data:
+                    result = None
+                else:
+                    result = {
+                        "owner_id": str(owner_id),
+                        "team_member_id": str(member.data["id"]),
+                        "color": member.data["color"],
+                        "name": member.data["name"],
+                        "show_name": member.data["show_name"],
+                    }
     except Exception as e:
         logger.error(f"Error getting team member context: {e}")
-        return None
+        result = None
+
+    with _team_context_lock:
+        _team_context_cache[user_id] = (result, time.monotonic())
+    return result
 
 
 def get_effective_user_id(user_id: str) -> str:

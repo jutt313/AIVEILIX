@@ -1,0 +1,41 @@
+# AIveilix
+
+> AI-powered knowledge management platform. Upload documents once, access them instantly in Claude, ChatGPT, Cursor, and any MCP-compatible AI tool.
+
+## What is AIveilix?
+
+AIveilix is a unified knowledge vault that turns your documents into an intelligent, always-available knowledge base for AI tools. Upload PDFs, images, code, docs, and 50+ file types. AIveilix processes, indexes, and makes them queryable via semantic search and AI chat. Connect once via MCP protocol and access your knowledge from Claude Desktop, Cursor IDE, ChatGPT, and more.
+
+## Key Features
+
+- **Universal MCP Access**: Connect your knowledge base to Claude, Cursor, ChatGPT, and any MCP client with one API key
+- **50+ File Formats**: PDF, DOCX, images (with OCR), code files, CSV, and more
+- **Semantic Vector Search**: 3072-dimension embeddings with hybrid keyword + vector search
+- **AI Chat**: Ask questions about your documents and get citation-backed answers
+- **Buckets**: Organize files by project, team, or topic with scoped access
+- **API & MCP Protocol**: RESTful API and official MCP server for programmatic access
+- **Enterprise Security**: Row-level security, AES-256 encryption at rest, TLS 1.3 in transit
+
+## Use Cases
+
+- Developers: Access project docs and specs directly inside Cursor IDE
+- Researchers: Query and summarize findings across dozens of papers
+- Students: Turn notes into study guides and quizzes via AI chat
+- Teams: Share knowledge buckets with scoped permissions
+
+## Pricing
+
+- Free Trial: 14 days, 1GB storage, 5 buckets
+- Starter: $12.78/month, 5GB storage, 25 buckets
+- Pro: $24.13/month, 12GB storage, 100 buckets (most popular)
+- Premium: $49.99/month, 25GB storage, unlimited buckets
+
+## Links
+
+- Website: https://aiveilix.com
+- Documentation: https://aiveilix.com/doc
+- Pricing: https://aiveilix.com/#pricing
+- Sign Up: https://aiveilix.com/signup
+- Login: https://aiveilix.com/login
+- Privacy Policy: https://aiveilix.com/privacy
+- Terms of Service: https://aiveilix.com/terms

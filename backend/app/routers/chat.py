@@ -4,11 +4,12 @@ from typing import Optional
 from app.models.files import ChatRequest, ChatResponse
 from app.services.supabase import get_supabase_auth, get_supabase
 from app.services.web_search import search_web, format_search_results_for_context, should_search_web
-from app.services.file_processor import fetch_full_file_content
 from app.routers.buckets import get_current_user_id
 from app.config import get_settings
+from app.utils.tracer import Tracer
 from openai import OpenAI
 from postgrest.exceptions import APIError as PostgrestAPIError
+import asyncio
 import uuid
 import logging
 import traceback
@@ -356,39 +357,54 @@ async def chat_with_bucket(
     user_id: str = Depends(get_current_user_id)
 ):
     """Chat with AI about bucket content"""
+    t = Tracer("POST /api/buckets/{id}/chat", user_id=user_id, bucket_id=bucket_id)
     try:
         from app.services.team_service import get_effective_user_id, check_bucket_permission, get_team_member_context, log_team_activity
         effective_uid = get_effective_user_id(user_id)
         team_ctx = get_team_member_context(user_id)
+        t.step("Team service checks")
 
         if not check_bucket_permission(user_id, bucket_id, "can_chat"):
             raise HTTPException(status_code=403, detail="You don't have chat permission for this bucket")
 
-        # Enforce chat limits
         from app.services.plan_limits import enforce_chat_limits, increment_metric
         await enforce_chat_limits(effective_uid, bucket_id)
+        t.step("Enforce chat limits")
 
-        # Use service role for backend operations
         supabase = get_supabase()
 
-        # Verify bucket belongs to effective user (owner)
         bucket_res = supabase.table("buckets").select("id, name").eq("id", bucket_id).eq("user_id", effective_uid).single().execute()
+        t.step("DB verify bucket")
         if not bucket_res.data:
             raise HTTPException(status_code=404, detail="Bucket not found")
-        
-        # Get ALL files from bucket first (so we know about everything, even if processing failed)
-        # Include storage_path so we can fetch full file if needed
-        all_files_res = supabase.table("files").select("id, name, status, status_message, folder_path, storage_path").eq("bucket_id", bucket_id).eq("user_id", effective_uid).execute()
+
+        # Parallel fetch: files, chunks, summaries (saves ~500ms vs sequential)
+        def _fetch_files():
+            return supabase.table("files").select(
+                "id, name, status, status_message, folder_path, storage_path,"
+                "progress_stage,progress_label,progress_current,progress_total"
+            ).eq("bucket_id", bucket_id).eq("user_id", effective_uid).execute()
+
+        def _fetch_chunks():
+            # FIX: cap at 300 chunks — fetching ALL was fetching thousands of rows
+            return supabase.table("chunks").select("id, content, file_id").eq("bucket_id", bucket_id).eq("user_id", effective_uid).limit(300).execute()
+
+        def _fetch_summaries():
+            return supabase.table("summaries").select("id, content, file_id, title").eq("bucket_id", bucket_id).eq("user_id", effective_uid).execute()
+
+        all_files_res, chunks_res, summaries_res = await asyncio.gather(
+            asyncio.to_thread(_fetch_files),
+            asyncio.to_thread(_fetch_chunks),
+            asyncio.to_thread(_fetch_summaries),
+        )
+        t.step("Parallel fetch: files+chunks+summaries",
+               files=len(all_files_res.data) if all_files_res.data else 0,
+               chunks=len(chunks_res.data) if chunks_res.data else 0,
+               summaries=len(summaries_res.data) if summaries_res.data else 0)
+
         all_files = all_files_res.data if all_files_res.data else []
         file_names = {f["id"]: f["name"] for f in all_files}
-        file_storage_paths = {f["id"]: f.get("storage_path") for f in all_files}
         all_file_ids = [f["id"] for f in all_files]
-        
-        # Get all chunks from bucket (for files that were successfully processed)
-        chunks_res = supabase.table("chunks").select("id, content, file_id").eq("bucket_id", bucket_id).eq("user_id", effective_uid).execute()
-
-        # Get all summaries from bucket (for files that were successfully processed)
-        summaries_res = supabase.table("summaries").select("id, content, file_id, title").eq("bucket_id", bucket_id).eq("user_id", effective_uid).execute()
         
         # Organize chunks and summaries by file
         chunks_by_file = {}
@@ -404,6 +420,19 @@ async def chat_with_bucket(
             for summary in summaries_res.data:
                 file_id = summary.get("file_id")
                 summaries_by_file[file_id] = summary
+
+        # Hold AI response while attached/new uploads are still processing.
+        processing_files = [
+            f for f in all_files
+            if f.get("status") in ("pending", "processing")
+        ]
+        has_indexed_content = bool(chunks_res.data) or bool(summaries_res.data)
+        user_mentions_attachment = "@" in (request.message or "")
+        hold_for_processing = (
+            request.mode not in ["file_draft", "file_update"]
+            and bool(processing_files)
+            and (user_mentions_attachment or not has_indexed_content)
+        )
         
         # Build file inventory (so AI knows about ALL files)
         processed_files = []
@@ -439,10 +468,8 @@ async def chat_with_bucket(
                 file_inventory += f"  - {up_file['name']} (status: {up_file['status']}, reason: {up_file['message']})\n"
         
         # Process each file: analysis first, then raw chunks (only for processed files)
-        # NEW: Intelligent fallback - if chunks are limited/insufficient, fetch full file
         for file_id in all_file_ids:
             file_name = file_names.get(file_id, "Unknown")
-            storage_path = file_storage_paths.get(file_id)
             
             # Add comprehensive analysis if available
             if file_id in summaries_by_file:
@@ -453,55 +480,34 @@ async def chat_with_bucket(
             # Add raw chunks if available
             has_chunks = file_id in chunks_by_file
             if has_chunks:
-                chunks_for_file = chunks_by_file[file_id]
                 chunk_contents = []
-                total_chunk_chars = 0
                 for chunk in chunks_by_file[file_id]:
                     content = chunk.get("content", "")
                     chunk_contents.append(content[:1000])  # Limit each chunk
-                    total_chunk_chars += len(content)
                 raw_content = "\n".join(chunk_contents)
                 context_parts.append(f"[Raw Content: {file_name}]\n{raw_content}")
-
-                # INTELLIGENT FALLBACK: If chunks seem insufficient (too small), fetch full file
-                # This helps when user asks detailed questions about specific content
-                if total_chunk_chars < 500 and storage_path:  # Less than 500 chars? Probably truncated
-                    logger.info(f"🔍 Chunks seem limited for '{file_name}' ({total_chunk_chars} chars). Fetching full file...")
-                    full_content = fetch_full_file_content(storage_path, supabase)
-                    if full_content and len(full_content) > total_chunk_chars:
-                        logger.info(f"  ✅ Full file fetched: {len(full_content)} chars (was {total_chunk_chars})")
-                        context_parts.append(f"[FULL CONTENT: {file_name}]\n{full_content[:10000]}")  # Cap at 10k chars
-            elif storage_path:
-                # No chunks at all? Try to fetch full file directly
-                logger.info(f"📥 No chunks found for '{file_name}'. Attempting to fetch full file...")
-                full_content = fetch_full_file_content(storage_path, supabase)
-                if full_content:
-                    logger.info(f"  ✅ Full file fetched: {len(full_content)} chars")
-                    context_parts.append(f"[FULL CONTENT: {file_name}]\n{full_content[:10000]}")  # Cap at 10k chars
         
         # Combine file inventory with content
         if context_parts:
             full_context = file_inventory + "\n\n" + "\n\n".join(context_parts)
         else:
             full_context = file_inventory + "\n\nNo file content available for analysis."
+        t.step("Context built", context_len=len(full_context))
         
         # Check if web search would be helpful and perform it
         web_search_context = ""
         search_results = None
         web_search_triggered = should_search_web(request.message)
-        logger.info(f"🔍 Web search check: {web_search_triggered} for message: '{request.message[:80]}'")
+        t.step("Web search check", triggered=web_search_triggered)
 
         if web_search_triggered:
-            logger.info(f"🌐 TRIGGERING WEB SEARCH for: {request.message[:100]}")
             try:
                 search_results = await search_web(request.message, num_results=5)
-                logger.info(f"🌐 Web search returned {len(search_results) if search_results else 0} results")
-
                 if search_results:
                     web_search_context = format_search_results_for_context(search_results)
-                    logger.info(f"✅ Web search context prepared with {len(search_results)} results")
+                t.step("Web search done", results=len(search_results) if search_results else 0)
             except Exception as e:
-                logger.error(f"❌ Web search failed: {e}")
+                t.error("Web search failed", e)
         
         # Create conversation if new
         conversation_id = request.conversation_id
@@ -518,7 +524,8 @@ async def chat_with_bucket(
                 "mode": "full_scan"
             }).execute()
             conversation_id = conv_res.data[0]["id"]
-        
+            t.step("Created new conversation")
+
         # Fetch all previous messages in this conversation for context
         previous_messages = []
         if conversation_id:
@@ -528,7 +535,8 @@ async def chat_with_bucket(
                     {"role": msg["role"], "content": msg["content"]}
                     for msg in prev_msgs_res.data
                 ]
-        
+            t.step("Fetch conversation history", messages=len(previous_messages))
+
         # Save user message
         user_msg_data = {
             "id": str(uuid.uuid4()),
@@ -542,7 +550,19 @@ async def chat_with_bucket(
             user_msg_data["sent_by_color"] = team_ctx["color"]
             user_msg_data["sent_by_name"] = team_ctx["name"]
         supabase.table("messages").insert(user_msg_data).execute()
-        
+        t.step("Saved user message")
+
+        if hold_for_processing:
+            t.step("Processing guard armed", pending=len(processing_files))
+
+            logger.info(
+                "[CHAT_GUARD] WAIT bucket=%s pending=%s mentions_attachment=%s has_indexed_content=%s",
+                bucket_id,
+                len(processing_files),
+                user_mentions_attachment,
+                has_indexed_content,
+            )
+
         # Generate response with DeepSeek API
         if not deepseek_client:
             raise HTTPException(
@@ -628,17 +648,119 @@ Continue the conversation below. Answer based on the available sources above."""
                     "domain": result.get("displayLink", "")
                 })
 
-        logger.info(f"📚 Sources prepared: {len(used_sources)} total ({len(files_with_content)} docs, {len(search_results) if search_results else 0} web)")
+        t.step("Sources + messages prepared", sources=len(used_sources), ai_msgs=len(ai_messages))
+        t.done()  # Main setup done, streaming starts separately
 
         async def generate_stream():
             nonlocal used_sources
+            import time as _stime
+            _stream_t0 = _stime.perf_counter()
+            st = Tracer("STREAM chat", bucket_id=bucket_id)
+
+            def _sms():
+                return round((_stime.perf_counter() - _stream_t0) * 1000, 1)
+
+            logger.info(f"[STREAM] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            logger.info(f"[STREAM] START  bucket={bucket_id}  msg_len={len(request.message)}  files={len(all_files)}  chunks_loaded={len(chunks_res.data) if chunks_res.data else 0}  summaries={len(summaries_by_file)}  context_len={len(full_context)}  web_search={web_search_triggered}")
+            logger.info(f"[STREAM] AI messages count: {len(ai_messages)}, total context chars sent to AI: {sum(len(str(m.get('content',''))) for m in ai_messages)}")
+
             try:
                 full_response = ""
                 thinking_content = ""
-                use_reasoner = True  # Try deepseek-reasoner first
 
-                # STEP 1: Quick AI call to check if search needed and get keywords
-                logger.info("🤖 Step 1: Checking if web search needed...")
+                if hold_for_processing:
+                    def _format_processing_label(file_row):
+                        stage = (file_row.get("progress_stage") or file_row.get("status") or "processing").strip()
+                        label = (file_row.get("progress_label") or file_row.get("status_message") or "").strip()
+                        stage_labels = {
+                            "queued": "Queued and getting started",
+                            "downloading": "Opening your file",
+                            "extracting": "Reading text and structure",
+                            "image_ocr": "Reviewing visuals",
+                            "chunking": "Organizing sections",
+                            "embedding": "Connecting insights",
+                            "storing": "Saving findings",
+                            "summarizing": "Preparing first answer",
+                            "finalizing": "Finalizing",
+                        }
+                        technical_terms = ("embedding", "chunk", "vector", "index")
+                        if label and any(term in label.lower() for term in technical_terms):
+                            label = ""
+                        if not label:
+                            label = stage_labels.get(stage, "Processing")
+
+                        current = int(file_row.get("progress_current") or 0)
+                        total = int(file_row.get("progress_total") or 0)
+                        if stage == "image_ocr" and total > 0 and "Image " not in label and "I can see:" not in label:
+                            label = f"Reviewing visuals ({current}/{total})"
+                        elif total > 0 and f"{current}/{total}" not in label:
+                            label = f"{label} ({current}/{total})"
+                        return label
+
+                    def _fetch_processing_files():
+                        return supabase.table("files").select(
+                            "id,name,status,status_message,progress_stage,progress_label,progress_current,progress_total"
+                        ).eq("bucket_id", bucket_id).eq("user_id", effective_uid).in_(
+                            "status", ["pending", "processing"]
+                        ).order("created_at", desc=False).execute()
+
+                    yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'investigation'})}\n\n"
+                    intro = "Starting investigation...\n"
+                    yield f"data: {json.dumps({'type': 'investigation', 'content': intro})}\n\n"
+
+                    last_signatures = {}
+                    last_heartbeat_at = 0.0
+                    wait_deadline = _stime.monotonic() + 1200.0  # Keep stream alive up to 20 minutes
+                    remaining_processing = processing_files
+
+                    while _stime.monotonic() < wait_deadline:
+                        live_files_res = await asyncio.to_thread(_fetch_processing_files)
+                        live_processing = live_files_res.data or []
+                        remaining_processing = live_processing
+                        if not live_processing:
+                            break
+
+                        emitted_any = False
+                        for f in live_processing[:3]:
+                            sig = "|".join([
+                                str(f.get("status") or ""),
+                                str(f.get("progress_stage") or ""),
+                                str(f.get("progress_label") or ""),
+                                str(int(f.get("progress_current") or 0)),
+                                str(int(f.get("progress_total") or 0)),
+                            ])
+                            file_id = str(f.get("id"))
+                            if last_signatures.get(file_id) == sig:
+                                continue
+                            last_signatures[file_id] = sig
+                            emitted_any = True
+
+                            line = f"{f.get('name', 'file')}: {_format_processing_label(f)}\n"
+                            yield f"data: {json.dumps({'type': 'investigation', 'content': line})}\n\n"
+
+                        if not emitted_any and (_stime.monotonic() - last_heartbeat_at) >= 8.0:
+                            heartbeat = "Still investigating your file...\n"
+                            yield f"data: {json.dumps({'type': 'investigation', 'content': heartbeat})}\n\n"
+                            last_heartbeat_at = _stime.monotonic()
+
+                        await asyncio.sleep(1.0)
+
+                    if remaining_processing:
+                        head = remaining_processing[0]
+                        wait_message = (
+                            f"Investigation is still running on `{head.get('name', 'file')}` "
+                            f"({_format_processing_label(head)}). Keep this chat open and I will respond as soon as it is done."
+                        )
+                        yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'response'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'response', 'content': wait_message})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'message': wait_message, 'sources': [], 'conversation_id': conversation_id, 'thinking': '', 'metadata': {'processing_wait': True}})}\n\n"
+                        return
+
+                    ready_line = "Investigation complete. Building your final answer now...\n"
+                    yield f"data: {json.dumps({'type': 'investigation', 'content': ready_line})}\n\n"
+                    yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'thinking'})}\n\n"
+
+                use_reasoner = False  # FIX: always use deepseek-chat (reasoner was causing 10min waits)
                 search_check_prompt = f"""Analyze this user question: "{request.message}"
 
 If this question needs current/real-time information (current events, people in office, recent news, prices, weather, etc.), respond with ONLY search keywords (3-5 words).
@@ -652,27 +774,37 @@ Examples:
 
 Your response (keywords only or NO_SEARCH):"""
 
-                search_check = deepseek_client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=[{"role": "user", "content": search_check_prompt}],
-                    temperature=0.3,
-                    max_tokens=50
-                )
-
-                search_decision = search_check.choices[0].message.content.strip()
-                logger.info(f"🔍 AI search decision: '{search_decision}'")
+                logger.info(f"[STREAM] {_sms()}ms — calling DeepSeek search-check (model=deepseek-chat, max_tokens=50)")
+                _sc_t0 = _stime.perf_counter()
+                try:
+                    search_check = deepseek_client.chat.completions.create(
+                        model="deepseek-chat",
+                        messages=[{"role": "user", "content": search_check_prompt}],
+                        temperature=0.3,
+                        max_tokens=50
+                    )
+                    _sc_ms = round((_stime.perf_counter() - _sc_t0) * 1000, 1)
+                    search_decision = search_check.choices[0].message.content.strip()
+                    logger.info(f"[STREAM] {_sms()}ms — search-check done in {_sc_ms}ms  decision='{search_decision}'")
+                    st.step("AI search-check call", decision=search_decision, took_ms=_sc_ms)
+                except Exception as sc_err:
+                    _sc_ms = round((_stime.perf_counter() - _sc_t0) * 1000, 1)
+                    logger.error(f"[STREAM] {_sms()}ms — search-check FAILED after {_sc_ms}ms: {sc_err}")
+                    search_decision = "NO_SEARCH"  # skip search on error, don't crash
 
                 # STEP 2: If AI wants search, do it
                 if search_decision != "NO_SEARCH" and len(search_decision) > 0:
                     keywords = search_decision
-                    logger.info(f"🌐 Searching with keywords: '{keywords}'")
 
                     # Send "searching" status to frontend
                     yield f"data: {json.dumps({'type': 'searching', 'keywords': keywords})}\n\n"
 
-                    # Perform web search
+                    logger.info(f"[STREAM] {_sms()}ms — web search START  keywords='{keywords}'")
+                    _ws_t0 = _stime.perf_counter()
                     search_results_data = await search_web(keywords, num_results=5)
-                    logger.info(f"✅ Found {len(search_results_data)} results")
+                    _ws_ms = round((_stime.perf_counter() - _ws_t0) * 1000, 1)
+                    logger.info(f"[STREAM] {_sms()}ms — web search DONE  took={_ws_ms}ms  results={len(search_results_data)}")
+                    st.step("In-stream web search", results=len(search_results_data), took_ms=_ws_ms)
 
                     # Add web sources
                     for result in search_results_data[:5]:
@@ -694,11 +826,19 @@ Your response (keywords only or NO_SEARCH):"""
                         "content": web_results_text + "\n\nNow answer the original question using these current search results."
                     })
 
-                # STEP 3: Try deepseek-reasoner first for 3-phase streaming
-                logger.info("💭 Attempting deepseek-reasoner for thinking + response...")
+                # Try deepseek-reasoner first (better quality, slower), fall back to deepseek-chat
+                _ai_t0 = _stime.perf_counter()
+                total_ai_input_chars = sum(len(str(m.get("content", ""))) for m in ai_messages)
+                logger.info(f"[STREAM] {_sms()}ms — ATTEMPTING deepseek-reasoner  input_chars={total_ai_input_chars}  messages={len(ai_messages)}")
+                st.step("Starting AI stream", model="deepseek-reasoner", input_chars=total_ai_input_chars)
+
+                chunk_count = 0
+                first_chunk_logged = False
+                in_thinking_phase = True
 
                 try:
-                    # Try deepseek-reasoner (has native reasoning_content)
+                    yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'thinking'})}\n\n"
+
                     stream = deepseek_client.chat.completions.create(
                         model="deepseek-reasoner",
                         messages=ai_messages,
@@ -706,43 +846,52 @@ Your response (keywords only or NO_SEARCH):"""
                         stream=True
                     )
                     model_used_actual = "deepseek-reasoner"
-
-                    # Phase 1: Stream thinking content
-                    in_thinking_phase = True
-                    yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'thinking'})}\n\n"
+                    logger.info(f"[STREAM] {_sms()}ms — deepseek-reasoner stream object created OK")
 
                     for chunk in stream:
-                        # Check for reasoning_content (thinking)
+                        if not first_chunk_logged:
+                            _first_ms = round((_stime.perf_counter() - _ai_t0) * 1000, 1)
+                            logger.info(f"[STREAM] {_sms()}ms — FIRST chunk from deepseek-reasoner after {_first_ms}ms")
+                            first_chunk_logged = True
+
+                        # Reasoning/thinking content
                         if hasattr(chunk.choices[0].delta, 'reasoning_content') and chunk.choices[0].delta.reasoning_content:
                             content = chunk.choices[0].delta.reasoning_content
                             thinking_content += content
                             yield f"data: {json.dumps({'type': 'thinking', 'content': content})}\n\n"
 
-                        # Check for regular content (response)
+                        # Regular response content
                         if chunk.choices[0].delta.content:
-                            # Switch to response phase on first content
                             if in_thinking_phase:
                                 in_thinking_phase = False
+                                _think_ms = round((_stime.perf_counter() - _ai_t0) * 1000, 1)
+                                logger.info(f"[STREAM] {_sms()}ms — thinking phase done ({_think_ms}ms), switching to response")
                                 yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'response'})}\n\n"
-
                             content = chunk.choices[0].delta.content
                             full_response += content
-
-                            # Clean markdown from chunk before sending
+                            chunk_count += 1
                             clean_content = content.replace('**', '').replace('###', '').replace('__', '')
                             yield f"data: {json.dumps({'type': 'response', 'content': clean_content})}\n\n"
 
-                except Exception as reasoner_error:
-                    # Fallback to deepseek-chat if reasoner fails
-                    logger.warning(f"⚠️ deepseek-reasoner failed ({reasoner_error}), falling back to deepseek-chat")
-                    use_reasoner = False
+                    _ai_ms = round((_stime.perf_counter() - _ai_t0) * 1000, 1)
+                    logger.info(f"[STREAM] {_sms()}ms — deepseek-reasoner COMPLETE  took={_ai_ms}ms  response_chunks={chunk_count}  response_chars={len(full_response)}  thinking_chars={len(thinking_content)}")
+
+                except Exception as reasoner_err:
+                    _fail_ms = round((_stime.perf_counter() - _ai_t0) * 1000, 1)
+                    logger.error(f"[STREAM] {_sms()}ms — deepseek-reasoner FAILED after {_fail_ms}ms: {type(reasoner_err).__name__}: {reasoner_err}")
+                    logger.info(f"[STREAM] {_sms()}ms — falling back to deepseek-chat")
+                    st.error("deepseek-reasoner failed", reasoner_err)
+
+                    # Fallback to deepseek-chat
                     model_used_actual = "deepseek-chat"
+                    full_response = ""
+                    chunk_count = 0
+                    first_chunk_logged = False
+                    _fb_t0 = _stime.perf_counter()
 
-                    # Simulate thinking phase with a brief delay message
                     yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'thinking'})}\n\n"
-                    thinking_content = "Analyzing your question and searching through documents..."
+                    thinking_content = "Analyzing your documents..."
                     yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
-
                     yield f"data: {json.dumps({'type': 'phase_change', 'phase': 'response'})}\n\n"
 
                     stream = deepseek_client.chat.completions.create(
@@ -751,15 +900,25 @@ Your response (keywords only or NO_SEARCH):"""
                         temperature=0.7,
                         stream=True
                     )
+                    logger.info(f"[STREAM] {_sms()}ms — deepseek-chat fallback stream created")
 
                     for chunk in stream:
                         if chunk.choices[0].delta.content:
                             content = chunk.choices[0].delta.content
                             full_response += content
-
-                            # Clean markdown from chunk before sending
+                            chunk_count += 1
+                            if not first_chunk_logged:
+                                _fb_first_ms = round((_stime.perf_counter() - _fb_t0) * 1000, 1)
+                                logger.info(f"[STREAM] {_sms()}ms — FIRST chunk from deepseek-chat after {_fb_first_ms}ms")
+                                first_chunk_logged = True
                             clean_content = content.replace('**', '').replace('###', '').replace('__', '')
                             yield f"data: {json.dumps({'type': 'response', 'content': clean_content})}\n\n"
+
+                    _fb_ms = round((_stime.perf_counter() - _fb_t0) * 1000, 1)
+                    logger.info(f"[STREAM] {_sms()}ms — deepseek-chat fallback COMPLETE  took={_fb_ms}ms  chunks={chunk_count}  response_chars={len(full_response)}")
+
+                st.step("AI stream complete", response_len=len(full_response), thinking_len=len(thinking_content))
+                logger.info(f"[STREAM] {_sms()}ms — processing response: parse sources, clean markdown, extract file draft")
 
                 # Process the response - parse AI sources and clean up
                 message_text = full_response.strip()
@@ -781,7 +940,9 @@ Your response (keywords only or NO_SEARCH):"""
 
                 logger.info(f"📝 Response: {len(message_text)} chars, Thinking: {len(thinking_content)} chars")
 
-                # Prepare metadata for database
+                st.step("Parsed sources + cleaned response")
+                logger.info(f"[STREAM] {_sms()}ms — saving assistant message to DB  sources={len(used_sources)}  response_chars={len(message_text)}")
+
                 message_metadata = {
                     "thinking": thinking_content,
                     "model": model_used_actual,
@@ -804,8 +965,9 @@ Your response (keywords only or NO_SEARCH):"""
                     "sources": used_sources[:10],
                     "metadata": message_metadata
                 }).execute()
-
-                # Increment chat usage metrics
+                _db_ms = round((_stime.perf_counter() - _stream_t0) * 1000, 1)
+                st.step("Saved assistant message to DB")
+                logger.info(f"[STREAM] {_sms()}ms — message saved to DB OK")
                 try:
                     await increment_metric(effective_uid, "chat_messages", "daily")
                     await increment_metric(effective_uid, "bucket_chat", "daily")
@@ -825,11 +987,18 @@ Your response (keywords only or NO_SEARCH):"""
                         member_name=team_ctx["name"],
                     )
 
-                # Send done signal with cleaned message, sources, conversation ID, and thinking
-                logger.info(f"✅ Sending {len(used_sources)} sources to frontend (thinking: {len(thinking_content)} chars)")
+                _total_ms = round((_stime.perf_counter() - _stream_t0) * 1000, 1)
+                logger.info(f"[STREAM] ✅ DONE  total={_total_ms}ms  response_chars={len(message_text)}  sources={len(used_sources)}  conv_id={conversation_id}")
+                logger.info(f"[STREAM] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                st.done()
                 yield f"data: {json.dumps({'type': 'done', 'message': message_text, 'sources': used_sources[:10], 'conversation_id': conversation_id, 'thinking': thinking_content, 'file_draft': file_draft})}\n\n"
 
             except Exception as e:
+                _err_ms = round((_stime.perf_counter() - _stream_t0) * 1000, 1)
+                logger.error(f"[STREAM] ❌ FAILED after {_err_ms}ms: {type(e).__name__}: {e}")
+                logger.error(f"[STREAM] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                st.error("generate_stream failed", e)
+                st.done(status_code=500)
                 error_str = str(e).lower()
                 if "quota" in error_str or "rate limit" in error_str or "429" in error_str:
                     yield f"data: {json.dumps({'type': 'error', 'error': 'API quota exceeded'})}\n\n"
@@ -837,16 +1006,27 @@ Your response (keywords only or NO_SEARCH):"""
                     logger.error(f"DeepSeek API error: {str(e)}")
                     yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
 
-        return StreamingResponse(generate_stream(), media_type="text/event-stream")
-        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",   # disables nginx/Cloud Run buffering
+                "Connection": "keep-alive",
+            }
+        )
+
     except HTTPException:
+        t.done(status_code=400)
         raise
     except Exception as e:
+        t.error("chat endpoint failed", e)
+        t.done(status_code=500)
         error_trace = traceback.format_exc()
         logger.error(f"Error in chat router: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -856,33 +1036,40 @@ async def get_conversations(
     user_id: str = Depends(get_current_user_id)
 ):
     """Get all conversations for a bucket"""
+    t = Tracer("GET /api/buckets/{id}/conversations", user_id=user_id, bucket_id=bucket_id)
     try:
         from app.services.team_service import get_effective_user_id, check_bucket_permission
         effective_uid = get_effective_user_id(user_id)
+        t.step("get_effective_user_id")
 
         if not check_bucket_permission(user_id, bucket_id, "can_view"):
             raise HTTPException(status_code=403, detail="You don't have access to this bucket")
 
         supabase = get_supabase()
 
-        # Verify bucket belongs to effective user
         try:
             bucket_res = supabase.table("buckets").select("id").eq("id", bucket_id).eq("user_id", effective_uid).single().execute()
         except PostgrestAPIError:
             raise HTTPException(status_code=404, detail="Bucket not found")
+        t.step("DB verify bucket")
 
         convs_res = supabase.table("conversations").select("*").eq("bucket_id", bucket_id).eq("user_id", effective_uid).order("updated_at", desc=True).execute()
-        
+        t.step("DB query conversations", count=len(convs_res.data) if convs_res.data else 0)
+
+        t.done()
         return {"conversations": convs_res.data}
-        
+
     except HTTPException:
+        t.done(status_code=404)
         raise
     except Exception as e:
+        t.error("get conversations failed", e)
+        t.done(status_code=500)
         error_trace = traceback.format_exc()
         logger.error(f"Error in chat router: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -892,44 +1079,43 @@ async def get_messages(
     user_id: str = Depends(get_current_user_id)
 ):
     """Get messages for a conversation"""
+    t = Tracer("GET /conversations/{id}/messages", user_id=user_id, conv_id=conversation_id)
     try:
         from app.services.team_service import get_effective_user_id
         effective_uid = get_effective_user_id(user_id)
 
         supabase = get_supabase()
 
-        # Verify conversation belongs to effective user
-        logger.info(f"📨 Loading messages for conversation {conversation_id}, user={user_id}, effective_uid={effective_uid}")
-
         try:
             conv_res = supabase.table("conversations").select("id, user_id, bucket_id").eq("id", conversation_id).single().execute()
-        except PostgrestAPIError as e:
-            logger.warning(f"⚠️ Conversation {conversation_id} not found in DB: {e}")
+        except PostgrestAPIError:
             raise HTTPException(status_code=404, detail="Conversation not found")
+        t.step("DB verify conversation")
 
         if not conv_res.data:
-            logger.warning(f"⚠️ Conversation {conversation_id} returned no data")
             raise HTTPException(status_code=404, detail="Conversation not found")
 
-        # Check ownership
         conv_owner = conv_res.data.get("user_id")
         if conv_owner != effective_uid:
-            logger.warning(f"⚠️ Conversation {conversation_id} belongs to {conv_owner}, not {effective_uid}")
             raise HTTPException(status_code=403, detail="Access denied to this conversation")
 
         messages_res = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
+        t.step("DB query messages", count=len(messages_res.data) if messages_res.data else 0)
 
-        logger.info(f"✅ Loaded {len(messages_res.data) if messages_res.data else 0} messages for conversation {conversation_id}")
+        t.done()
         return {"messages": messages_res.data or []}
 
     except HTTPException:
+        t.done(status_code=404)
         raise
     except Exception as e:
+        t.error("get messages failed", e)
+        t.done(status_code=500)
         error_trace = traceback.format_exc()
-        logger.error(f"❌ Error loading messages for conversation {conversation_id}: {error_trace}")
+        logger.error(f"Error loading messages: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to load messages: {str(e)}"
+            detail="Failed to load messages. Please try again."
         )
 
 
@@ -964,7 +1150,7 @@ async def update_conversation(
         logger.error(f"Error updating conversation: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )
 
 
@@ -997,5 +1183,5 @@ async def delete_conversation(
         logger.error(f"Error deleting conversation: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Something went wrong. Please try again."
         )

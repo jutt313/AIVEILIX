@@ -24,6 +24,7 @@ from app.routers.buckets import get_current_user_id
 from app.utils.error_logger import log_error, get_correlation_id
 import uuid
 import logging
+from datetime import datetime, timezone
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -119,8 +120,8 @@ async def add_team_member(
             color=request.color,
             show_name=True,
             is_active=True,
-            created_at=member_data.get("created_at", ""),
-            updated_at=member_data.get("updated_at", ""),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             bucket_count=0,
         )
 
@@ -128,7 +129,7 @@ async def add_team_member(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id, correlation_id=correlation_id)
-        raise HTTPException(status_code=500, detail=f"Failed to add team member: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to add team member. Please try again.")
 
 
 @router.get("/members", response_model=List[TeamMemberResponse])
@@ -173,7 +174,7 @@ async def list_team_members(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to list team members: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to load team members. Please try again.")
 
 
 @router.get("/members/{member_id}", response_model=TeamMemberResponse)
@@ -217,7 +218,7 @@ async def get_team_member(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to get team member: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to load team member. Please try again.")
 
 
 @router.patch("/members/{member_id}", response_model=TeamMemberResponse)
@@ -259,7 +260,7 @@ async def update_team_member(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to update team member: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update team member. Please try again.")
 
 
 @router.delete("/members/{member_id}")
@@ -313,7 +314,7 @@ async def remove_team_member(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to remove team member: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to remove team member. Please try again.")
 
 
 # ==================== Bucket Access ====================
@@ -374,7 +375,7 @@ async def assign_bucket_permissions(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to assign permissions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to assign permissions. Please try again.")
 
 
 @router.get("/members/{member_id}/buckets", response_model=List[TeamBucketAccessResponse])
@@ -423,7 +424,7 @@ async def get_member_buckets(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to get bucket access: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to load bucket access. Please try again.")
 
 
 @router.delete("/members/{member_id}/buckets/{bucket_id}")
@@ -448,7 +449,7 @@ async def remove_bucket_access(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to remove bucket access: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to remove bucket access. Please try again.")
 
 
 # ==================== Activity Log ====================
@@ -497,7 +498,7 @@ async def get_team_activity(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Failed to get activity log: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to load activity log. Please try again.")
 
 
 # ==================== Team Info ====================

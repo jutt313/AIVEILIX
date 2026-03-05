@@ -245,7 +245,7 @@ async def create_oauth_client(
         await log_error(http_request, e, user_id=user_id, correlation_id=correlation_id)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to create OAuth client: {str(e)}"
+            detail="Failed to register connection. Please try again."
         )
 
 
@@ -271,7 +271,7 @@ async def list_oauth_clients(
         await log_error(http_request, e, user_id=user_id, correlation_id=correlation_id)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to list OAuth clients: {str(e)}"
+            detail="Failed to load connections. Please try again."
         )
 
 
@@ -301,5 +301,5 @@ async def delete_oauth_client(
         await log_error(http_request, e, user_id=user_id, correlation_id=correlation_id)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to revoke OAuth client: {str(e)}"
+            detail="Failed to remove connection. Please try again."
         )

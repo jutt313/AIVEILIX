@@ -103,14 +103,14 @@ export default function ForgotPassword() {
                 }
               />
 
-              <div className="mt-6">
+              <div className="mt-4">
                 <Button type="submit" loading={loading}>
                   Send Reset Link
                 </Button>
               </div>
             </form>
 
-            <p className="mt-6 text-center text-sm dark:text-dark-text/70 text-light-text/70">
+            <p className="mt-4 text-center text-sm dark:text-dark-text/70 text-light-text/70">
               Remember your password?{' '}
               <Link to="/login" className="dark:text-dark-accent text-light-accent hover:underline font-medium">
                 Sign in

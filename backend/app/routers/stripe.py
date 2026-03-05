@@ -102,13 +102,13 @@ async def create_checkout(
 
     except ValueError as e:
         logger.error(f"[Checkout] ValueError: {e}")
-        raise HTTPException(status_code=400, detail={"error": "invalid_request", "message": str(e)})
+        raise HTTPException(status_code=400, detail={"error": "invalid_request", "message": "Invalid plan selected. Please try again."})
     except stripe.error.StripeError as e:
         logger.error(f"[Checkout] StripeError: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=get_stripe_error_detail(e))
     except Exception as e:
         logger.error(f"[Checkout] Unexpected error: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail={"error": "checkout_failed", "message": str(e), "trace": traceback.format_exc()})
+        raise HTTPException(status_code=500, detail={"error": "checkout_failed", "message": "Checkout failed. Please try again."})
 
 
 @router.post("/webhook")
@@ -132,7 +132,7 @@ async def stripe_webhook(
         raise HTTPException(status_code=400, detail="Invalid payload")
     except Exception as e:
         logger.error(f"Webhook error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Webhook processing failed.")
 
 
 @router.get("/portal", response_model=PortalResponse)
@@ -148,13 +148,13 @@ async def get_billing_portal(
 
     except ValueError as e:
         logger.error(f"[Portal] ValueError: {e}")
-        raise HTTPException(status_code=400, detail={"error": "no_customer", "message": str(e)})
+        raise HTTPException(status_code=400, detail={"error": "no_customer", "message": "No billing account found. Please subscribe first."})
     except stripe.error.StripeError as e:
         logger.error(f"[Portal] StripeError: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=get_stripe_error_detail(e))
     except Exception as e:
         logger.error(f"[Portal] Unexpected error: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail={"error": "portal_failed", "message": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "portal_failed", "message": "Failed to open billing portal. Please try again."})
 
 
 @router.get("/subscription", response_model=SubscriptionResponse)
@@ -185,7 +185,7 @@ async def get_subscription(
 
     except Exception as e:
         logger.error(f"[Subscription] Error: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail={"error": "subscription_fetch_failed", "message": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "subscription_fetch_failed", "message": "Failed to load subscription. Please try again."})
 
 
 @router.post("/cancel")
@@ -211,7 +211,7 @@ async def cancel_subscription(
         raise HTTPException(status_code=400, detail=get_stripe_error_detail(e))
     except Exception as e:
         logger.error(f"[Cancel] Unexpected error: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail={"error": "cancel_failed", "message": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "cancel_failed", "message": "Failed to cancel subscription. Please try again."})
 
 
 @router.post("/reactivate")
@@ -237,7 +237,7 @@ async def reactivate_subscription(
         raise HTTPException(status_code=400, detail=get_stripe_error_detail(e))
     except Exception as e:
         logger.error(f"[Reactivate] Unexpected error: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail={"error": "reactivate_failed", "message": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "reactivate_failed", "message": "Failed to reactivate subscription. Please try again."})
 
 
 @router.get("/usage")
@@ -252,7 +252,7 @@ async def get_usage(
         return summary
     except Exception as e:
         logger.error(f"[Usage] Error: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail={"error": "usage_fetch_failed", "message": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "usage_fetch_failed", "message": "Failed to load usage. Please try again."})
 
 
 PLAN_PRICES = {

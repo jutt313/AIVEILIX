@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useTheme } from '../context/ThemeContext'
+import { useToast } from '../context/ToastContext'
 import { filesAPI } from '../services/api'
 
-export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect, selectedFiles = [], canDelete = true }) {
+export default function FilesCard({ bucketId, files, onFilesUpdate, onOptimisticFileDelete, onFileSelect, selectedFiles = [], canDelete = true }) {
   const { isDark } = useTheme()
+  const { showToast } = useToast()
   const [expandedFolders, setExpandedFolders] = useState(new Set())
   const [isCollapsed, setIsCollapsed] = useState(false)
 
@@ -19,12 +21,15 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
   const handleDeleteFile = async (fileId, e) => {
     e.stopPropagation()
     if (!window.confirm('Delete this file?')) return
+    // Optimistic: remove immediately
+    if (onOptimisticFileDelete) onOptimisticFileDelete(fileId)
     try {
       await filesAPI.delete(bucketId, fileId)
       if (onFilesUpdate) onFilesUpdate()
     } catch (error) {
       console.error('Delete failed:', error)
-      alert('Failed to delete file: ' + (error.response?.data?.detail || error.message))
+      if (onFilesUpdate) onFilesUpdate() // revert by re-fetching
+      showToast('Failed to delete file. Please try again.', 'error', () => handleDeleteFile(fileId, e))
     }
   }
 
@@ -40,7 +45,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
       const response = await filesAPI.getContent(bucketId, file.id)
       const content = response.data?.content ?? ''
       if (!content) {
-        alert('File is still processing or empty.')
+        showToast('File is still processing or empty.', 'info')
         return
       }
       const blob = new Blob([content], { type: file.mime_type || 'text/plain' })
@@ -54,7 +59,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
       URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Download failed:', error)
-      alert('Failed to download file: ' + (error.response?.data?.detail || error.message))
+      showToast('Failed to download file. Please try again.', 'error', () => handleDownloadCreatedFile(file, e))
     }
   }
 
@@ -64,7 +69,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
       const response = await filesAPI.getContent(bucketId, file.id)
       const content = response.data?.content ?? ''
       if (!content) {
-        alert('File is still processing or empty.')
+        showToast('File is still processing or empty.', 'info')
         return
       }
       const blob = new Blob([content], { type: file.mime_type || 'text/plain' })
@@ -73,7 +78,7 @@ export default function FilesCard({ bucketId, files, onFilesUpdate, onFileSelect
       setTimeout(() => URL.revokeObjectURL(url), 30000)
     } catch (error) {
       console.error('Open failed:', error)
-      alert('Failed to open file: ' + (error.response?.data?.detail || error.message))
+      showToast('Failed to open file. Please try again.', 'error', () => handleOpenCreatedFile(file, e))
     }
   }
 

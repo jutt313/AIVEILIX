@@ -293,7 +293,7 @@ const Doc = () => {
             >
                 <div className="p-6 border-b border-transparent">
                     <Link to="/" className="flex items-center gap-3 group">
-                        <img src="/logo-with-name..png" alt="AIveilix" className="h-12 w-auto object-contain" />
+                        <img src="/logo-with-name.png" alt="AIveilix" className="h-12 w-auto object-contain" />
                     </Link>
                 </div>
                 <div className="flex-1 overflow-y-auto px-4 py-8 space-y-8 scrollbar-hide">

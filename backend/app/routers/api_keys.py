@@ -128,7 +128,7 @@ async def create_api_key(
         await log_error(http_request, e, user_id=user_id, correlation_id=correlation_id)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to create API key: {str(e)}"
+            detail="Failed to create API key. Please try again."
         )
 
 
@@ -171,7 +171,7 @@ async def list_api_keys(
         await log_error(http_request, e, user_id=user_id, correlation_id=correlation_id)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to list API keys: {str(e)}"
+            detail="Failed to load API keys. Please try again."
         )
 
 
@@ -206,5 +206,5 @@ async def delete_api_key(
         await log_error(http_request, e, user_id=user_id, correlation_id=correlation_id)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to delete API key: {str(e)}"
+            detail="Failed to revoke API key. Please try again."
         )

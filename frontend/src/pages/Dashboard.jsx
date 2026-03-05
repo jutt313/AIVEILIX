@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { useToast } from '../context/ToastContext'
 import { bucketsAPI, filesAPI, teamAPI } from '../services/api'
 import TrialBanner from '../components/TrialBanner'
 import UpgradeModal from '../components/UpgradeModal'
@@ -17,6 +18,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { user, isTeamMember } = useAuth()
   const { isDark, toggleTheme } = useTheme()
+  const { showToast } = useToast()
   
   const [stats, setStats] = useState({ total_buckets: 0, total_files: 0, total_storage_bytes: 0 })
   const [buckets, setBuckets] = useState([])
@@ -33,24 +35,23 @@ export default function Dashboard() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [statsRes, bucketsRes, activityRes] = await Promise.all([
+      const [statsRes, bucketsRes, activityRes, teamRes] = await Promise.all([
         bucketsAPI.getStats(),
         bucketsAPI.list(),
-        bucketsAPI.getActivity(30).catch(() => ({ data: { data: [] } })) // Fallback if endpoint fails
+        bucketsAPI.getActivity(30).catch(() => ({ data: { data: [] } })),
+        !isTeamMember ? teamAPI.listMembers().catch(() => ({ data: { members: [] } })) : Promise.resolve(null)
       ])
-      console.log('📊 Stats response:', statsRes.data)
-      console.log('🪣 Buckets response:', bucketsRes.data)
-      console.log('📈 Activity response:', activityRes.data)
-      
+
       setStats(statsRes.data || { total_buckets: 0, total_files: 0, total_storage_bytes: 0 })
       const bucketsList = bucketsRes.data?.buckets || bucketsRes.data || []
-      console.log('✅ Setting buckets:', bucketsList)
       setBuckets(bucketsList)
       setActivityData(activityRes.data?.data || [])
+      if (teamRes) {
+        const members = teamRes.data?.members || teamRes.data || []
+        setTeamMemberCount(members.filter(m => m.is_active).length)
+      }
     } catch (error) {
-      console.error('❌ Failed to load data:', error)
-      console.error('Error details:', error.response?.data || error.message)
-      // Set defaults on error
+      console.error('Failed to load data:', error)
       setStats({ total_buckets: 0, total_files: 0, total_storage_bytes: 0 })
       setBuckets([])
       setActivityData([])
@@ -73,12 +74,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData()
-    if (!isTeamMember) {
-      teamAPI.listMembers().then(res => {
-        const members = res.data?.members || res.data || []
-        setTeamMemberCount(members.filter(m => m.is_active).length)
-      }).catch(() => {})
-    }
   }, [])
 
   const handleCreateBucket = async (name, description, files = []) => {
@@ -88,6 +83,7 @@ export default function Dashboard() {
       const bucketId = createResponse.data.id
       
       // Upload files if any were provided
+      const queuedUploads = []
       if (files.length > 0) {
         const batchMeta = {
           count: files.length,
@@ -103,15 +99,29 @@ export default function Dashboard() {
                 folderPath = pathParts.slice(0, -1).join('/')
               }
             }
-            await filesAPI.upload(bucketId, file, folderPath, batchMeta)
+            const uploadRes = await filesAPI.upload(bucketId, file, folderPath, batchMeta)
+            if (uploadRes?.data?.id) {
+              queuedUploads.push({
+                id: uploadRes.data.id,
+                name: uploadRes.data.name || file.name,
+                status: uploadRes.data.status || 'pending',
+                progress_stage: 'queued',
+                progress_label: 'Queued for processing',
+                progress_current: 0,
+                progress_total: 1,
+                progress_percent: 0,
+              })
+            }
           } catch (error) {
             console.error(`Failed to upload ${file.name}:`, error)
             // Continue with other files even if one fails
           }
         }
       }
-      
-      await loadData()
+
+      navigate(`/buckets/${bucketId}`, {
+        state: queuedUploads.length > 0 ? { queuedUploads } : undefined,
+      })
     } catch (error) {
       console.error('Failed to create bucket:', error)
       if (error.response?.status === 402 || error.response?.status === 429) {
@@ -124,12 +134,15 @@ export default function Dashboard() {
   }
 
   const handleDeleteBucket = async (bucketId) => {
+    // Optimistic: remove immediately so UI feels instant
+    setBuckets(prev => prev.filter(b => b.id !== bucketId))
     try {
       await bucketsAPI.delete(bucketId)
-      await loadData()
+      loadData() // refresh stats in background
     } catch (error) {
       console.error('Failed to delete bucket:', error)
-      alert('Failed to delete bucket')
+      loadData() // revert by re-fetching
+      showToast('Failed to delete bucket. Please try again.', 'error', () => handleDeleteBucket(bucketId))
     }
   }
 

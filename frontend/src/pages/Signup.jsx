@@ -78,7 +78,7 @@ export default function Signup() {
   return (
     <AuthLayout lightConfig="signup">
       <GlassCard>
-        <h2 className="text-2xl font-bold text-center mb-6 dark:text-dark-text text-light-text">
+        <h2 className="text-2xl font-bold text-center mb-4 dark:text-dark-text text-light-text">
           Create Account
         </h2>
 
@@ -153,7 +153,7 @@ export default function Signup() {
             }
           />
 
-          <label className="mt-4 flex items-start gap-3 cursor-pointer group">
+          <label className="mt-2 flex items-start gap-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={agreeToTerms}
@@ -179,14 +179,14 @@ export default function Signup() {
             <p className="mt-1 text-sm text-red-400" role="alert">{errors.agreeToTerms}</p>
           )}
 
-          <div className="mt-6">
+          <div className="mt-4">
             <Button type="submit" loading={loading} disabled={!agreeToTerms}>
               Create Account
             </Button>
           </div>
         </form>
 
-        <div className="mt-6 flex items-center gap-3">
+        <div className="mt-4 flex items-center gap-3">
           <div className="flex-1 h-px dark:bg-dark-border bg-light-border" />
           <span className="text-xs dark:text-dark-text/50 text-light-text/50 uppercase tracking-wider">or</span>
           <div className="flex-1 h-px dark:bg-dark-border bg-light-border" />
@@ -195,7 +195,7 @@ export default function Signup() {
         <button
           onClick={handleGoogleSignIn}
           disabled={googleLoading}
-          className="mt-4 w-full flex items-center justify-center gap-3 px-6 py-3 rounded-xl border dark:border-dark-border border-light-border dark:bg-white/5 bg-white/80 hover:dark:bg-white/10 hover:bg-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+          className="mt-3 w-full flex items-center justify-center gap-3 px-6 py-3 rounded-xl border dark:border-dark-border border-light-border dark:bg-white/5 bg-white/80 hover:dark:bg-white/10 hover:bg-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
         >
           {googleLoading ? (
             <svg className="animate-spin h-5 w-5 dark:text-dark-text text-light-text" viewBox="0 0 24 24">
@@ -215,7 +215,7 @@ export default function Signup() {
           </span>
         </button>
 
-        <p className="mt-6 text-center text-sm dark:text-dark-text/70 text-light-text/70">
+        <p className="mt-4 text-center text-sm dark:text-dark-text/70 text-light-text/70">
           Already have an account?{' '}
           <Link to="/login" className="dark:text-dark-accent text-light-accent hover:underline font-medium">
             Sign in

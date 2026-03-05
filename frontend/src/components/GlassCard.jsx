@@ -13,7 +13,7 @@ export default function GlassCard({ children, className = '' }) {
       {/* Main card */}
       <div
         className={`
-          relative w-full max-w-md mx-auto p-8 rounded-4xl
+          relative w-full max-w-md mx-auto p-6 rounded-4xl
           backdrop-blur-xl
           border border-white/10
           dark:bg-white/5

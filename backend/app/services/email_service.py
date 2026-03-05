@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # Template directory
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates" / "emails"
 
+# Always use production URLs in emails (localhost not reachable from email clients)
+APP_URL = "https://aiveilix.com"
+LOGO_URL = "https://aiveilix.com/logo-with-name.png"
+
 
 def render_template(template_name: str, context: Dict[str, Any]) -> str:
     """Render an email template with context data"""
@@ -92,7 +96,7 @@ def send_verification_email(to_email: str, verification_link: str, user_name: st
     context = {
         "user_name": user_name or to_email.split('@')[0],
         "verification_link": verification_link,
-        "logo_url": f"{settings.frontend_url}/logo.svg",
+        "logo_url": LOGO_URL,
         "app_name": "AIveilix"
     }
     
@@ -109,7 +113,7 @@ def send_password_reset_email(to_email: str, reset_link: str, user_name: str = "
     context = {
         "user_name": user_name or to_email.split('@')[0],
         "reset_link": reset_link,
-        "logo_url": f"{settings.frontend_url}/logo.svg",
+        "logo_url": LOGO_URL,
         "app_name": "AIveilix"
     }
     
@@ -131,8 +135,8 @@ def send_payment_success_email(to_email: str, amount: float, plan: str, user_nam
         "user_name": user_name or to_email.split('@')[0],
         "amount": f"${amount:.2f}",
         "plan": plan.title(),
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "dashboard_url": f"{settings.frontend_url}/dashboard"
+        "logo_url": LOGO_URL,
+        "dashboard_url": f"{APP_URL}/dashboard"
     }
     
     html_content = render_template("subscription/payment_success.html", context)
@@ -148,33 +152,14 @@ def send_payment_failed_email(to_email: str, plan: str, user_name: str = "") -> 
     context = {
         "user_name": user_name or to_email.split('@')[0],
         "plan": plan.title(),
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "billing_url": f"{settings.frontend_url}/dashboard?tab=billing"
+        "logo_url": LOGO_URL,
+        "billing_url": f"{APP_URL}/dashboard?tab=billing"
     }
     
     html_content = render_template("subscription/payment_failed.html", context)
     return send_email(
         to_email=to_email,
         subject="Payment failed - Action required",
-        html_content=html_content
-    )
-
-
-def send_renewal_reminder_email(to_email: str, plan: str, renewal_date: str, amount: float, user_name: str = "") -> bool:
-    """Send renewal reminder 3 days before billing"""
-    context = {
-        "user_name": user_name or to_email.split('@')[0],
-        "plan": plan.title(),
-        "renewal_date": renewal_date,
-        "amount": f"${amount:.2f}",
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "billing_url": f"{settings.frontend_url}/dashboard?tab=billing"
-    }
-    
-    html_content = render_template("subscription/renewal_reminder.html", context)
-    return send_email(
-        to_email=to_email,
-        subject=f"Your {plan.title()} plan renews in 3 days",
         html_content=html_content
     )
 
@@ -186,8 +171,8 @@ def send_subscription_renewed_email(to_email: str, plan: str, amount: float, nex
         "plan": plan.title(),
         "amount": f"${amount:.2f}",
         "next_billing_date": next_billing_date,
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "dashboard_url": f"{settings.frontend_url}/dashboard"
+        "logo_url": LOGO_URL,
+        "dashboard_url": f"{APP_URL}/dashboard"
     }
     
     html_content = render_template("subscription/subscription_renewed.html", context)
@@ -204,8 +189,8 @@ def send_plan_changed_email(to_email: str, old_plan: str, new_plan: str, user_na
         "user_name": user_name or to_email.split('@')[0],
         "old_plan": old_plan.title(),
         "new_plan": new_plan.title(),
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "dashboard_url": f"{settings.frontend_url}/dashboard"
+        "logo_url": LOGO_URL,
+        "dashboard_url": f"{APP_URL}/dashboard"
     }
     
     html_content = render_template("subscription/plan_changed.html", context)
@@ -222,47 +207,14 @@ def send_subscription_canceled_email(to_email: str, plan: str, end_date: str, us
         "user_name": user_name or to_email.split('@')[0],
         "plan": plan.title(),
         "end_date": end_date,
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "reactivate_url": f"{settings.frontend_url}/dashboard?tab=billing"
+        "logo_url": LOGO_URL,
+        "reactivate_url": f"{APP_URL}/dashboard?tab=billing"
     }
     
     html_content = render_template("subscription/subscription_canceled.html", context)
     return send_email(
         to_email=to_email,
         subject="Subscription canceled",
-        html_content=html_content
-    )
-
-
-def send_trial_ending_email(to_email: str, days_remaining: int, user_name: str = "") -> bool:
-    """Send trial ending reminder"""
-    context = {
-        "user_name": user_name or to_email.split('@')[0],
-        "days_remaining": days_remaining,
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "upgrade_url": f"{settings.frontend_url}/dashboard?tab=billing"
-    }
-    
-    html_content = render_template("subscription/trial_ending.html", context)
-    return send_email(
-        to_email=to_email,
-        subject=f"Your trial ends in {days_remaining} days",
-        html_content=html_content
-    )
-
-
-def send_trial_expired_email(to_email: str, user_name: str = "") -> bool:
-    """Send trial expired notification"""
-    context = {
-        "user_name": user_name or to_email.split('@')[0],
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "upgrade_url": f"{settings.frontend_url}/dashboard?tab=billing"
-    }
-    
-    html_content = render_template("subscription/trial_expired.html", context)
-    return send_email(
-        to_email=to_email,
-        subject="Your trial has expired",
         html_content=html_content
     )
 
@@ -277,8 +229,8 @@ def send_storage_warning_email(to_email: str, usage_percent: int, plan: str, use
         "user_name": user_name or to_email.split('@')[0],
         "usage_percent": usage_percent,
         "plan": plan.title(),
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "upgrade_url": f"{settings.frontend_url}/dashboard?tab=billing"
+        "logo_url": LOGO_URL,
+        "upgrade_url": f"{APP_URL}/dashboard?tab=billing"
     }
     
     html_content = render_template("usage/storage_warning.html", context)
@@ -289,20 +241,3 @@ def send_storage_warning_email(to_email: str, usage_percent: int, plan: str, use
     )
 
 
-def send_document_limit_warning_email(to_email: str, current_count: int, limit: int, plan: str, user_name: str = "") -> bool:
-    """Send document limit warning"""
-    context = {
-        "user_name": user_name or to_email.split('@')[0],
-        "current_count": current_count,
-        "limit": limit,
-        "plan": plan.title(),
-        "logo_url": f"{settings.frontend_url}/logo.svg",
-        "upgrade_url": f"{settings.frontend_url}/dashboard?tab=billing"
-    }
-    
-    html_content = render_template("usage/document_limit_warning.html", context)
-    return send_email(
-        to_email=to_email,
-        subject="Approaching document limit",
-        html_content=html_content
-    )

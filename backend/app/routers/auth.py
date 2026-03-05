@@ -14,6 +14,7 @@ from app.routers.buckets import get_current_user_id
 from app.config import get_settings
 from app.utils.error_logger import log_error, get_correlation_id
 from app.utils.limiter import limiter
+from app.utils.tracer import Tracer
 from app.services import email_service
 import logging
 import traceback
@@ -27,12 +28,14 @@ logger = logging.getLogger(__name__)
 async def signup(signup_request: SignupRequest, request: Request):
     """Create a new user account"""
     correlation_id = get_correlation_id(request)
+    t = Tracer("POST /api/auth/signup", email=signup_request.email)
     try:
         # Block signup if email is used as a team member's real_email
         supabase_service = get_supabase()
         team_check = supabase_service.table("team_members").select("id").eq(
             "real_email", signup_request.email
         ).eq("is_active", True).execute()
+        t.step("Team member check")
         if team_check.data:
             raise HTTPException(
                 status_code=400,
@@ -50,8 +53,10 @@ async def signup(signup_request: SignupRequest, request: Request):
                 }
             }
         })
-        
+        t.step("Supabase auth.sign_up")
+
         if response.user:
+            t.done()
             return AuthResponse(
                 success=True,
                 message="Account created. Please check your email to verify.",
@@ -62,17 +67,21 @@ async def signup(signup_request: SignupRequest, request: Request):
                 }
             )
         else:
+            t.done(status_code=400)
             return AuthResponse(
                 success=False,
                 message="Failed to create account"
             )
-            
+
     except HTTPException:
+        t.done(status_code=400)
         raise
     except Exception as e:
+        t.error("signup failed", e)
+        t.done(status_code=400)
         error_trace = traceback.format_exc()
         logger.error(f"Auth error: {error_trace}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Failed to create account. Please try again.")
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -80,15 +89,19 @@ async def signup(signup_request: SignupRequest, request: Request):
 async def login(login_request: LoginRequest, request: Request):
     """Login with email and password"""
     correlation_id = get_correlation_id(request)
+    t = Tracer("POST /api/auth/login", email=login_request.email)
     try:
         supabase = get_supabase_auth()
-        
+        t.step("Get supabase auth client")
+
         response = supabase.auth.sign_in_with_password({
             "email": login_request.email,
             "password": login_request.password
         })
-        
+        t.step("Supabase sign_in_with_password")
+
         if response.user and response.session:
+            t.done()
             return AuthResponse(
                 success=True,
                 message="Login successful",
@@ -104,17 +117,21 @@ async def login(login_request: LoginRequest, request: Request):
                 }
             )
         else:
+            t.done(status_code=401)
             return AuthResponse(
                 success=False,
                 message="Invalid credentials"
             )
-            
+
     except HTTPException:
+        t.done(status_code=401)
         raise
     except Exception as e:
+        t.error("login failed", e)
+        t.done(status_code=401)
         error_trace = traceback.format_exc()
         logger.error(f"Auth error: {error_trace}")
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=401, detail="Login failed. Please check your credentials.")
 
 
 @router.post("/forgot-password", response_model=AuthResponse)
@@ -196,7 +213,7 @@ async def reset_password(request: ResetPasswordRequest, http_request: Request):
         raise
     except Exception as e:
         await log_error(http_request, e, correlation_id=correlation_id)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Failed to reset password. The link may have expired.")
 
 
 @router.post("/logout", response_model=AuthResponse)
@@ -216,22 +233,24 @@ async def logout(http_request: Request):
         raise
     except Exception as e:
         await log_error(http_request, e, correlation_id=correlation_id)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Something went wrong. Please try again.")
 
 
 @router.get("/me")
-async def get_current_user(http_request: Request, authorization: str = None):
+async def get_current_user(http_request: Request, authorization: Optional[str] = Header(None, alias="Authorization")):
     """Get current user from token"""
     correlation_id = get_correlation_id(http_request)
+    t = Tracer("GET /api/auth/me")
     try:
         if not authorization:
             raise HTTPException(status_code=401, detail="No authorization header")
-        
+
         token = authorization.replace("Bearer ", "")
         supabase = get_supabase_auth()
-        
+
         response = supabase.auth.get_user(token)
-        
+        t.step("Supabase get_user")
+
         if response.user:
             user_data = {
                 "id": str(response.user.id),
@@ -242,6 +261,7 @@ async def get_current_user(http_request: Request, authorization: str = None):
             # Add team info
             from app.services.team_service import get_team_member_context
             ctx = get_team_member_context(str(response.user.id))
+            t.step("Team member context check")
             if ctx:
                 user_data["is_team_member"] = True
                 user_data["team_owner_id"] = ctx["owner_id"]
@@ -251,15 +271,20 @@ async def get_current_user(http_request: Request, authorization: str = None):
             else:
                 user_data["is_team_member"] = False
 
+            t.done()
             return user_data
         else:
+            t.done(status_code=401)
             raise HTTPException(status_code=401, detail="Invalid token")
 
     except HTTPException:
+        t.done(status_code=401)
         raise
     except Exception as e:
+        t.error("auth/me failed", e)
+        t.done(status_code=401)
         await log_error(http_request, e, correlation_id=correlation_id)
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=401, detail="Authentication failed. Please log in again.")
 
 
 @router.post("/change-password", response_model=AuthResponse)
@@ -330,7 +355,7 @@ async def change_password(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id if 'user_id' in locals() else None, correlation_id=correlation_id)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Failed to change password. Please try again.")
 
 
 @router.post("/delete-account", response_model=AuthResponse)
@@ -390,4 +415,4 @@ async def delete_account(
         raise
     except Exception as e:
         await log_error(http_request, e, user_id=user_id, correlation_id=correlation_id)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Failed to delete account. Please try again.")

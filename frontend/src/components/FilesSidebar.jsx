@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { filesAPI } from '../services/api'
 import FilePreviewModal from './FilePreviewModal'
 import { useTheme } from '../context/ThemeContext'
+import { useToast } from '../context/ToastContext'
 
 export default function FilesSidebar({ bucketId, files, onFilesUpdate, categories = [] }) {
   const { isDark } = useTheme()
+  const { showToast } = useToast()
   const [uploading, setUploading] = useState(false)
   const [previewFile, setPreviewFile] = useState(null)
 
@@ -33,7 +35,7 @@ export default function FilesSidebar({ bucketId, files, onFilesUpdate, categorie
       if (onFilesUpdate) onFilesUpdate()
     } catch (error) {
       console.error('Upload failed:', error)
-      alert('Upload failed: ' + (error.response?.data?.detail || error.message))
+      showToast('Upload failed. Please try again.', 'error', () => handleFileUpload(fileList))
     } finally {
       setUploading(false)
     }

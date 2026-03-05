@@ -1,12 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
+import { useToast } from '../context/ToastContext'
 import axios from 'axios'
 import { config } from '../config'
 
-export default function ConversationsSidebar({ bucket, bucketId, currentConversationId, onConversationSelect, onNewChat }) {
+export default function ConversationsSidebar({
+  bucket,
+  bucketId,
+  refreshKey = 0,
+  currentConversationId,
+  onConversationSelect,
+  onNewChat,
+}) {
   const navigate = useNavigate()
   const { isDark } = useTheme()
+  const { showToast } = useToast()
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -17,7 +26,7 @@ export default function ConversationsSidebar({ bucket, bucketId, currentConversa
 
   useEffect(() => {
     loadConversations()
-  }, [bucketId])
+  }, [bucketId, refreshKey])
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -52,25 +61,23 @@ export default function ConversationsSidebar({ bucket, bucketId, currentConversa
   const deleteConversation = async (convId) => {
     if (!confirm('Delete this conversation?')) return
 
+    // Optimistic: remove immediately
+    setConversations(prev => prev.filter(c => c.id !== convId))
+    if (convId === currentConversationId) {
+      onNewChat()
+    }
+    setMenuOpenId(null)
+
     try {
       const token = localStorage.getItem('access_token')
       await axios.delete(
         `${config.apiUrl}/api/buckets/conversations/${convId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
-      
-      // Reload conversations
-      await loadConversations()
-      
-      // If deleted current conversation, start new chat
-      if (convId === currentConversationId) {
-        onNewChat()
-      }
-      
-      setMenuOpenId(null)
     } catch (error) {
       console.error('Failed to delete conversation:', error)
-      alert('Failed to delete conversation')
+      loadConversations() // revert by re-fetching
+      showToast('Failed to delete conversation', 'error', () => deleteConversation(convId))
     }
   }
 
@@ -99,7 +106,7 @@ export default function ConversationsSidebar({ bucket, bucketId, currentConversa
       setEditingId(null)
     } catch (error) {
       console.error('Failed to update conversation:', error)
-      alert('Failed to update conversation name')
+      showToast('Failed to update conversation name', 'error')
     }
   }
 

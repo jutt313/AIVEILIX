@@ -122,7 +122,7 @@ export default function Login() {
           </Button>
         </form>
 
-        <div className="mt-6 flex items-center gap-3">
+        <div className="mt-4 flex items-center gap-3">
           <div className="flex-1 h-px dark:bg-dark-border bg-light-border" />
           <span className="text-xs dark:text-dark-text/50 text-light-text/50 uppercase tracking-wider">or</span>
           <div className="flex-1 h-px dark:bg-dark-border bg-light-border" />
@@ -131,7 +131,7 @@ export default function Login() {
         <button
           onClick={handleGoogleSignIn}
           disabled={googleLoading}
-          className="mt-4 w-full flex items-center justify-center gap-3 px-6 py-3 rounded-xl border dark:border-dark-border border-light-border dark:bg-white/5 bg-white/80 hover:dark:bg-white/10 hover:bg-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+          className="mt-3 w-full flex items-center justify-center gap-3 px-6 py-3 rounded-xl border dark:border-dark-border border-light-border dark:bg-white/5 bg-white/80 hover:dark:bg-white/10 hover:bg-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
         >
           {googleLoading ? (
             <svg className="animate-spin h-5 w-5 dark:text-dark-text text-light-text" viewBox="0 0 24 24">
@@ -151,11 +151,18 @@ export default function Login() {
           </span>
         </button>
 
-        <p className="mt-6 text-center text-sm dark:text-dark-text/70 text-light-text/70">
+        <p className="mt-4 text-center text-sm dark:text-dark-text/70 text-light-text/70">
           Don't have an account?{' '}
           <Link to="/signup" className="dark:text-dark-accent text-light-accent hover:underline font-medium">
             Create one
           </Link>
+        </p>
+
+        <p className="mt-3 text-center text-xs dark:text-dark-text/40 text-light-text/40">
+          By continuing, you agree to our{' '}
+          <Link to="/terms" className="hover:underline dark:text-dark-text/60 text-light-text/60">Terms</Link>
+          {' '}and{' '}
+          <Link to="/privacy" className="hover:underline dark:text-dark-text/60 text-light-text/60">Privacy Policy</Link>
         </p>
       </GlassCard>
     </AuthLayout>

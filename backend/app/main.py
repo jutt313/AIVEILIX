@@ -6,7 +6,8 @@ from app.config import get_settings
 import traceback
 import logging
 import uuid
-from collections import deque
+import time
+from collections import deque, defaultdict
 from datetime import datetime
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -64,6 +65,11 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+# Suppress noisy third-party HTTP loggers
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("voyageai").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -109,44 +115,72 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-    expose_headers=["Content-Length", "Content-Range"],
+    expose_headers=["Content-Length", "Content-Range", "X-Response-Time"],
 )
 
 
-# Detailed request logging middleware for debugging
+# ── Per-endpoint timing stats (in-memory, resets on restart) ─────────────────
+_timing_stats: dict = defaultdict(lambda: {"count": 0, "total_ms": 0, "min_ms": float("inf"), "max_ms": 0, "errors": 0})
+_SLOW_WARN_MS  = 1000   # log WARNING above this
+_SLOW_ERROR_MS = 5000   # log ERROR above this
+
+def _record_timing(key: str, ms: float, is_error: bool):
+    s = _timing_stats[key]
+    s["count"]    += 1
+    s["total_ms"] += ms
+    s["min_ms"]    = min(s["min_ms"], ms)
+    s["max_ms"]    = max(s["max_ms"], ms)
+    if is_error:
+        s["errors"] += 1
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @app.middleware("http")
-async def detailed_request_logging(request: Request, call_next):
-    """Log detailed info for every request to debug CORS/400 errors"""
-    method = request.method
-    path = request.url.path
-    origin = request.headers.get("origin", "no-origin")
-    content_type = request.headers.get("content-type", "no-content-type")
+async def request_timing_middleware(request: Request, call_next):
+    """Track timing for every request; add X-Response-Time header."""
+    method  = request.method
+    path    = request.url.path
+    origin  = request.headers.get("origin", "")
 
-    # Log OPTIONS requests only in development
-    if method == "OPTIONS" and settings.app_env == "development":
-        origin_allowed = origin in _cors_origins
-        logger.warning(f"🔍 OPTIONS REQUEST:")
-        logger.warning(f"   Path: {path}")
-        logger.warning(f"   Origin: {origin}")
-        logger.warning(f"   Origin in allowed list: {origin_allowed}")
-        logger.warning(f"   Access-Control-Request-Method: {request.headers.get('access-control-request-method', 'none')}")
+    # Skip OPTIONS — no useful timing info
+    if method == "OPTIONS":
+        if settings.app_env == "development":
+            logger.debug(f"🔍 OPTIONS {path}  origin={origin}")
+        return await call_next(request)
 
-    # Process request
+    t0 = time.perf_counter()
+    status_code = 500
     try:
-        response = await call_next(request)
+        response   = await call_next(request)
+        status_code = response.status_code
     except Exception as e:
         error_id = _capture_error(request, e, context="middleware")
-        logger.error(f"💥 [{error_id}] EXCEPTION in middleware chain:")
-        logger.error(f"   Method: {method}")
-        logger.error(f"   Path: {path}")
-        logger.error(f"   Error: {e}")
-        logger.error(f"   Traceback: {traceback.format_exc()}")
+        logger.error(f"💥 [{error_id}] EXCEPTION: {method} {path} — {e}")
+        logger.error(traceback.format_exc())
         raise
+    finally:
+        ms  = round((time.perf_counter() - t0) * 1000, 1)
+        key = f"{method} {path}"
+        is_error = status_code >= 400
+        _record_timing(key, ms, is_error)
 
-    # Log 400 errors
-    if response.status_code == 400:
+        # Speed emoji
+        if ms >= _SLOW_ERROR_MS:
+            speed = "🔴 VERY SLOW"
+            log = logger.error
+        elif ms >= _SLOW_WARN_MS:
+            speed = "🟡 SLOW"
+            log = logger.warning
+        else:
+            speed = "🟢"
+            log = logger.info
+
+        log(f"⏱  {method} {path}  →  {status_code}  {ms}ms  {speed}")
+
+    # Attach timing to response header (visible in browser Network tab)
+    response.headers["X-Response-Time"] = f"{ms}ms"
+    if status_code == 400:
         logger.error(f"❌ 400 BAD REQUEST: {method} {path}")
-
     return response
 
 
@@ -284,13 +318,57 @@ async def clear_dev_errors(request: Request):
         return JSONResponse(status_code=404, content={"detail": "Not found"})
     _error_store.clear()
     return {"message": "Error store cleared"}
+
+
+@app.get("/dev/timing", tags=["dev"])
+async def get_timing_stats(request: Request, sort: str = "avg"):
+    """
+    Live per-endpoint timing stats since last restart.
+    sort options: avg | max | count | errors
+    No auth required — restrict to internal use only.
+    """
+    rows = []
+    for endpoint, s in _timing_stats.items():
+        n = s["count"]
+        if n == 0:
+            continue
+        avg_ms = round(s["total_ms"] / n, 1)
+        rows.append({
+            "endpoint":   endpoint,
+            "count":      n,
+            "avg_ms":     avg_ms,
+            "min_ms":     round(s["min_ms"], 1),
+            "max_ms":     round(s["max_ms"], 1),
+            "errors":     s["errors"],
+            "error_rate": f"{round(s['errors'] / n * 100, 1)}%",
+            "flag":       "🔴" if avg_ms >= _SLOW_ERROR_MS else "🟡" if avg_ms >= _SLOW_WARN_MS else "🟢",
+        })
+
+    sort_key = {"avg": "avg_ms", "max": "max_ms", "count": "count", "errors": "errors"}.get(sort, "avg_ms")
+    rows.sort(key=lambda r: r[sort_key], reverse=True)
+
+    return {
+        "endpoints_tracked": len(rows),
+        "sort_by": sort,
+        "thresholds": {"warn_ms": _SLOW_WARN_MS, "error_ms": _SLOW_ERROR_MS},
+        "stats": rows,
+    }
+
+
+@app.delete("/dev/timing", tags=["dev"])
+async def clear_timing_stats():
+    """Reset all timing stats."""
+    _timing_stats.clear()
+    return {"message": "Timing stats cleared"}
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Routers
 from app.routers import auth, buckets, files, chat, api_keys, mcp, mcp_server, oauth, notifications, stripe, team
+from app.routers import processing_stream
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(buckets.router, prefix="/api/buckets", tags=["buckets"])
 app.include_router(files.router, prefix="/api/buckets", tags=["files"])
+app.include_router(processing_stream.router, tags=["processing-stream"])
 app.include_router(chat.router, prefix="/api/buckets", tags=["chat"])
 app.include_router(api_keys.router, prefix="/api/api-keys", tags=["api-keys"])
 app.include_router(oauth.router, prefix="/api/oauth", tags=["oauth"])

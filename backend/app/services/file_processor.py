@@ -4,11 +4,14 @@ import logging
 import base64
 import io
 import tempfile
-from typing import List, Dict, Optional, Tuple
+import re
+from typing import List, Dict, Optional, Tuple, Callable, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import fitz  # PyMuPDF
 from docx import Document
 from openai import OpenAI
+import voyageai
+import google.generativeai as genai
 from PIL import Image
 from app.config import get_settings
 
@@ -23,18 +26,100 @@ if settings.deepseek_api_key:
         base_url="https://api.deepseek.com/v1"
     )
 
-# Initialize OpenAI client for embeddings and vision (highest quality)
-openai_client = None
-if settings.openai_api_key:
-    openai_client = OpenAI(api_key=settings.openai_api_key)
-    logger.info("OpenAI API configured for embeddings (text-embedding-3-large, 3072 dims) and vision")
+# Initialize Voyage AI client for embeddings
+voyage_client = None
+if settings.voyage_api_key:
+    voyage_client = voyageai.Client(api_key=settings.voyage_api_key)
+    logger.info("Voyage AI configured for embeddings (voyage-3-large, 1024 dims)")
+
+# Initialize Gemini client for vision/image processing
+gemini_vision_client = None
+GEMINI_VISION_MODEL = settings.gemini_model or "gemini-2.5-flash"
+if settings.gemini_api_key:
+    genai.configure(api_key=settings.gemini_api_key)
+    gemini_vision_client = genai.GenerativeModel(GEMINI_VISION_MODEL)
+    logger.info(f"{GEMINI_VISION_MODEL} configured for vision/image processing")
 
 # Embedding configuration
-EMBEDDING_MODEL = "text-embedding-3-large"  # Best quality: 3072 dimensions
-EMBEDDING_DIMENSIONS = 3072
+EMBEDDING_MODEL = "voyage-3-large"  # Best quality: 1024 dimensions
+EMBEDDING_DIMENSIONS = 1024
 
 # Image file extensions
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif'}
+IMAGE_PROCESSING_MAX_WORKERS = 5
+IMAGE_PROCESSING_BATCH_SIZE = 50
+
+
+def _compact_text(value: str, max_len: int = 180) -> str:
+    if not value:
+        return ""
+    text = re.sub(r"\s+", " ", value).strip(" -•\t")
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rstrip(" ,.;:") + "..."
+
+
+def _extract_indicator_hint(analysis: str) -> str:
+    """
+    Extract a short, user-facing observation from Gemini output.
+    This keeps indicators grounded in what Gemini actually saw.
+    """
+    if not analysis:
+        return ""
+
+    normalized = analysis.replace("\r\n", "\n").replace("\r", "\n")
+    headings = [
+        "KEY INSIGHTS:",
+        "DETAILED DESCRIPTION:",
+        "VISUAL LAYOUT:",
+        "IMAGE TYPE:",
+    ]
+
+    for heading in headings:
+        idx = normalized.find(heading)
+        if idx == -1:
+            continue
+        tail = normalized[idx + len(heading):].strip()
+        if not tail:
+            continue
+        candidate = tail.split("\n\n", 1)[0].strip()
+        if "\n" in candidate:
+            candidate = candidate.split("\n", 1)[0].strip()
+        candidate = _compact_text(candidate)
+        if candidate:
+            return candidate
+
+    first_nonempty_line = ""
+    for line in normalized.split("\n"):
+        cleaned = _compact_text(line)
+        if cleaned:
+            first_nonempty_line = cleaned
+            break
+    return first_nonempty_line
+
+
+def _emit_progress(
+    progress_callback: Optional[Callable[..., Any]],
+    stage: str,
+    label: str,
+    current: int,
+    total: int,
+    meta: Optional[Dict] = None,
+    force: bool = False,
+) -> None:
+    if not progress_callback:
+        return
+    try:
+        progress_callback(
+            stage=stage,
+            label=label,
+            current=current,
+            total=total,
+            meta=meta or {},
+            force=force,
+        )
+    except Exception as e:
+        logger.debug(f"Progress callback failed (non-critical): {e}")
 
 
 def is_image_file(file_path: str, mime_type: str) -> bool:
@@ -48,39 +133,22 @@ def is_image_file(file_path: str, mime_type: str) -> bool:
 
 def process_image_with_vision(file_path: str, filename: str = "") -> Dict:
     """
-    Process image using GPT-4 Vision to extract text and describe content.
-    
+    Process image using Gemini Vision to extract text and describe content.
+
     Returns:
         Dict with extracted text and metadata
     """
-    logger.info(f"🖼️  Processing image with GPT-4 Vision: {filename}")
-    
-    if not openai_client:
-        logger.error("❌ OpenAI API not configured - image processing requires OpenAI API key")
-        raise Exception("OpenAI API not configured - image processing requires OpenAI API key")
-    
+    logger.info(f"🖼️  Processing image with {GEMINI_VISION_MODEL}: {filename}")
+
+    if not gemini_vision_client:
+        logger.error("❌ Gemini API not configured - image processing requires GEMINI_API_KEY")
+        raise Exception("Gemini API not configured - image processing requires GEMINI_API_KEY")
+
     try:
-        # Read and encode image
         logger.debug(f"  📖 Reading image file: {file_path}")
-        with open(file_path, 'rb') as image_file:
-            image_data = base64.b64encode(image_file.read()).decode('utf-8')
-        
-        # Determine image format from extension
-        file_ext = os.path.splitext(file_path)[1].lower().replace('.', '')
-        if file_ext == 'jpg':
-            file_ext = 'jpeg'
-        
-        logger.info(f"  🤖 Calling GPT-4 Vision API for {filename}...")
-        # Use GPT-4 Vision to analyze image
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"""Analyze this image ({filename if filename else 'image'}) with MAXIMUM detail. Extract absolutely everything visible.
+        img = Image.open(file_path)
+
+        prompt = f"""Analyze this image ({filename if filename else 'image'}) with MAXIMUM detail. Extract absolutely everything visible.
 
 Format your response EXACTLY as:
 
@@ -110,51 +178,45 @@ DESIGN ANALYSIS:
 
 KEY INSIGHTS:
 [Important takeaways, notable patterns, relationships between elements, anything remarkable or unusual]"""
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/{file_ext};base64,{image_data}",
-                                "detail": "high"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=2000
-        )
-        
-        analysis = response.choices[0].message.content
-        logger.info(f"  ✅ GPT-4 Vision analysis complete for {filename}")
-        
-        # Parse the response to extract text and description
-        text_content = ""
-        if "TEXT CONTENT:" in analysis:
-            parts = analysis.split("VISUAL DESCRIPTION:")
-            text_part = parts[0].replace("TEXT CONTENT:", "").strip()
-            text_content = f"{text_part}\n\n{analysis}"
-        else:
-            text_content = analysis
-        
+
+        logger.info(f"  🤖 Calling Gemini Vision API ({GEMINI_VISION_MODEL}) for {filename}...")
+        response = gemini_vision_client.generate_content([prompt, img])
+        analysis = response.text
+        logger.info(f"  ✅ Gemini Vision analysis complete for {filename}")
+
+        text_content = analysis
+        if "TEXT CONTENT" in analysis:
+            # Accept either new or older heading variants from model output.
+            split_marker = "VISUAL LAYOUT:" if "VISUAL LAYOUT:" in analysis else "VISUAL DESCRIPTION:"
+            text_part = analysis.split(split_marker, 1)[0]
+            text_part = text_part.replace("TEXT CONTENT (OCR):", "").replace("TEXT CONTENT:", "").strip()
+            text_content = f"{text_part}\n\n{analysis}" if text_part else analysis
+
         word_count = len(text_content.split())
         logger.debug(f"  📊 Extracted {word_count} words from image")
-        
+        indicator_hint = _extract_indicator_hint(analysis)
+
         return {
             "text": text_content,
             "metadata": {
                 "type": "image",
                 "word_count": word_count,
                 "char_count": len(text_content),
-                "vision_model": "gpt-4o"
+                "vision_model": GEMINI_VISION_MODEL,
+                "indicator_hint": indicator_hint,
             }
         }
-    
+
     except Exception as e:
         logger.error(f"❌ Image processing failed for {filename}: {str(e)}", exc_info=True)
         raise Exception(f"Failed to process image: {str(e)}")
 
 
-def extract_text_from_file(file_path: str, mime_type: str) -> Dict:
+def extract_text_from_file(
+    file_path: str,
+    mime_type: str,
+    progress_callback: Optional[Callable[..., Any]] = None
+) -> Dict:
     """Extract text from various file types - handles text, PDFs, images, and more"""
     text = ""
     metadata = {}
@@ -163,10 +225,33 @@ def extract_text_from_file(file_path: str, mime_type: str) -> Dict:
         # Get file extension
         file_ext = os.path.splitext(file_path)[1].lower()
         
-        # Handle IMAGE files with GPT-4 Vision
+        # Handle IMAGE files with Kimi Vision
         if is_image_file(file_path, mime_type):
-            logger.info(f"Processing image file with GPT-4 Vision: {file_path}")
-            return process_image_with_vision(file_path, os.path.basename(file_path))
+            logger.info(f"Processing image file with Gemini Vision: {file_path}")
+            _emit_progress(
+                progress_callback,
+                "image_ocr",
+                "Opening your image and checking what is in it...",
+                0,
+                1,
+                {"file_type": "image"},
+                True,
+            )
+            result = process_image_with_vision(file_path, os.path.basename(file_path))
+            hint = result.get("metadata", {}).get("indicator_hint") or ""
+            label = "Image review complete."
+            if hint:
+                label = f"I can see: {hint}"
+            _emit_progress(
+                progress_callback,
+                "image_ocr",
+                label,
+                1,
+                1,
+                {"file_type": "image", "vision_hint": hint},
+                True,
+            )
+            return result
         
         # Handle PDF files with PyMuPDF (extracts text AND images)
         if mime_type == "application/pdf" or file_ext == ".pdf":
@@ -214,62 +299,274 @@ def extract_text_from_file(file_path: str, mime_type: str) -> Dict:
             doc.close()
 
             total_images = len(image_tasks)
-            logger.info(f"  📊 Extracted {total_images} images from {page_count} pages - processing ALL in parallel")
+            logger.info(
+                f"  📊 Extracted {total_images} images from {page_count} pages "
+                f"- processing in batches of {IMAGE_PROCESSING_BATCH_SIZE} "
+                f"with up to {IMAGE_PROCESSING_MAX_WORKERS} workers"
+            )
+            _emit_progress(
+                progress_callback,
+                "image_ocr",
+                (
+                    f"I found {total_images} visuals. Reviewing them one by one..."
+                    if total_images else
+                    "No visuals found in this PDF."
+                ),
+                0,
+                total_images,
+                {"file_type": "pdf", "page_count": page_count},
+                True,
+            )
 
             # PHASE 2: Process ALL images in parallel (the speed boost)
             image_results = {}  # (page_num, img_index) -> result text
 
             if image_tasks:
+                images_completed = 0
                 def _process_single_image(task):
                     """Worker function for parallel image processing"""
                     page_num, img_index, temp_path, label = task
                     try:
                         result = process_image_with_vision(temp_path, label)
-                        return (page_num, img_index, result['text'], temp_path, None)
+                        hint = result.get("metadata", {}).get("indicator_hint", "")
+                        return (page_num, img_index, result['text'], hint, temp_path, None)
                     except Exception as e:
-                        return (page_num, img_index, None, temp_path, str(e))
+                        return (page_num, img_index, None, "", temp_path, str(e))
 
-                # All images at once - no limit
-                with ThreadPoolExecutor(max_workers=total_images) as executor:
-                    futures = {executor.submit(_process_single_image, task): task for task in image_tasks}
+                total_batches = (total_images + IMAGE_PROCESSING_BATCH_SIZE - 1) // IMAGE_PROCESSING_BATCH_SIZE
+                for batch_index in range(total_batches):
+                    start = batch_index * IMAGE_PROCESSING_BATCH_SIZE
+                    end = min(start + IMAGE_PROCESSING_BATCH_SIZE, total_images)
+                    batch_tasks = image_tasks[start:end]
+                    workers = min(IMAGE_PROCESSING_MAX_WORKERS, len(batch_tasks))
 
-                    for future in as_completed(futures):
-                        page_num, img_index, result_text, temp_path, error = future.result()
+                    logger.info(
+                        f"  🚚 Processing image batch {batch_index + 1}/{total_batches} "
+                        f"({len(batch_tasks)} images, workers={workers})"
+                    )
 
-                        # Clean up temp file
-                        try:
-                            os.unlink(temp_path)
-                        except OSError:
-                            pass
+                    with ThreadPoolExecutor(max_workers=workers) as executor:
+                        futures = {executor.submit(_process_single_image, task): task for task in batch_tasks}
 
-                        if error:
-                            logger.warning(f"    ⚠️  Failed to process image {img_index + 1} on page {page_num + 1}: {error}")
-                        else:
-                            image_results[(page_num, img_index)] = result_text
-                            images_processed += 1
-                            logger.info(f"    ✅ Image {img_index + 1} on page {page_num + 1} done ({images_processed}/{total_images})")
+                        for future in as_completed(futures):
+                            page_num, img_index, result_text, hint, temp_path, error = future.result()
+                            images_completed += 1
 
-            # PHASE 3: Assemble final text in correct page/image order
+                            # Clean up temp file
+                            try:
+                                os.unlink(temp_path)
+                            except OSError:
+                                pass
+
+                            if error:
+                                logger.warning(f"    ⚠️  Failed to process image {img_index + 1} on page {page_num + 1}: {error}")
+                            else:
+                                image_results[(page_num, img_index)] = result_text
+                                images_processed += 1
+                                logger.info(f"    ✅ Image {img_index + 1} on page {page_num + 1} done ({images_processed}/{total_images})")
+                            progress_label = f"Reviewing visuals ({images_completed}/{total_images})"
+                            hint_text = _compact_text(hint, max_len=140)
+                            if hint_text:
+                                progress_label = f"Image {images_completed}/{total_images}: {hint_text}"
+                            _emit_progress(
+                                progress_callback,
+                                "image_ocr",
+                                progress_label,
+                                images_completed,
+                                total_images,
+                                {
+                                    "file_type": "pdf",
+                                    "page": page_num + 1,
+                                    "image_index": img_index + 1,
+                                    "total_images": total_images,
+                                    "vision_hint": hint_text,
+                                    "batch_index": batch_index + 1,
+                                    "batch_total": total_batches,
+                                },
+                            )
+
+            # PHASE 3: Assemble final text in correct page/image order + build per-page structure
+            pages_structured = []
             for page_num in range(page_count):
                 text += f"\n{'='*60}\n=== PAGE {page_num + 1} of {page_count} ===\n{'='*60}\n{page_texts[page_num]}"
 
                 # Add image results for this page in order
-                page_images = sorted(
+                page_images_sorted = sorted(
                     [(idx, txt) for (pn, idx), txt in image_results.items() if pn == page_num],
                     key=lambda x: x[0]
                 )
-                for img_index, img_text in page_images:
+                for img_index, img_text in page_images_sorted:
                     text += f"\n{'─'*40}\n[IMAGE {img_index + 1} - Page {page_num + 1}]\n{img_text}\n{'─'*40}\n"
+
+                # Build structured per-page data for spatial summary
+                pages_structured.append({
+                    "page_num": page_num + 1,
+                    "text": page_texts[page_num],
+                    "images": [
+                        {"label": f"Image {idx + 1}", "text": img_text}
+                        for idx, img_text in page_images_sorted
+                    ]
+                })
 
             metadata["page_count"] = page_count
             metadata["images_extracted"] = images_processed
+            metadata["pages"] = pages_structured  # Per-page structure for spatial summary
             logger.info(f"  ✅ PDF processed: {page_count} pages, {images_processed} images extracted (PARALLEL)")
             
         # Handle Word documents
         elif mime_type in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"] or file_ext in [".doc", ".docx"]:
+            from docx.oxml.ns import qn
             doc = Document(file_path)
-            text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
-            metadata["page_count"] = len(doc.paragraphs) // 20  # Estimate
+
+            # Build sections based on headings — each heading = one section
+            sections = []
+            current_section = {"heading": "Introduction", "paragraphs": [], "images": []}
+            image_tasks = []  # (section_ref, img_bytes, img_ext)
+
+            for para in doc.paragraphs:
+                style_name = para.style.name if para.style else ""
+                is_heading = "Heading" in style_name or style_name in ["Title", "Subtitle"]
+
+                if is_heading and para.text.strip():
+                    # Save current section, start new one
+                    if current_section["paragraphs"] or current_section["images"]:
+                        sections.append(current_section)
+                    current_section = {"heading": para.text.strip(), "paragraphs": [], "images": []}
+                else:
+                    if para.text.strip():
+                        current_section["paragraphs"].append(para.text.strip())
+
+                # Collect inline images from this paragraph
+                drawings = para._element.findall('.//' + qn('w:drawing'))
+                for drawing in drawings:
+                    blips = drawing.findall('.//' + qn('a:blip'))
+                    for blip in blips:
+                        r_embed = blip.get(qn('r:embed'))
+                        if r_embed and r_embed in para.part.rels:
+                            try:
+                                img_part = para.part.rels[r_embed].target_part
+                                img_ext = img_part.content_type.split('/')[-1]
+                                if img_ext == 'jpeg':
+                                    img_ext = 'jpg'
+                                image_tasks.append((current_section, img_part.blob, img_ext))
+                            except Exception as e:
+                                logger.warning(f"  ⚠️  Failed to collect DOCX image: {e}")
+
+            # Don't forget last section
+            if current_section["paragraphs"] or current_section["images"]:
+                sections.append(current_section)
+
+            # If no headings found, treat whole doc as one section
+            if not sections:
+                all_text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+                sections = [{"heading": os.path.basename(file_path), "paragraphs": [all_text], "images": []}]
+
+            total_images = len(image_tasks)
+            logger.info(
+                f"  📊 DOCX: {len(sections)} sections, {total_images} images "
+                f"- processing in batches of {IMAGE_PROCESSING_BATCH_SIZE} "
+                f"with up to {IMAGE_PROCESSING_MAX_WORKERS} workers"
+            )
+            _emit_progress(
+                progress_callback,
+                "image_ocr",
+                (
+                    f"I found {total_images} visuals in this document. Reviewing each one..."
+                    if total_images else
+                    "No visuals found in this document."
+                ),
+                0,
+                total_images,
+                {"file_type": "docx", "section_count": len(sections)},
+                True,
+            )
+
+            # Process all images in parallel, attach to their section
+            if image_tasks:
+                images_completed = 0
+                def _process_docx_image(task):
+                    section_ref, img_bytes, img_ext = task
+                    try:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{img_ext}') as tmp:
+                            tmp.write(img_bytes)
+                            tmp_path = tmp.name
+                        label = f"Image {len(section_ref['images']) + 1} in {section_ref['heading'][:30]}"
+                        result = process_image_with_vision(tmp_path, label)
+                        hint = result.get("metadata", {}).get("indicator_hint", "")
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
+                        return section_ref, result['text'], hint, None
+                    except Exception as e:
+                        return section_ref, None, "", str(e)
+
+                total_batches = (total_images + IMAGE_PROCESSING_BATCH_SIZE - 1) // IMAGE_PROCESSING_BATCH_SIZE
+                for batch_index in range(total_batches):
+                    start = batch_index * IMAGE_PROCESSING_BATCH_SIZE
+                    end = min(start + IMAGE_PROCESSING_BATCH_SIZE, total_images)
+                    batch_tasks = image_tasks[start:end]
+                    workers = min(IMAGE_PROCESSING_MAX_WORKERS, len(batch_tasks))
+
+                    logger.info(
+                        f"  🚚 DOCX image batch {batch_index + 1}/{total_batches} "
+                        f"({len(batch_tasks)} images, workers={workers})"
+                    )
+
+                    with ThreadPoolExecutor(max_workers=workers) as executor:
+                        futures = {executor.submit(_process_docx_image, task): task for task in batch_tasks}
+                        for future in as_completed(futures):
+                            section_ref, result_text, hint, error = future.result()
+                            images_completed += 1
+                            if error:
+                                logger.warning(f"  ⚠️  DOCX image failed: {error}")
+                            elif result_text:
+                                section_ref["images"].append({
+                                    "label": f"Image {len(section_ref['images']) + 1}",
+                                    "text": result_text
+                                })
+                            progress_label = f"Reviewing visuals ({images_completed}/{total_images})"
+                            hint_text = _compact_text(hint, max_len=140)
+                            if hint_text:
+                                progress_label = f"Image {images_completed}/{total_images}: {hint_text}"
+                            _emit_progress(
+                                progress_callback,
+                                "image_ocr",
+                                progress_label,
+                                images_completed,
+                                total_images,
+                                {
+                                    "file_type": "docx",
+                                    "section": section_ref.get("heading"),
+                                    "total_images": total_images,
+                                    "vision_hint": hint_text,
+                                    "batch_index": batch_index + 1,
+                                    "batch_total": total_batches,
+                                },
+                            )
+
+            # Assemble merged text + per-section structured data (same shape as PDF pages)
+            sections_structured = []
+            for s_idx, section in enumerate(sections):
+                section_header = f"\n{'='*60}\n=== SECTION {s_idx + 1}: {section['heading']} ===\n{'='*60}\n"
+                section_body = "\n".join(section["paragraphs"])
+                text += section_header + section_body
+
+                for img in section["images"]:
+                    text += f"\n{'─'*40}\n[{img['label']}]\n{img['text']}\n{'─'*40}\n"
+
+                sections_structured.append({
+                    "page_num": s_idx + 1,
+                    "text": section_body,
+                    "images": section["images"],
+                    "heading": section["heading"]
+                })
+
+            images_extracted = sum(len(s["images"]) for s in sections)
+            metadata["page_count"] = len(sections)
+            metadata["images_extracted"] = images_extracted
+            metadata["pages"] = sections_structured  # Same structure as PDF for spatial summary
+            logger.info(f"  ✅ DOCX processed: {len(sections)} sections, {images_extracted} images extracted")
             
         # Handle CSV files
         elif mime_type == "text/csv" or file_ext == ".csv":
@@ -374,37 +671,28 @@ def chunk_text(text: str, chunk_size: int = 150, overlap: int = 50) -> List[Dict
 
 def generate_embedding(text: str) -> Optional[List[float]]:
     """
-    Generate embedding using OpenAI text-embedding-3-large model (BEST QUALITY).
-    
+    Generate embedding using Voyage AI voyage-3-large model.
+
     Args:
-        text: Text to generate embedding for (max ~8000 tokens)
-    
+        text: Text to generate embedding for
+
     Returns:
-        List of 3072 floats (embedding vector) or None if failed
+        List of 1024 floats (embedding vector) or None if failed
     """
-    if not openai_client:
-        logger.warning("OpenAI API not configured - embeddings disabled")
+    if not voyage_client:
+        logger.warning("Voyage AI not configured - embeddings disabled")
         return None
-    
+
     if not text or len(text.strip()) == 0:
         return None
-    
+
     try:
-        # Truncate text if too long (OpenAI limit is ~8000 tokens)
-        # Approximate: 4 chars per token = ~32000 chars max
         truncated_text = text[:30000] if len(text) > 30000 else text
-        
-        # Use text-embedding-3-large model (3072 dimensions - HIGHEST QUALITY)
-        response = openai_client.embeddings.create(
-            model=EMBEDDING_MODEL,
-            input=truncated_text,
-            dimensions=EMBEDDING_DIMENSIONS
-        )
-        
-        embedding = response.data[0].embedding
-        logger.debug(f"Generated embedding with {len(embedding)} dimensions (OpenAI {EMBEDDING_MODEL})")
+        result = voyage_client.embed([truncated_text], model=EMBEDDING_MODEL, input_type="document")
+        embedding = result.embeddings[0]
+        logger.debug(f"Generated embedding with {len(embedding)} dimensions (Voyage {EMBEDDING_MODEL})")
         return embedding
-    
+
     except Exception as e:
         logger.error(f"Embedding generation failed: {e}")
         return None
@@ -413,52 +701,44 @@ def generate_embedding(text: str) -> Optional[List[float]]:
 def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     """
     Generate embeddings for multiple texts in a single API call (much faster).
-    
+
     Args:
         texts: List of texts to generate embeddings for
-    
+
     Returns:
         List of embedding vectors (or None for failed items)
     """
-    if not openai_client:
-        logger.warning("⚠️  OpenAI API not configured - embeddings disabled")
+    if not voyage_client:
+        logger.warning("⚠️  Voyage AI not configured - embeddings disabled")
         return [None] * len(texts)
-    
+
     if not texts:
         return []
-    
+
     try:
-        # Filter out empty texts and track their indices
         valid_texts = []
         valid_indices = []
         for i, text in enumerate(texts):
             if text and len(text.strip()) > 0:
-                # Truncate if needed
                 truncated = text[:30000] if len(text) > 30000 else text
                 valid_texts.append(truncated)
                 valid_indices.append(i)
-        
+
         if not valid_texts:
             return [None] * len(texts)
-        
-        logger.info(f"🔢 Generating {len(valid_texts)} embeddings in batch...")
-        
-        # Batch request to OpenAI (up to 2048 inputs per request)
-        response = openai_client.embeddings.create(
-            model=EMBEDDING_MODEL,
-            input=valid_texts,
-            dimensions=EMBEDDING_DIMENSIONS
-        )
-        
-        # Map results back to original indices
+
+        logger.info(f"🔢 Generating {len(valid_texts)} embeddings in batch (Voyage AI)...")
+
+        # Voyage AI supports batch embedding natively
+        result = voyage_client.embed(valid_texts, model=EMBEDDING_MODEL, input_type="document")
+
         results = [None] * len(texts)
-        for i, embedding_obj in enumerate(response.data):
-            original_idx = valid_indices[i]
-            results[original_idx] = embedding_obj.embedding
-        
+        for i, embedding in enumerate(result.embeddings):
+            results[valid_indices[i]] = embedding
+
         logger.info(f"✅ Generated {len(valid_texts)} embeddings successfully")
         return results
-    
+
     except Exception as e:
         logger.error(f"❌ Batch embedding generation failed: {e}", exc_info=True)
         return [None] * len(texts)
@@ -466,31 +746,25 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
 
 def generate_query_embedding(query: str) -> Optional[List[float]]:
     """
-    Generate embedding for a search query using OpenAI text-embedding-3-large.
-    
+    Generate embedding for a search query using Voyage AI voyage-3-large.
+
     Args:
         query: Search query text
-    
+
     Returns:
-        List of 3072 floats (embedding vector) or None if failed
+        List of 1024 floats (embedding vector) or None if failed
     """
-    if not openai_client:
-        logger.warning("OpenAI API not configured - embeddings disabled")
+    if not voyage_client:
+        logger.warning("Voyage AI not configured - embeddings disabled")
         return None
-    
+
     if not query or len(query.strip()) == 0:
         return None
 
     try:
-        response = openai_client.embeddings.create(
-            model=EMBEDDING_MODEL,
-            input=query,
-            dimensions=EMBEDDING_DIMENSIONS
-        )
-        
-        embedding = response.data[0].embedding
-        return embedding
-    
+        result = voyage_client.embed([query], model=EMBEDDING_MODEL, input_type="query")
+        return result.embeddings[0]
+
     except Exception as e:
         logger.error(f"Query embedding generation failed: {e}")
         return None
@@ -622,6 +896,206 @@ IMPORTANT: Be exhaustive. Include every detail, every number, every name. Your a
             "model_used": None,
             "error": str(e)
         }
+
+
+def generate_page_summary(page_data: Dict, total_pages: int, filename: str = "") -> str:
+    """
+    Generate a detailed spatial summary for a single page.
+    Covers all text, every image with exact position, all data.
+    Used by generate_spatial_summary() in parallel.
+    """
+    if not deepseek_client:
+        return ""
+
+    page_num = page_data["page_num"]
+    page_text = page_data.get("text", "").strip()
+    images = page_data.get("images", [])
+    heading = page_data.get("heading")  # DOCX sections have headings, PDF pages don't
+    section_label = f'SECTION {page_num}: "{heading}"' if heading else f"PAGE {page_num} of {total_pages}"
+
+    if not page_text and not images:
+        return f"=== {section_label} ===\n(Empty)\n"
+
+    # Build image section for prompt
+    images_block = ""
+    if images:
+        images_block = f"\n\nIMAGES IN THIS SECTION ({len(images)} images):\n"
+        for i, img in enumerate(images):
+            images_block += f"\n[IMAGE {i + 1}]:\n{img['text']}\n"
+
+    prompt = f"""You are analyzing {section_label} from the document "{filename}".
+
+PAGE TEXT:
+{page_text}
+{images_block}
+
+Create an EXHAUSTIVE SPATIAL SUMMARY of this page. You MUST cover ALL of the following:
+
+LAYOUT & STRUCTURE:
+- Describe what is placed at: top, bottom, left, right, center, full-width
+- Column structure (1 column, 2 columns, grid, etc.)
+- Any headers, footers, sidebars
+
+TEXT CONTENT:
+- Every heading and subheading (exact text)
+- All paragraph content summarized (nothing skipped)
+- Any captions, labels, callouts, tooltips
+- Bullet points or lists (all items)
+- Any highlighted or bold text
+
+IMAGES (MANDATORY - do NOT skip any image):
+For EACH image listed above:
+- Exact position on page (e.g. top-right, center-left, bottom-full-width)
+- Image type (photo, chart, bar graph, pie chart, logo, icon, diagram, screenshot, etc.)
+- Full description of what it shows
+- ALL text, numbers, labels visible in the image
+- Colors, design style
+- How it connects to the surrounding text
+- If chart/graph: all axis labels, all data values, trends
+
+DATA & NUMBERS:
+- Every number, price, percentage, date, measurement on this page
+- Any statistics or metrics
+
+KEY POINTS:
+- The 3-5 most important things on this page
+
+CONTINUITY (IMPORTANT):
+- If content on this page clearly continues from a previous page, start with: "CONTINUED FROM PAGE {page_num - 1}:"
+- If content on this page continues onto the next page, end with: "CONTINUES ON PAGE {page_num + 1}"
+- Always note page number references so everything stays aligned in the full document
+
+IMPORTANT: Be completely exhaustive. If a user later asks "what is the image on the right of page {page_num}" or "what does the chart on page {page_num} show" — your summary must answer it fully."""
+
+    try:
+        response = deepseek_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=2000
+        )
+        page_summary = response.choices[0].message.content
+        return f"{'='*60}\n=== {section_label} ===\n{'='*60}\n{page_summary}\n"
+    except Exception as e:
+        logger.error(f"{section_label} summary failed: {e}")
+        return f"=== {section_label} ===\n(Summary failed: {e})\n"
+
+
+def generate_spatial_summary(text_data: Dict, filename: str = "") -> Dict:
+    """
+    Generate a rich spatial summary of a document.
+
+    For PDFs with per-page data: runs generate_page_summary() for ALL pages
+    in parallel (one DeepSeek call per page), then merges into master summary.
+
+    For other file types: single DeepSeek call with strict instructions.
+
+    Returns:
+        Dict with 'summary' (str) and 'model_used' (str)
+    """
+    if not deepseek_client:
+        return {"summary": "Analysis unavailable - DeepSeek API not configured.", "model_used": None}
+
+    pages = text_data.get("metadata", {}).get("pages")
+    full_text = text_data.get("text", "")
+
+    # PDF with per-page structure → parallel per-page summaries
+    if pages and len(pages) > 0:
+        total_pages = len(pages)
+        logger.info(f"📄 Generating spatial summary: {total_pages} pages in parallel for '{filename}'")
+
+        page_summaries = [""] * total_pages
+
+        def _summarize_page(page_data):
+            idx = page_data["page_num"] - 1
+            result = generate_page_summary(page_data, total_pages, filename)
+            return idx, result
+
+        with ThreadPoolExecutor(max_workers=min(total_pages, 20)) as executor:
+            futures = {executor.submit(_summarize_page, p): p for p in pages}
+            for future in as_completed(futures):
+                try:
+                    idx, result = future.result()
+                    page_summaries[idx] = result
+                    logger.info(f"  ✅ Page {idx + 1}/{total_pages} summary done")
+                except Exception as e:
+                    logger.warning(f"  ⚠️  Page summary failed: {e}")
+
+        # Merge all page summaries into master summary — fully aligned 1 to N
+        master = (
+            f"{'='*70}\n"
+            f"DOCUMENT: {filename}\n"
+            f"TOTAL PAGES: {total_pages}\n"
+            f"{'='*70}\n\n"
+        )
+        for i, ps in enumerate(page_summaries):
+            master += ps if ps else f"{'='*60}\n=== PAGE {i+1} of {total_pages} ===\n{'='*60}\n(No content)\n"
+            master += "\n"
+
+        logger.info(f"✅ Spatial summary complete: {len(master)} chars across {total_pages} pages")
+        return {"summary": master, "model_used": "deepseek-chat"}
+
+    # Non-PDF or no page structure → single comprehensive call
+    if not full_text or len(full_text.strip()) == 0:
+        return {"summary": "No text content to analyze.", "model_used": None}
+
+    logger.info(f"📝 Generating spatial summary (single call) for '{filename}'")
+    analysis_text = full_text[:60000] if len(full_text) > 60000 else full_text
+    image_count = analysis_text.count("[IMAGE ")
+
+    image_instruction = ""
+    if image_count > 0:
+        image_instruction = f"""
+IMAGES ({image_count} images detected — MANDATORY):
+For EACH [IMAGE ...] block found in the text:
+- Image number and exact location in document
+- Image type (photo, chart, diagram, logo, etc.)
+- Full detailed description
+- ALL text, numbers, labels in the image
+- Colors and design
+- Position relative to surrounding text (left, right, top, bottom, inline)
+- If chart/graph: ALL axis labels and data values"""
+
+    prompt = f"""You are a document analysis expert. Analyze this document with MAXIMUM spatial and visual detail.
+
+Document: "{filename}" ({len(analysis_text)} characters)
+{analysis_text}
+
+Create an EXHAUSTIVE SPATIAL ANALYSIS covering:
+
+DOCUMENT OVERVIEW:
+- Document type, purpose, target audience
+- Overall layout and structure
+
+SECTION-BY-SECTION BREAKDOWN:
+- Every section and subsection (nothing skipped)
+- All content, data, facts in each section
+{image_instruction}
+
+ALL DATA & FACTS:
+- Every number, price, date, percentage, measurement
+- All names, companies, products, URLs
+
+KEY RELATIONSHIPS:
+- How sections and visuals connect
+- Important patterns and insights
+
+COMPREHENSIVE SUMMARY:
+- 10-15 sentences covering everything
+
+IMPORTANT: Be exhaustive. Every image must be described with its position and full content."""
+
+    try:
+        response = deepseek_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=4000
+        )
+        return {"summary": response.choices[0].message.content, "model_used": "deepseek-chat"}
+    except Exception as e:
+        logger.error(f"Spatial summary failed: {e}")
+        return {"summary": f"Summary generation failed: {str(e)}", "model_used": None, "error": str(e)}
 
 
 async def enrich_summary_with_web_search(summary: str, filename: str = "") -> str:
