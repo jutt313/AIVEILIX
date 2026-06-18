@@ -64,7 +64,14 @@ for key in "${SECRET_KEYS[@]}"; do
       --replication-policy=automatic \
       --labels="$LABELS" >/dev/null
   fi
-  printf '%s' "$value" | gcloud secrets versions add "$key" --data-file=- >/dev/null
+  tmp_secret_file="$(mktemp)"
+  chmod 600 "$tmp_secret_file"
+  printf '%s' "$value" > "$tmp_secret_file"
+  if ! gcloud secrets versions add "$key" --data-file="$tmp_secret_file" >/dev/null; then
+    rm -f "$tmp_secret_file"
+    exit 1
+  fi
+  rm -f "$tmp_secret_file"
 
   if [ -s "$SECRETS_ARG_FILE" ]; then
     printf ',' >> "$SECRETS_ARG_FILE"
