@@ -472,6 +472,7 @@ async def accept_invite(
     result = await team_service.accept_invite(db, token, body.password)
     return InviteAcceptResponse(
         access_token=result["access_token"],
+        refresh_token=result["refresh_token"],
         user_id=result["user_id"],
         team_member_id=result["team_member_id"],
         workspace_owner_id=result["workspace_owner_id"],

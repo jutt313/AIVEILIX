@@ -178,6 +178,7 @@ class InviteAcceptRequest(BaseModel):
 
 class InviteAcceptResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     user_id: uuid.UUID
     team_member_id: uuid.UUID

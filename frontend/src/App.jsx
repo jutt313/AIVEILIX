@@ -22,6 +22,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { authApi, signOut, bucketApi, dashboardApi, billingApi, adminApi, enterpriseApi } from './api/auth';
+import { teamApi } from './api/team';
 import threadChatIcon from './thread-chat-icon.svg';
 import LandingPage from './LandingPage';
 import LandingPageV2 from './LandingPageV2';
@@ -547,6 +548,24 @@ function OnboardingModal({ theme, onDone }) {
   );
 }
 
+// Decide where to land a user right after authentication. Team members never
+// go through onboarding, so they always head to the dashboard; owners who
+// haven't onboarded yet are sent to the onboarding flow.
+async function resolvePostAuthRoute() {
+  if (localStorage.getItem('aiveilix-onboarded')) return '/dashboard';
+  try {
+    const me = await teamApi.getMe();
+    if (me?.is_member) {
+      // Remember it so future logins skip the membership check.
+      localStorage.setItem('aiveilix-onboarded', '1');
+      return '/dashboard';
+    }
+  } catch {
+    // Membership unknown — fall through to onboarding.
+  }
+  return '/onboarding';
+}
+
 // ---------- Login ----------
 
 function LoginPage({ theme }) {
@@ -570,8 +589,7 @@ function LoginPage({ theme }) {
       }
       localStorage.setItem('refresh_token', result.refresh_token);
       sessionStorage.setItem('access_token', result.access_token);
-      const onboarded = localStorage.getItem('aiveilix-onboarded');
-      navigate(onboarded ? '/dashboard' : '/onboarding');
+      navigate(await resolvePostAuthRoute());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -729,8 +747,7 @@ function OAuthCallbackPage({ theme }) {
         const result = await authApi.exchangeOAuth(provider, code, redirectUri);
         localStorage.setItem('refresh_token', result.refresh_token);
         sessionStorage.setItem('access_token', result.access_token);
-        const onboarded = localStorage.getItem('aiveilix-onboarded');
-        navigate(onboarded ? '/dashboard' : '/onboarding', { replace: true });
+        navigate(await resolvePostAuthRoute(), { replace: true });
       } catch (err) {
         if (!cancelled) setError(err.message || 'OAuth sign-in failed.');
       }

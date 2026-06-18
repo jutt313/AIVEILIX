@@ -38,6 +38,7 @@ export default function InviteAcceptPage() {
     setSubmitting(true);
     try {
       const result = await teamApi.acceptInvite(token, password);
+      if (result.refresh_token) localStorage.setItem('refresh_token', result.refresh_token);
       sessionStorage.setItem('access_token', result.access_token);
       navigate('/dashboard', { replace: true });
     } catch (e) {
