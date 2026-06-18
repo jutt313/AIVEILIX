@@ -1,8 +1,12 @@
+import { getActiveWorkspace } from './auth';
+
 const BASE = import.meta.env.VITE_API_URL;
 
 async function request(method, path, body, token) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
+  const ws = getActiveWorkspace();
+  if (ws) headers['X-Workspace'] = ws;
   const res = await fetch(`${BASE}/v1${path}`, {
     method,
     headers,

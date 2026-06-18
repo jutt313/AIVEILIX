@@ -10,9 +10,27 @@ function emitLimitHit(data) {
   }
 }
 
+// Which workspace the user is currently acting in: 'self' (own account) or a
+// workspace owner's id. Sent as the X-Workspace header so the backend resolves
+// the right context. Unset = backend default (a user's single membership).
+const ACTIVE_WORKSPACE_KEY = 'aiveilix-active-workspace';
+
+export function getActiveWorkspace() {
+  try { return localStorage.getItem(ACTIVE_WORKSPACE_KEY) || null; } catch { return null; }
+}
+
+export function setActiveWorkspace(id) {
+  try {
+    if (!id) localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+    else localStorage.setItem(ACTIVE_WORKSPACE_KEY, id);
+  } catch { /* storage unavailable — ignore */ }
+}
+
 async function request(method, path, body, token, signal) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  const ws = getActiveWorkspace();
+  if (ws) headers['X-Workspace'] = ws;
   const res = await fetch(`${BASE}/v1${path}`, {
     method,
     headers,
@@ -33,6 +51,8 @@ async function request(method, path, body, token, signal) {
 async function requestForm(method, path, formData, token) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
+  const ws = getActiveWorkspace();
+  if (ws) headers['X-Workspace'] = ws;
   const res = await fetch(`${BASE}/v1${path}`, {
     method,
     headers,
@@ -124,6 +144,8 @@ export const bucketApi = {
     const token = authToken();
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+    const ws = getActiveWorkspace();
+    if (ws) headers['X-Workspace'] = ws;
     const res = await fetch(`${BASE}/v1/buckets/${bucketId}/conversations/${convId}/messages/stream`, {
       method: 'POST',
       headers,
@@ -196,8 +218,11 @@ export const bucketApi = {
   deleteFile: (bucketId, fileId) =>
     request('DELETE', `/buckets/${bucketId}/files/${fileId}`, null, authToken()),
   downloadFile: async (bucketId, fileId, filename) => {
+    const dlHeaders = { Authorization: `Bearer ${authToken()}` };
+    const ws = getActiveWorkspace();
+    if (ws) dlHeaders['X-Workspace'] = ws;
     const res = await fetch(`${BASE}/v1/buckets/${bucketId}/files/${fileId}/download`, {
-      headers: { Authorization: `Bearer ${authToken()}` },
+      headers: dlHeaders,
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

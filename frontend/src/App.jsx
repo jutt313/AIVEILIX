@@ -32,6 +32,7 @@ import TeamFacepile from './components/team/TeamFacepile';
 import TeamRoleBanner from './components/team/TeamRoleBanner';
 import BucketMembers from './components/team/BucketMembers';
 import MemberDashboard from './components/team/MemberDashboard';
+import WorkspaceSwitcher from './components/team/WorkspaceSwitcher';
 import { useTeamContext } from './components/team/useTeamContext';
 import SenderBadge, { bubbleStyleForSender } from './components/team/SenderBadge';
 
@@ -3735,7 +3736,7 @@ const BUCKET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#
 
 // ---------- Dashboard ----------
 
-function DashboardPage({ theme, onToggleTheme }) {
+function DashboardPage({ theme, onToggleTheme, workspaces, activeWorkspace }) {
   const palette = themeOptions[theme];
   const navigate = useNavigate();
   const currentMonth = toMonthInputValue(new Date());
@@ -4124,6 +4125,7 @@ function DashboardPage({ theme, onToggleTheme }) {
 
           {/* Right actions */}
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <WorkspaceSwitcher workspaces={workspaces} active={activeWorkspace} />
             {/* Team facepile — overlapping member avatars (owners only) */}
             <TeamFacepile />
 
@@ -7542,7 +7544,7 @@ function DashboardRouter({ theme, onToggleTheme }) {
     return <MemberDashboard theme={theme} onToggleTheme={onToggleTheme} />;
   }
 
-  return <DashboardPage theme={theme} onToggleTheme={onToggleTheme} />;
+  return <DashboardPage theme={theme} onToggleTheme={onToggleTheme} workspaces={ctx?.workspaces} activeWorkspace={ctx?.active_workspace} />;
 }
 
 // ---------- Admin panel (private /admin; set per-account Enterprise limits) ----------

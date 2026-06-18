@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.platform import TeamBucketAccess, TeamMember
-from app.models.user import User
+from app.models.user import Profile, User
 
 
 PERMISSION_FIELDS = (
@@ -39,29 +39,66 @@ class UserContext:
     display_color: str | None = None
 
 
-async def resolve_user_context(db: AsyncSession, user_id: uuid.UUID) -> UserContext:
+def parse_active_workspace(x_workspace: str | None, user_id: uuid.UUID) -> uuid.UUID | None:
+    """Turn the raw X-Workspace header into an owner id to activate.
+
+    'self'/'own'/'me' -> the user's own workspace; a uuid string -> that owner's
+    workspace; anything else (missing/garbage) -> None (let the resolver default).
+    """
+    if not x_workspace:
+        return None
+    val = x_workspace.strip().lower()
+    if val in {"self", "own", "me"}:
+        return user_id
+    try:
+        return uuid.UUID(x_workspace.strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+async def resolve_user_context(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    active_owner_id: uuid.UUID | None = None,
+) -> UserContext:
     user_q = await db.execute(select(User).where(User.id == user_id))
     user = user_q.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="User not found.")
 
-    member_q = await db.execute(
+    # A single email can be a member of several workspaces while also owning its
+    # own — fetch them all (the old scalar_one_or_none would crash on 2+).
+    members_q = await db.execute(
         select(TeamMember).where(
             TeamMember.member_user_id == user_id,
             TeamMember.status == "accepted",
         )
     )
-    member = member_q.scalar_one_or_none()
+    memberships = list(members_q.scalars().all())
 
-    if member:
+    # Decide which workspace is active for this request.
+    selected: TeamMember | None = None
+    if active_owner_id is not None and active_owner_id != user_id:
+        # Explicit team selection; fall back to a default membership if the id is
+        # stale/invalid rather than erroring.
+        selected = next((m for m in memberships if m.owner_user_id == active_owner_id), None)
+        if selected is None and memberships:
+            selected = memberships[0]
+    elif active_owner_id is None and memberships:
+        # No explicit selection — default to the first membership so users who are
+        # only ever team members behave exactly as before.
+        selected = memberships[0]
+    # active_owner_id == user_id -> explicit self/owner mode (selected stays None)
+
+    if selected is not None:
         return UserContext(
             user_id=user.id,
             email=user.email,
             is_member=True,
-            owner_user_id=member.owner_user_id,
-            team_member_id=member.id,
-            display_name=member.display_name,
-            display_color=member.display_color,
+            owner_user_id=selected.owner_user_id,
+            team_member_id=selected.id,
+            display_name=selected.display_name,
+            display_color=selected.display_color,
         )
 
     return UserContext(
@@ -71,6 +108,56 @@ async def resolve_user_context(db: AsyncSession, user_id: uuid.UUID) -> UserCont
         owner_user_id=user.id,
         team_member_id=None,
     )
+
+
+async def list_user_workspaces(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
+    """Workspaces this user can act in: their own ('self') plus every workspace
+    they're an accepted member of. Drives the dashboard workspace switcher."""
+    own_name = (
+        await db.execute(select(Profile.full_name).where(Profile.user_id == user_id))
+    ).scalar_one_or_none()
+    workspaces: list[dict] = [{
+        "id": "self",
+        "type": "owner",
+        "owner_user_id": str(user_id),
+        "label": own_name or "My workspace",
+        "color": None,
+    }]
+
+    members_q = await db.execute(
+        select(TeamMember).where(
+            TeamMember.member_user_id == user_id,
+            TeamMember.status == "accepted",
+        )
+    )
+    memberships = list(members_q.scalars().all())
+    if not memberships:
+        return workspaces
+
+    owner_ids = [m.owner_user_id for m in memberships]
+    owners = {
+        o.id: o for o in (
+            await db.execute(select(User).where(User.id.in_(owner_ids)))
+        ).scalars().all()
+    }
+    names = {
+        row[0]: row[1] for row in (
+            await db.execute(
+                select(Profile.user_id, Profile.full_name).where(Profile.user_id.in_(owner_ids))
+            )
+        ).all()
+    }
+    for m in memberships:
+        owner = owners.get(m.owner_user_id)
+        label = names.get(m.owner_user_id) or (owner.email if owner else "Workspace")
+        workspaces.append({
+            "id": str(m.owner_user_id),
+            "type": "member",
+            "owner_user_id": str(m.owner_user_id),
+            "label": label,
+            "color": m.display_color,
+        })
+    return workspaces
 
 
 async def get_bucket_access(

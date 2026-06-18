@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ from app.models.user import Profile, User
 from app.services import stripe_billing
 from app.services.notifications import create_notification
 from app.services.plans import _OVERRIDABLE, resolve_effective_plan
-from app.services.team.permissions import resolve_user_context
+from app.services.team.permissions import parse_active_workspace, resolve_user_context
 
 logger = logging.getLogger(__name__)
 
@@ -166,8 +166,10 @@ async def _user_label(db: AsyncSession, user_id: uuid.UUID) -> str:
 async def get_plan(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
+    x_workspace: str | None = Header(default=None, alias="X-Workspace"),
 ):
-    ctx = await resolve_user_context(db, uuid.UUID(current_user["user_id"]))
+    user_id = uuid.UUID(current_user["user_id"])
+    ctx = await resolve_user_context(db, user_id, parse_active_workspace(x_workspace, user_id))
     payload = await _plan_payload(db, ctx.owner_user_id)
     payload["user_id"] = str(ctx.user_id)
     payload["owner_user_id"] = str(ctx.owner_user_id)
@@ -180,8 +182,10 @@ async def request_limit_increase(
     body: LimitIncreaseRequestBody,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
+    x_workspace: str | None = Header(default=None, alias="X-Workspace"),
 ):
-    ctx = await resolve_user_context(db, uuid.UUID(current_user["user_id"]))
+    user_id = uuid.UUID(current_user["user_id"])
+    ctx = await resolve_user_context(db, user_id, parse_active_workspace(x_workspace, user_id))
     requested_limits = _clean_requested_limits(body.requested_limits)
     plan = await _plan_payload(db, ctx.owner_user_id)
     if plan["plan"] != "business":
@@ -236,8 +240,10 @@ async def request_limit_increase(
 async def upgrade_plan(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
+    x_workspace: str | None = Header(default=None, alias="X-Workspace"),
 ):
-    ctx = await resolve_user_context(db, uuid.UUID(current_user["user_id"]))
+    user_id = uuid.UUID(current_user["user_id"])
+    ctx = await resolve_user_context(db, user_id, parse_active_workspace(x_workspace, user_id))
     plan = await _plan_payload(db, ctx.owner_user_id)
     requested = {
         key: max(int(plan["limits"].get(key, 0)), int(plan["usage"].get(key, 0))) * 2
@@ -248,7 +254,7 @@ async def upgrade_plan(
         note="General upgrade request.",
         trigger_message="Upgrade requested from billing.",
     )
-    return await request_limit_increase(body, db, current_user)
+    return await request_limit_increase(body, db, current_user, x_workspace)
 
 
 @router.post("/checkout")
@@ -256,9 +262,11 @@ async def create_checkout(
     body: CheckoutRequest,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
+    x_workspace: str | None = Header(default=None, alias="X-Workspace"),
 ):
     """Start a Stripe Checkout session for a self-serve plan; returns the URL to redirect to."""
-    ctx = await resolve_user_context(db, uuid.UUID(current_user["user_id"]))
+    user_id = uuid.UUID(current_user["user_id"])
+    ctx = await resolve_user_context(db, user_id, parse_active_workspace(x_workspace, user_id))
     owner = await db.get(User, ctx.owner_user_id)
     email = owner.email if owner else ctx.email
     try:
@@ -274,9 +282,11 @@ async def create_checkout(
 async def create_portal(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
+    x_workspace: str | None = Header(default=None, alias="X-Workspace"),
 ):
     """Stripe Customer Portal — manage card, downgrade, or cancel."""
-    ctx = await resolve_user_context(db, uuid.UUID(current_user["user_id"]))
+    user_id = uuid.UUID(current_user["user_id"])
+    ctx = await resolve_user_context(db, user_id, parse_active_workspace(x_workspace, user_id))
     try:
         url = await stripe_billing.create_portal_session(db, ctx.owner_user_id)
     except ValueError as exc:
@@ -290,8 +300,10 @@ async def create_portal(
 async def cancel_subscription(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
+    x_workspace: str | None = Header(default=None, alias="X-Workspace"),
 ):
-    ctx = await resolve_user_context(db, uuid.UUID(current_user["user_id"]))
+    user_id = uuid.UUID(current_user["user_id"])
+    ctx = await resolve_user_context(db, user_id, parse_active_workspace(x_workspace, user_id))
     try:
         await stripe_billing.cancel_subscription(db, ctx.owner_user_id, at_period_end=True)
     except ValueError as exc:

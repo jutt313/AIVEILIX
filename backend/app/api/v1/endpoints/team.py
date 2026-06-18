@@ -123,7 +123,10 @@ async def _serialize_member(
 async def _ensure_owner(
     db: AsyncSession, current_user: dict
 ) -> User:
-    ctx = await resolve_user_context(db, uuid.UUID(current_user["user_id"]))
+    # Team management always acts on the user's OWN workspace, so resolve in
+    # self/owner mode regardless of which workspace they're currently viewing.
+    user_id = uuid.UUID(current_user["user_id"])
+    ctx = await resolve_user_context(db, user_id, active_owner_id=user_id)
     require_owner(ctx)
     user_q = await db.execute(select(User).where(User.id == ctx.user_id))
     user = user_q.scalar_one()

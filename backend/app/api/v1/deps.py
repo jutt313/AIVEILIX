@@ -10,7 +10,7 @@ from app.config import settings
 from app.core.security import decode_token_safe
 from app.database import db_session, get_db
 from app.models.user import User
-from app.services.team.permissions import UserContext, resolve_user_context
+from app.services.team.permissions import UserContext, parse_active_workspace, resolve_user_context
 from app.valkey import get_valkey
 
 security = HTTPBearer()
@@ -63,10 +63,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 
 async def get_user_context(
+    x_workspace: str | None = Header(default=None, alias="X-Workspace"),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> UserContext:
-    return await resolve_user_context(db, uuid.UUID(current_user["user_id"]))
+    user_id = uuid.UUID(current_user["user_id"])
+    active_owner_id = parse_active_workspace(x_workspace, user_id)
+    return await resolve_user_context(db, user_id, active_owner_id)
 
 
 def _is_admin_user(user: User | None) -> bool:

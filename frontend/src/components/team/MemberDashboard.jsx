@@ -4,6 +4,7 @@ import { dashboardApi, signOut } from '../../api/auth';
 import { teamApi } from '../../api/team';
 import { useAppTheme } from './theme';
 import MemberProfileDrawer from './MemberProfileDrawer';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 
 /**
  * Dedicated dashboard for accepted team members.
@@ -105,6 +106,9 @@ export default function MemberDashboard({ theme, onToggleTheme }) {
           </div>
 
           <div className="flex items-center gap-1">
+            <div className="mr-1">
+              <WorkspaceSwitcher workspaces={me?.workspaces} active={me?.active_workspace} />
+            </div>
             {/* Theme toggle */}
             <button
               type="button"

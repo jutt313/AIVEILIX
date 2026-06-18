@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.api.v1.deps import get_current_user, get_user_context
-from app.services.team.permissions import UserContext
+from app.services.team.permissions import UserContext, list_user_workspaces
 from app.services.profile import (
     change_password as change_password_service,
     connect_auth_provider as connect_auth_provider_service,
@@ -103,6 +103,11 @@ async def get_me(
             full_name = prof_q.scalar_one_or_none()
             workspace_owner_name = full_name or owner.email
 
+    # All workspaces this user can switch between (own + memberships), plus which
+    # one is currently active — drives the dashboard workspace switcher.
+    workspaces = await list_user_workspaces(db, ctx.user_id)
+    active_workspace = "self" if not ctx.is_member else str(ctx.owner_user_id)
+
     return {
         "user_id": str(ctx.user_id),
         "email": ctx.email,
@@ -114,6 +119,8 @@ async def get_me(
         "role": "member" if ctx.is_member else "owner",
         "workspace_owner_name": workspace_owner_name,
         "workspace_owner_email": workspace_owner_email,
+        "workspaces": workspaces,
+        "active_workspace": active_workspace,
     }
 
 
