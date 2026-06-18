@@ -1,0 +1,13 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://aiveilix-499209.web.app",
+      "https://app.aiveilix.com",
+      "http://localhost:5173"
+    ],
+    "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]

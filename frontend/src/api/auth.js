@@ -210,11 +210,31 @@ export const bucketApi = {
     request('GET', `/buckets/${bucketId}/files/${fileId}/chunks`, null, authToken()),
   listFileEvents: (bucketId, fileId) =>
     request('GET', `/buckets/${bucketId}/files/${fileId}/events`, null, authToken()),
+  // Legacy multipart-form upload: the whole file is POSTed through the API.
+  // Kept for backwards-compat/rollback; the app now uploads via uploadFilesDirect
+  // (api/uploads.js), which streams bytes straight to R2 and avoids the Cloud Run
+  // 32 MiB request-size limit.
   uploadFiles: (bucketId, files) => {
     const fd = new FormData();
     files.forEach(f => fd.append('files', f));
     return requestForm('POST', `/buckets/${bucketId}/files`, fd, authToken());
   },
+
+  // ── Direct-to-R2 upload session API ──
+  // These hit the backend (auth + quota + presigning); the raw bytes go straight
+  // browser→R2 via the presigned URLs returned here (see api/uploads.js).
+  initUpload: (bucketId, file) =>
+    request('POST', `/buckets/${bucketId}/uploads/init`, {
+      filename: file.name,
+      content_type: file.type || 'application/octet-stream',
+      size: file.size,
+    }, authToken()),
+  getUploadPartUrls: (bucketId, uploadId, partNumbers) =>
+    request('POST', `/buckets/${bucketId}/uploads/${uploadId}/parts`, { part_numbers: partNumbers }, authToken()),
+  completeUpload: (bucketId, uploadId, parts) =>
+    request('POST', `/buckets/${bucketId}/uploads/${uploadId}/complete`, { parts }, authToken()),
+  abortUpload: (bucketId, uploadId) =>
+    request('POST', `/buckets/${bucketId}/uploads/${uploadId}/abort`, {}, authToken()),
   deleteFile: (bucketId, fileId) =>
     request('DELETE', `/buckets/${bucketId}/files/${fileId}`, null, authToken()),
   downloadFile: async (bucketId, fileId, filename) => {

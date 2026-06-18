@@ -3,6 +3,7 @@ from app.models.mcp_token import AccountMcpToken, BucketMcpToken, McpAccessLog
 from app.models.conversation import Conversation, Message, ConversationChunk
 from app.models.user import User, Profile, OAuthToken
 from app.models.file import File, FileVersion
+from app.models.upload_session import UploadSession
 from app.models.chunk import Chunk
 from app.models.summary import Summary
 from app.models.investigation_event import InvestigationEvent
@@ -32,6 +33,7 @@ __all__ = [
     "OAuthToken",
     "File",
     "FileVersion",
+    "UploadSession",
     "Chunk",
     "Summary",
     "InvestigationEvent",

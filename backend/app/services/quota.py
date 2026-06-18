@@ -62,17 +62,40 @@ async def enforce_bucket_quota(db: AsyncSession, owner_user_id: uuid.UUID) -> Ef
     return ep
 
 
+def _fmt_size(num_bytes: int) -> str:
+    """Human-readable size for limit messages (GB once >= 1 GB, else MB)."""
+    gb = num_bytes / (1024 ** 3)
+    if gb >= 1:
+        return f"{gb:.0f} GB" if gb == int(gb) else f"{gb:.1f} GB"
+    mb = num_bytes / (1024 ** 2)
+    return f"{mb:.0f} MB"
+
+
 async def enforce_upload_quota(
     db: AsyncSession,
     owner_user_id: uuid.UUID,
     *,
     incoming_files: int,
     incoming_bytes: int,
+    single_file_bytes: int | None = None,
 ) -> EffectivePlan:
+    """Enforce upload limits against the owner's plan.
+
+    When ``single_file_bytes`` is given (direct-to-R2 init, one file at a time)
+    the per-file size cap is checked too, so the user gets a clear plan-limit
+    message *before* any bytes are uploaded.
+    """
     ep = await owner_effective_plan(db, owner_user_id)
     if ep.locked:
         _deny("Your free trial has ended. Choose a plan to keep uploading.")
     lim = ep.limits
+
+    if single_file_bytes is not None and single_file_bytes > lim.max_file_size_bytes:
+        _deny(
+            f"This file is {_fmt_size(single_file_bytes)}, which exceeds the "
+            f"{_fmt_size(lim.max_file_size_bytes)} per-file limit on your {lim.name} plan. "
+            "Upgrade or contact us for a higher limit."
+        )
 
     doc_count = await db.scalar(
         select(func.count()).select_from(File).where(File.user_id == owner_user_id)

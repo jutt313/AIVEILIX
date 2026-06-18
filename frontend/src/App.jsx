@@ -22,6 +22,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { authApi, signOut, bucketApi, dashboardApi, billingApi, adminApi, enterpriseApi } from './api/auth';
+import { uploadFilesDirect } from './api/uploads';
 import { teamApi } from './api/team';
 import threadChatIcon from './thread-chat-icon.svg';
 import LandingPage from './LandingPage';
@@ -2485,6 +2486,7 @@ const LIMIT_FIELD_LABELS = {
   max_chat_messages: 'AI chats / month',
   mcp_rate_per_min: 'MCP req / min',
   max_images: 'Visuals',
+  max_file_size_bytes: 'Max file size',
 };
 
 const REQUESTABLE_LIMIT_FIELDS = [
@@ -2507,7 +2509,7 @@ function fmtBytes(bytes) {
 }
 
 function fmtLimitValue(field, value) {
-  if (field === 'max_storage_bytes') return fmtBytes(value);
+  if (field === 'max_storage_bytes' || field === 'max_file_size_bytes') return fmtBytes(value);
   return Number(value || 0).toLocaleString();
 }
 
@@ -5067,7 +5069,7 @@ function BucketPage({ theme }) {
     try {
       if (filesToUpload.length) {
         setUploading(true);
-        const uploaded = await bucketApi.uploadFiles(bucketId, filesToUpload);
+        const uploaded = await uploadFilesDirect(bucketId, filesToUpload);
         setUploading(false);
         const uploadedIds = (Array.isArray(uploaded) ? uploaded : []).map(f => String(f.id));
         // If thread is scoped, auto-add the new uploads so the user doesn't get blocked.
@@ -5299,7 +5301,7 @@ function BucketPage({ theme }) {
     setError(null);
     setDirectUploading(true);
     try {
-      const uploaded = await bucketApi.uploadFiles(bucketId, files);
+      const uploaded = await uploadFilesDirect(bucketId, files);
       const uploadedIds = (Array.isArray(uploaded) ? uploaded : []).map(f => String(f.id)).filter(Boolean);
       if (threadScope && activeThreadId && uploadedIds.length > 0) {
         try {
@@ -7109,7 +7111,7 @@ function TempPipelinePage({ theme, onToggleTheme }) {
     setUploadingFile(true);
 
     try {
-      const uploaded = await bucketApi.uploadFiles(selectedBucketId, [file]);
+      const uploaded = await uploadFilesDirect(selectedBucketId, [file]);
       const uploadedFile = Array.isArray(uploaded) ? uploaded[0] : null;
       if (!uploadedFile?.id) throw new Error('Upload succeeded but no file id was returned.');
       const uploadedFileId = String(uploadedFile.id);
@@ -7553,6 +7555,7 @@ const ADMIN_FIELD_LABELS = {
   ...LIMIT_FIELD_LABELS,
   max_users: 'Seats (users)',
   max_storage_bytes: 'Storage (bytes)',
+  max_file_size_bytes: 'Max file size (bytes)',
 };
 
 function AdminPage({ theme }) {

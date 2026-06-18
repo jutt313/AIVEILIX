@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     users,
     buckets,
     files,
+    uploads,
     categories,
     search,
     conversations,
@@ -24,6 +25,7 @@ router.include_router(auth.router)
 router.include_router(users.router)
 router.include_router(buckets.router)
 router.include_router(files.router)
+router.include_router(uploads.router)
 router.include_router(categories.router)
 router.include_router(search.router)
 router.include_router(conversations.router)

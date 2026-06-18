@@ -55,6 +55,7 @@ def _limit_payload(ep) -> dict[str, int]:
         "max_chat_messages": ep.limits.max_chat_messages,
         "mcp_rate_per_min": ep.limits.mcp_rate_per_min,
         "max_images": ep.limits.max_images,
+        "max_file_size_bytes": ep.limits.max_file_size_bytes,
     }
 
 

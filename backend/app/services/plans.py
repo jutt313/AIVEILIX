@@ -43,6 +43,7 @@ class PlanLimits:
     max_chat_messages: int  # in-app AI chats per calendar month
     mcp_rate_per_min: int   # MCP requests allowed per minute
     max_images: int         # total visual elements (Kimi vision cost driver)
+    max_file_size_bytes: int  # largest single upload allowed (per-file cap)
 
 
 PLAN_LIMITS: dict[str, PlanLimits] = {
@@ -50,13 +51,13 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         name="Individual", price_usd=15,
         max_users=1, max_buckets=5, max_documents=100, max_pages=1_800,
         max_storage_bytes=5 * _GB, max_chat_messages=500, mcp_rate_per_min=30,
-        max_images=400,
+        max_images=400, max_file_size_bytes=100 * _MB,
     ),
     "team": PlanLimits(
         name="Team", price_usd=49,
         max_users=9, max_buckets=20, max_documents=300, max_pages=4_000,
         max_storage_bytes=15 * _GB, max_chat_messages=1_800, mcp_rate_per_min=60,
-        max_images=1_200,
+        max_images=1_200, max_file_size_bytes=5 * _GB,
     ),
     # Enterprise base — generous defaults; real per-customer numbers come from
     # the account's limits_override (set in the admin panel).
@@ -64,7 +65,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         name="Enterprise", price_usd=0,
         max_users=50, max_buckets=1_000, max_documents=100_000, max_pages=1_000_000,
         max_storage_bytes=1 * _TB, max_chat_messages=100_000, mcp_rate_per_min=600,
-        max_images=1_000_000,
+        max_images=1_000_000, max_file_size_bytes=100 * _GB,
     ),
 }
 
@@ -73,6 +74,7 @@ LOCKED_LIMITS = PlanLimits(
     name="Locked", price_usd=0,
     max_users=1, max_buckets=0, max_documents=0, max_pages=0,
     max_storage_bytes=0, max_chat_messages=0, mcp_rate_per_min=0, max_images=0,
+    max_file_size_bytes=0,
 )
 
 # Legacy enum values mapped onto current plans ('business' is now Enterprise).
@@ -82,6 +84,7 @@ _LEGACY_PLAN_ALIASES = {"free": "individual", "pro": "individual"}
 _OVERRIDABLE = {
     "max_users", "max_buckets", "max_documents", "max_pages",
     "max_storage_bytes", "max_chat_messages", "mcp_rate_per_min", "max_images",
+    "max_file_size_bytes",
 }
 
 
