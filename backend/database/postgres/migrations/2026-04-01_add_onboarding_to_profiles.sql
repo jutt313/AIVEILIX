@@ -1,0 +1,3 @@
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS use_case TEXT,
+  ADD COLUMN IF NOT EXISTS referral_source TEXT;

@@ -1,0 +1,67 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Logging
+colorlog==6.9.0
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Validation
+pydantic==2.11.7
+pydantic-settings==2.8.1
+email-validator==2.2.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.1
+pyotp==2.9.0
+httpx==0.28.1
+
+# Cache / Valkey (redis-compatible)
+redis==5.2.1
+
+# File upload
+python-multipart==0.0.19
+
+# Cloudflare R2 (S3-compatible)
+boto3==1.35.85
+
+# Vector DB
+qdrant-client==1.17.1
+llama-index-core==0.14.20
+llama-index-vector-stores-qdrant==0.10.0
+llama-index-workflows==2.14.0
+
+# Document processing — pipeline v3 (PDF render, layout, visual detection)
+PyMuPDF==1.25.1
+Pillow==11.1.0
+numpy==2.2.1
+tenacity==9.0.0
+
+# Embeddings — document RAG uses Voyage; conversation memory falls back to hash
+# embeddings when local BGE is not installed. Do not install FlagEmbedding or
+# open-clip-torch in Cloud Run by default: they pull multi-GB Torch/CUDA deps.
+tiktoken==0.7.0
+
+# Web search
+duckduckgo-search==7.1.0
+
+# LLM clients
+anthropic==0.42.0
+google-generativeai==0.8.3
+openai==1.58.1
+
+# Stripe
+stripe==11.4.1
+
+# Pipeline v3 — Mistral OCR (called over HTTP via httpx, no SDK) + Voyage embeddings/rerank
+voyageai>=0.3.2
+
+# Utilities
+python-dotenv==1.0.1
+aiofiles==24.1.0
+passlib[bcrypt]==1.7.4

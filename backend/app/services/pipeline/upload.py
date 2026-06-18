@@ -1,0 +1,190 @@
+"""
+File upload intake service.
+
+Responsibilities:
+- save raw file bytes to Cloudflare R2
+- create files + file_versions rows in PostgreSQL
+- set initial status: uploading → processing
+- log investigation events for successful upload and processing start
+"""
+
+import logging
+import uuid
+
+from fastapi import UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.file import File, FileVersion
+from app.models.investigation_event import InvestigationEvent
+from app.services.storage.r2 import upload_file, build_raw_key
+
+logger = logging.getLogger(__name__)
+
+
+async def intake_upload(
+    db: AsyncSession,
+    bucket_id: uuid.UUID,
+    user_id: uuid.UUID,
+    upload: UploadFile,
+    category_id: uuid.UUID | None = None,
+) -> tuple[File, str]:
+    """
+    Handle a single uploaded file.
+    Returns the created File ORM object (status='processing').
+    """
+    file_bytes = await upload.read()
+    filename = upload.filename or "unnamed"
+    file_size = len(file_bytes)
+
+    # Detect file type
+    content_type = upload.content_type or "application/octet-stream"
+    file_ext = (filename.rsplit(".", 1)[-1].lower()) if "." in filename else "bin"
+    file_type = _normalise_type(file_ext, content_type)
+
+    file_id = uuid.uuid4()
+    trace_run_id = str(uuid.uuid4())
+    r2_key = build_raw_key(str(file_id), filename, version=1)
+
+    # Match the pipeline contract exactly: raw object lands in R2 before any DB row exists.
+    upload_file(file_bytes, r2_key, content_type=content_type)
+    logger.info("R2 upload complete: %s", r2_key)
+
+    # --- create files row after raw upload succeeds ---
+    file_row = File(
+        id=file_id,
+        bucket_id=bucket_id,
+        user_id=user_id,
+        category_id=category_id,
+        name=filename,
+        type=file_type,
+        size=file_size,
+        r2_path=r2_key,
+        status="uploading",
+        page_count=0,
+        version=1,
+    )
+    db.add(file_row)
+    await db.flush()
+
+    # --- create file_versions row ---
+    version_row = FileVersion(
+        file_id=file_id,
+        version_number=1,
+        r2_path=r2_key,
+        size=file_size,
+    )
+    db.add(version_row)
+
+    await _log_event(
+        db,
+        file_id=file_id,
+        event="upload_completed",
+        status="completed",
+        metadata={
+            "filename": filename,
+            "size": file_size,
+            "r2_path": r2_key,
+            "trace_run_id": trace_run_id,
+            "trigger_source": "upload",
+            "stage": "upload_intake",
+        },
+    )
+
+    # --- update status to processing ---
+    file_row.status = "processing"
+    await db.flush()
+
+    await _log_event(
+        db,
+        file_id=file_id,
+        event="file_processing_started",
+        status="started",
+        metadata={
+            "trace_run_id": trace_run_id,
+            "trigger_source": "upload",
+            "stage": "pipeline_enqueue",
+        },
+    )
+
+    await db.commit()
+    await db.refresh(file_row)
+
+    return file_row, trace_run_id
+
+
+async def _log_event(
+    db: AsyncSession,
+    file_id: uuid.UUID | None,
+    event: str,
+    status: str,
+    metadata: dict,
+) -> None:
+    """Write an investigation_events row. If file_id is None it is skipped."""
+    if file_id is None:
+        return
+    ev = InvestigationEvent(
+        file_id=file_id,
+        event=event,
+        status=status,
+        event_metadata=metadata,
+    )
+    db.add(ev)
+    await db.flush()
+
+
+def _normalise_type(ext: str, content_type: str) -> str:
+    mapping = {
+        "pdf": "pdf",
+        "docx": "docx",
+        "doc": "doc",
+        "pptx": "pptx",
+        "ppt": "ppt",
+        "xlsx": "xlsx",
+        "xls": "xls",
+        "txt": "txt",
+        "md": "md",
+        "markdown": "md",
+        "html": "html",
+        "htm": "html",
+        "adoc": "asciidoc",
+        "asciidoc": "asciidoc",
+        "nxml": "xml_pubmed",
+        "xml": "xml",
+        "json": "json",
+        "jsonl": "json",
+        "ndjson": "json",
+        "csv": "csv",
+        "tsv": "tsv",
+        "yaml": "yaml",
+        "yml": "yaml",
+        "ini": "config",
+        "toml": "config",
+        "env": "config",
+        "cfg": "config",
+        "conf": "config",
+        "properties": "config",
+        "log": "log",
+        "rtf": "rtf",
+        # code
+        "py": "code",
+        "js": "code", "mjs": "code", "cjs": "code",
+        "ts": "code", "tsx": "code", "jsx": "code",
+        "java": "code", "kt": "code", "swift": "code",
+        "c": "code", "h": "code", "cpp": "code", "cc": "code", "cxx": "code", "hpp": "code",
+        "cs": "code", "go": "code", "rs": "code", "rb": "code", "php": "code",
+        "sql": "code", "sh": "code", "bash": "code", "zsh": "code",
+        "r": "code", "dart": "code", "vue": "code", "svelte": "code",
+        "png": "image",
+        "jpg": "image",
+        "jpeg": "image",
+        "gif": "image",
+        "webp": "image",
+        "bmp": "image",
+        "tif": "image",
+        "tiff": "image",
+    }
+    if ext in mapping:
+        return mapping[ext]
+    if content_type.startswith("image/"):
+        return "image"
+    return ext or "unknown"

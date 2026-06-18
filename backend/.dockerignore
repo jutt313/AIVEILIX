@@ -1,0 +1,14 @@
+.cache/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+database/postgres/data/
+database/qdrant/data/
+database/valkey/*.log
+database/valkey/*.pid
+scripts/__pycache__/
+tests/__pycache__/
+*.log
+.DS_Store

@@ -1,0 +1,48 @@
+.DS_Store
+
+# Secrets / local env
+.env
+backend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+.venv/
+venv/
+backend/venv/
+backend/.venv/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+
+# Local runtime / temp
+.cache/
+backend/.cache/
+.tmp/
+*.log
+
+# Local Qdrant / Valkey / Postgres dev artifacts
+backend/database/qdrant/data/
+backend/database/valkey/data/
+backend/database/valkey/*.pid
+backend/database/valkey/*.log
+backend/database/postgres/data/
+
+.gcloud/
+deploy/gcp/config.env
+*.pid
+*.lock
+backend/database/postgres/run/
+backend/database/valkey/run/
+.env
