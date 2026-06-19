@@ -308,7 +308,18 @@ def _visual_as_image_entry(visual: dict, *, include_page: bool = False) -> dict:
         "type": visual.get("type"),
         "asset_type": visual.get("asset_type"),
         "index": visual.get("index"),
+        "asset_uri": visual.get("asset_uri"),
+        "bbox": visual.get("bbox"),
+        "confidence": visual.get("confidence"),
     }
+    # Ingestion-cleanup / audit fields — passed through only when present so
+    # get_file/get_pages/get_section match list_visuals/get_visual.
+    if visual.get("dup_count"):
+        entry["dup_count"] = visual["dup_count"]
+    if visual.get("duplicate_snapshots"):
+        entry["duplicate_snapshots"] = visual["duplicate_snapshots"]
+    if visual.get("name_conflict"):
+        entry["name_conflict"] = visual["name_conflict"]
     if include_page:
         entry["page"] = visual["page"]
     return entry
@@ -452,10 +463,12 @@ async def fetch_file_layout(db: AsyncSession, bucket_id: uuid.UUID, file_id: uui
     chunk_by_block = {c.block_id: c for c in chunks if c.block_id}
 
     pages: dict[int, list[dict]] = {}
+    doc_conflicts: list = []
 
     if row.layout_json_path:
         # Preferred path: serve the raw layout map with all structural fields.
         layout = await _load_layout(row.layout_json_path)
+        doc_conflicts = layout.get("name_conflicts") or []
         for page_obj in layout.get("pages", []):
             page_num = int(page_obj.get("page") or 0)
             elements = sorted(
@@ -492,6 +505,7 @@ async def fetch_file_layout(db: AsyncSession, bucket_id: uuid.UUID, file_id: uui
         "file_name": row.name,
         "total_pages": row.page_count,
         "layout_source": "layout_json" if row.layout_json_path else "reconstructed",
+        "name_conflicts": doc_conflicts,
         "pages": [
             {"page": p, "blocks": pages[p]}
             for p in sorted(pages.keys())
@@ -850,7 +864,7 @@ def _enumerate_visuals(layout: dict) -> list[dict]:
             if elem.get("source") != "visual_understanding":
                 continue
             meta = elem.get("metadata") or {}
-            rows.append({
+            row = {
                 "page": page_num,
                 "sort_order": int(elem.get("sort_order") or 0),
                 "element_id": elem.get("id"),
@@ -861,7 +875,15 @@ def _enumerate_visuals(layout: dict) -> list[dict]:
                 "asset_uri": meta.get("asset_uri") or elem.get("image_uri"),
                 "bbox": elem.get("bbox"),
                 "confidence": elem.get("confidence"),
-            })
+            }
+            # Surface ingestion-cleanup signals when present.
+            if meta.get("name_conflict"):
+                row["name_conflict"] = meta["name_conflict"]
+            if meta.get("dup_count"):
+                row["dup_count"] = meta["dup_count"]
+            if meta.get("duplicate_snapshots"):
+                row["duplicate_snapshots"] = meta["duplicate_snapshots"]
+            rows.append(row)
     for i, row in enumerate(rows, start=1):
         row["index"] = i
     return rows

@@ -58,8 +58,13 @@ def build_export_json(
     doc_meta: dict,
     pages: list[PageMeta],
     elements: list[ElementRecord],
+    name_conflicts: list[dict] | None = None,
 ) -> dict:
-    """doc_meta: {schema_version, doc_id, filename, mime_type, source_file_uri, page_count}"""
+    """doc_meta: {schema_version, doc_id, filename, mime_type, source_file_uri, page_count}
+
+    name_conflicts: doc-level proper-name discrepancies from reconcile_names,
+    surfaced so MCP clients/answer layer can flag the ambiguity.
+    """
     elements_by_page: dict[int, list[ElementRecord]] = {}
     for elem in elements:
         elements_by_page.setdefault(elem.page_number, []).append(elem)
@@ -87,6 +92,7 @@ def build_export_json(
         "mime_type": doc_meta.get("mime_type", ""),
         "source_file_uri": doc_meta.get("source_file_uri", ""),
         "page_count": doc_meta.get("page_count", len(pages_out)),
+        "name_conflicts": name_conflicts or [],
         "pages": pages_out,
     }
 
@@ -121,6 +127,29 @@ def _element_text(elem: ElementRecord) -> str:
     return elem.content or ""
 
 
+def _collect_name_conflict(elements: list[ElementRecord]) -> dict | None:
+    """Merge any name_conflict flags stamped on these elements by reconcile_names."""
+    variants: list[str] = []
+    sources: list[str] = []
+    for e in elements:
+        nc = (e.metadata or {}).get("name_conflict")
+        if not nc:
+            continue
+        for v in nc.get("variants", []):
+            if v not in variants:
+                variants.append(v)
+        for s in nc.get("sources", []):
+            if s not in sources:
+                sources.append(s)
+    if len(variants) >= 2:
+        return {"variants": variants, "sources": sources}
+    return None
+
+
+def _conflict_marker(conflict: dict) -> str:
+    return f"[Name variants recorded in this document: {' / '.join(conflict['variants'])}]"
+
+
 def _make_chunk(
     page_number: int,
     elements: list[ElementRecord],
@@ -128,6 +157,11 @@ def _make_chunk(
     chunk_type: str,
     section_heading: str | None = None,
 ) -> ChunkRecord:
+    # Carry any name conflict into the chunk text itself so it survives into
+    # Qdrant/Postgres and reaches the LLM with no schema change.
+    conflict = _collect_name_conflict(elements)
+    if conflict:
+        text = f"{text}\n{_conflict_marker(conflict)}"
     sources = {e.source for e in elements}
     source = next(iter(sources)) if len(sources) == 1 else "mixed"
     visual_count = sum(1 for e in elements if e.source == "visual_understanding")
@@ -141,6 +175,8 @@ def _make_chunk(
     }
     if section_heading:
         metadata["section_heading"] = section_heading
+    if conflict:
+        metadata["name_conflict"] = conflict
     return ChunkRecord(
         id=str(uuid.uuid4()),
         page_start=page_number,
@@ -292,6 +328,7 @@ def _combine_chunks(page: int, first: ChunkRecord, second: ChunkRecord) -> Chunk
         first.metadata.get("visual_count", 0) + second.metadata.get("visual_count", 0)
     )
     heading = first.metadata.get("section_heading") or second.metadata.get("section_heading")
+    name_conflict = first.metadata.get("name_conflict") or second.metadata.get("name_conflict")
     chunk_type = first.chunk_type if first.chunk_type == second.chunk_type else "section"
     metadata = {
         "source": source,
@@ -303,6 +340,8 @@ def _combine_chunks(page: int, first: ChunkRecord, second: ChunkRecord) -> Chunk
     }
     if heading:
         metadata["section_heading"] = heading
+    if name_conflict:
+        metadata["name_conflict"] = name_conflict
     return ChunkRecord(
         id=str(uuid.uuid4()),
         page_start=page,

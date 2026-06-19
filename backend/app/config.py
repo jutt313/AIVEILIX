@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # (no separate CLIP image_chunks collection).
     image_search_enabled: bool = False
     context_window_size: int = 1           # ±N chunk neighbors to expand each retrieved chunk
+    retrieval_dedup_enabled: bool = True   # collapse near-identical chunks/images at query time
+    retrieval_dedup_threshold: float = 0.93  # min similarity to drop a near-duplicate result
 
     @field_validator("qdrant_path", mode="before")
     @classmethod
@@ -101,6 +103,14 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""        # Mistral OCR
     voyage_api_key: str = ""         # Voyage embeddings + rerank
     # (visual understanding uses gemini_visual_model above)
+
+    # Pipeline v3 — ingestion cleanup (runs before summary/export/chunking)
+    ingest_dedup_enabled: bool = True            # collapse near-identical elements before export/chunk
+    ingest_dedup_threshold: float = 0.90         # min similarity to treat two elements as duplicates
+    name_reconcile_enabled: bool = True          # canonicalize obvious spelling slips + flag conflicts
+    name_canonicalize_min_occurrences: int = 3   # dominant spelling must appear >= this many times to auto-fix
+    name_canonicalize_ratio: float = 3.0         # dominant must outweigh a variant by this ratio to auto-fix
+    name_variant_min_ratio: float = 0.80         # min char-similarity for two spellings to be the same entity
 
     # Stripe
     stripe_secret_key: str = ""

@@ -74,6 +74,9 @@ from app.services.processing_v3.storage import get_storage_adapter
 from app.services.processing_v3.ocr import get_ocr_provider
 from app.services.processing_v3.visual import get_visual_understanding_provider
 from app.services.processing_v3.embedding import embed_texts
+from app.services.processing_v3.dedup import dedupe_elements
+from app.services.processing_v3.reconcile import reconcile_names
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +296,33 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
 
     elements = _assign_sort_order(text_elements + visual_elements)
 
+    # 7b. Ingestion cleanup — dedup + name reconciliation. Runs on the RAW merged
+    #     elements BEFORE summary/export/chunk so the stored layout JSON (which
+    #     list_visuals serves), the summary, and the chunks are all built from the
+    #     cleaned, reconciled set. The summary is never used as the source of
+    #     truth for names (it is generated from this cleaned input, not vice versa).
+    name_conflicts: list[dict] = []
+    if settings.ingest_dedup_enabled:
+        started = perf_counter()
+        before = len(elements)
+        elements, dedup_report = dedupe_elements(
+            elements, threshold=settings.ingest_dedup_threshold
+        )
+        elements = _assign_sort_order(elements)
+        await _trace(trace, "dedup_completed", "completed", "dedup",
+                     {"removed": before - len(elements), "collapsed": len(dedup_report),
+                      "duration_ms": _ms(started)})
+    if settings.name_reconcile_enabled:
+        started = perf_counter()
+        elements, name_conflicts = reconcile_names(
+            elements,
+            min_occurrences=settings.name_canonicalize_min_occurrences,
+            canonicalize_ratio=settings.name_canonicalize_ratio,
+            variant_min_ratio=settings.name_variant_min_ratio,
+        )
+        await _trace(trace, "reconcile_completed", "completed", "reconcile",
+                     {"conflicts": len(name_conflicts), "duration_ms": _ms(started)})
+
     # 8. Summary
     started = perf_counter()
     summary_text = await summarise(filename, elements)
@@ -309,7 +339,7 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
         "source_file_uri": row.r2_path,
         "page_count": len(rendered),
     }
-    export = build_export_json(doc_meta, pages_meta, elements)
+    export = build_export_json(doc_meta, pages_meta, elements, name_conflicts=name_conflicts)
     layout_key = build_layout_key(file_id)
     try:
         await asyncio.to_thread(upload_json, json.dumps(export, ensure_ascii=False), layout_key)

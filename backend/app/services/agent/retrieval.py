@@ -737,7 +737,10 @@ def _merge_image_results(
     if not image_results:
         return text_results
 
+    from app.services.processing_v3.text_sim import similarity
+
     seen: set[tuple[uuid.UUID, int]] = {(c.file_id, c.page) for c in text_results}
+    existing_texts: list[str] = [c.content or "" for c in text_results]
     added = 0
     for img in image_results:
         if img.score < 0.5:
@@ -745,10 +748,20 @@ def _merge_image_results(
         if added >= 2:
             break
         key = (img.file_id, img.page)
-        if key not in seen:
-            text_results.append(img)
-            seen.add(key)
-            added += 1
+        if key in seen:
+            continue
+        # Skip an image whose text duplicates a passage already selected (e.g. a
+        # magazine-quote screenshot repeating a quote that's already in a chunk).
+        img_text = img.content or ""
+        if settings.retrieval_dedup_enabled and img_text and any(
+            similarity(img_text, t) >= settings.retrieval_dedup_threshold
+            for t in existing_texts
+        ):
+            continue
+        text_results.append(img)
+        seen.add(key)
+        existing_texts.append(img_text)
+        added += 1
 
     return text_results
 

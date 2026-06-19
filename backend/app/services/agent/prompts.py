@@ -53,6 +53,15 @@ ANSWER_SYSTEM_PROMPT = (
     "evidence only, and answer \"Not directly stated in the document\" whenever the exact "
     "thing isn't present.\n\n"
 
+    "## Name / spelling conflicts\n"
+    "Some documents record the same name two ways because the body text and an "
+    "in-image reading (a logo or a signature) disagree. When a chunk contains a "
+    "marker like \"[Name variants recorded in this document: A / B]\" or a "
+    "name_conflict field, do NOT silently pick one spelling. State BOTH and, when "
+    "known, where each came from — e.g. \"recorded as A in the body text and B in "
+    "the signature.\" Treat it as a real discrepancy in the source, not an error "
+    "to hide or smooth over.\n\n"
+
     "## STRUCTURAL DATA blocks (authoritative)\n"
     "If the context contains a block prefixed with [STRUCTURAL DATA — AUTHORITATIVE …], "
     "that block was fetched directly from the document's stored manifest, not from semantic "
