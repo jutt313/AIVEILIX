@@ -4,10 +4,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { demoApi, DemoLimitError } from './demoApi';
 import { bucketClasses, LOGO_SRC } from './demoTheme';
-import { Spinner, Avatar, ThemeToggle } from './DemoShell';
+import { Spinner, ThemeToggle } from './DemoShell';
 import DemoChat from './DemoChat';
 import DemoTour from './DemoTour';
-import { FeedbackTalkModal, McpPanelModal, TeamInviteModal, UploadModal } from './DemoModals';
+import DemoTeamFacepile from './DemoTeamFacepile';
+import { FeedbackTalkModal, McpPanelModal, UploadModal } from './DemoModals';
 import { cn } from '../lib/utils';
 
 const IDLE_MS = 60_000;
@@ -55,7 +56,6 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
 
   const [feedback, setFeedback] = useState({ open: false, limit: null, auto: false });
   const [mcpOpen, setMcpOpen] = useState(false);
-  const [teamOpen, setTeamOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const lastActivity = useRef(Date.now());
@@ -66,7 +66,7 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
   const tourKey = `aiveilix-demo-tour-${me?.slug || 'x'}`;
   const [showTour, setShowTour] = useState(false);
 
-  const anyModalOpen = feedback.open || mcpOpen || teamOpen || uploadOpen;
+  const anyModalOpen = feedback.open || mcpOpen || uploadOpen;
 
   const persistLead = useCallback((m) => {
     try { sessionStorage.setItem('aiveilix-demo-lead', JSON.stringify(m?.lead || null)); } catch { /* ignore */ }
@@ -128,7 +128,7 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
 
   const ensureConversation = useCallback(async () => {
     if (activeConvId) return activeConvId;
-    const conv = await demoApi.createConversation('New chat');
+    const conv = await demoApi.createConversation('New thread');
     setConversations((c) => [conv, ...c]);
     setActiveConvId(conv.id);
     return conv.id;
@@ -136,7 +136,7 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
 
   const newChat = async () => {
     try {
-      const conv = await demoApi.createConversation('New chat');
+      const conv = await demoApi.createConversation('New thread');
       setConversations((c) => [conv, ...c]);
       setActiveConvId(conv.id);
     } catch (e) { if (e instanceof DemoLimitError) openLimit(e.limit); }
@@ -162,18 +162,24 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
   const bucketName = me?.company_name || 'Demo';
 
   return (
-    <main className={cn('min-h-[100dvh]', t.bg)}>
-      {/* ── top header ── */}
-      <header className={cn('sticky top-0 z-30 border-b backdrop-blur', t.line, isDark ? 'bg-[#020617]/80' : 'bg-white/70')}>
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2.5">
+    <main className={cn('flex h-[100dvh] flex-col overflow-hidden', t.bg)}>
+      {/* ── top header (with the feedback reminder folded in) ── */}
+      <header className={cn('shrink-0 border-b', t.line, isDark ? 'bg-[#020617]/80' : 'bg-white/70')}>
+        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-2.5 sm:px-6">
+          <div className="flex min-w-0 shrink-0 items-center gap-2.5">
             <img src={LOGO_SRC} alt="AIveilix" className="h-7 w-7 rounded-md object-contain" />
             <span className={cn('text-base font-semibold tracking-tight', t.titleCls)}>AIveilix</span>
             <span className={cn('ml-1 hidden truncate text-sm sm:inline', t.muted)}>· {bucketName}</span>
             <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-500">Demo</span>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* feedback reminder — inline, hidden on small screens to save space */}
+          <div className={cn('hidden min-w-0 flex-1 items-center justify-center gap-1.5 px-2 text-center text-[12px] lg:flex', isDark ? 'text-blue-200/90' : 'text-blue-700')}>
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v5M12 16h.01" /></svg>
+            <span className="truncate">Don’t forget to leave feedback — it helps us improve and understand you better.</span>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {snoozeRemaining > 0 && (
               <div className={cn('hidden items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold text-amber-500 sm:flex', t.line)}>
                 <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
@@ -182,32 +188,24 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
             )}
             <Counter label="Visit" value={lead.comeback_count} max={caps.comebacks} t={t} />
             <Counter label="Msgs" value={usage.messages} max={caps.messages} t={t} />
-            <button data-tour="team" onClick={() => setTeamOpen(true)} title="Invite teammates" className={cn('relative flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold transition', t.line, t.bodyCls, isDark ? 'hover:bg-white/5' : 'hover:bg-slate-100')}>
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-              <span className="hidden sm:inline">{team.length}/{caps.team_members ?? '—'}</span>
-            </button>
+            <DemoTeamFacepile theme={theme} members={team} capTeamMembers={caps.team_members} onChange={() => { loadTeam(); refreshMe(); }} onLimit={openLimit} />
             <button data-tour="mcp" onClick={() => setMcpOpen(true)} title="Use in ChatGPT / Claude" className={cn('hidden h-8 items-center rounded-full border px-3 text-xs font-semibold transition sm:flex', t.line, t.accent || '', isDark ? 'text-blue-400 hover:bg-blue-500/10' : 'text-blue-600 hover:bg-blue-50')}>MCP</button>
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             <button data-tour="feedback" onClick={() => setFeedback({ open: true, limit: null, auto: false })} className="rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-500">Feedback</button>
           </div>
         </div>
-        {/* nudge strip */}
-        <div className={cn('flex items-center justify-center gap-2 border-t px-4 py-1 text-center text-[12px]', t.line, isDark ? 'bg-blue-500/[0.06] text-blue-200/90' : 'bg-blue-50 text-blue-700')}>
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v5M12 16h.01" /></svg>
-          Don’t forget to leave feedback — it helps us improve and understand you better.
-        </div>
       </header>
 
-      {/* ── 3-column body ── */}
-      <div className="mx-auto flex max-w-[1600px] gap-4 px-4 py-5 sm:px-6">
+      {/* ── 3-column body — fills remaining height; only inner panels scroll ── */}
+      <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 gap-4 px-4 py-4 sm:px-6">
         {/* threads */}
-        <aside className={cn('hidden h-[calc(100dvh-7rem)] w-[19rem] shrink-0 flex-col rounded-[1.35rem] border lg:flex', t.shell)}>
+        <aside className={cn('hidden h-full w-[19rem] shrink-0 flex-col rounded-[1.35rem] border lg:flex', t.shell)}>
           <div className="px-4 pb-3 pt-4">
             <p className={cn('text-lg font-semibold', t.titleCls)}>{bucketName}</p>
             <p className={cn('mt-1 text-sm', t.muted)}>Conversation threads</p>
             <button data-tour="new-chat" type="button" onClick={newChat} className={cn('mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50', t.primary)}>
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
-              New chat
+              New thread
             </button>
           </div>
           <div className="flex-1 overflow-y-auto px-3 pb-4">
@@ -245,10 +243,12 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
           onBusyChange={setChatBusy}
           onAfterTurn={() => { refreshMe(); loadConversations(); }}
           onLimit={openLimit}
+          files={files}
+          onAttach={() => setUploadOpen(true)}
         />
 
         {/* files */}
-        <aside data-tour="files" className={cn('hidden h-[calc(100dvh-7rem)] w-[19rem] shrink-0 flex-col overflow-hidden rounded-[1.35rem] border lg:flex', t.rightAside)}>
+        <aside data-tour="files" className={cn('hidden h-full w-[19rem] shrink-0 flex-col overflow-hidden rounded-[1.35rem] border lg:flex', t.rightAside)}>
           <div className="flex items-center justify-between px-4 py-4">
             <div>
               <p className={cn('text-base font-semibold', t.titleCls)}>Files</p>
@@ -293,7 +293,6 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
         onSubmitted={refreshMe}
       />
       <McpPanelModal theme={theme} open={mcpOpen} onClose={() => setMcpOpen(false)} />
-      <TeamInviteModal theme={theme} open={teamOpen} onClose={() => setTeamOpen(false)} onInvited={(err) => { if (err instanceof DemoLimitError) openLimit(err.limit); else { loadTeam(); refreshMe(); } }} />
       <UploadModal theme={theme} open={uploadOpen} fileSizeMb={caps.file_size_mb || 50} onClose={() => setUploadOpen(false)} onUploaded={(err) => { if (err instanceof DemoLimitError) openLimit(err.limit); else { loadFiles(); refreshMe(); } }} />
 
       {showTour && (

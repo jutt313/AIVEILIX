@@ -78,18 +78,23 @@ export const demoApi = {
   listConversations: () => req('GET', '/conversations', null, { auth: true }),
   createConversation: (title) => req('POST', '/conversations', { title }, { auth: true }),
   getMessages: (convId) => req('GET', `/conversations/${convId}/messages`, null, { auth: true }),
-  sendMessage: (convId, content) =>
-    req('POST', `/conversations/${convId}/messages`, { content }, { auth: true }),
+  sendMessage: (convId, content, webSearch) =>
+    req('POST', `/conversations/${convId}/messages`, { content, web_search: webSearch ?? null }, { auth: true }),
+
+  // ── per-thread file filter (scope) ──
+  getScope: (convId) => req('GET', `/conversations/${convId}/scope`, null, { auth: true }),
+  setScope: (convId, fileIds, scoped) =>
+    req('PUT', `/conversations/${convId}/scope`, { file_ids: fileIds, scoped }, { auth: true }),
 
   // ── streaming chat (SSE) ──
-  sendMessageStream: async (convId, content, { onStep, onToken, onPlan } = {}) => {
+  sendMessageStream: async (convId, content, { onStep, onToken, onPlan, webSearch } = {}) => {
     const headers = { 'Content-Type': 'application/json' };
     const t = getDemoToken();
     if (t) headers['Authorization'] = `Bearer ${t}`;
     const res = await fetch(`${BASE}/v1/demo/conversations/${convId}/messages/stream`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, web_search: webSearch ?? null }),
     });
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));

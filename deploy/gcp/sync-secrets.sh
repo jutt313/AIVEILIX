@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/config.env}"
 ROOT_ENV="$REPO_ROOT/.env"
 RUNTIME_ENV="$REPO_ROOT/.gcloud/prod-runtime.env"
+TMP_ROOT="${TMPDIR:-$REPO_ROOT/.tmp}"
 
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "Missing $CONFIG_FILE. Copy deploy/gcp/config.env.example to deploy/gcp/config.env first." >&2
@@ -50,6 +51,7 @@ SECRET_KEYS=(
 )
 
 mkdir -p "$REPO_ROOT/.gcloud"
+mkdir -p "$TMP_ROOT"
 SECRETS_ARG_FILE="$REPO_ROOT/.gcloud/cloudrun-set-secrets.txt"
 : > "$SECRETS_ARG_FILE"
 
@@ -64,7 +66,7 @@ for key in "${SECRET_KEYS[@]}"; do
       --replication-policy=automatic \
       --labels="$LABELS" >/dev/null
   fi
-  tmp_secret_file="$(mktemp)"
+  tmp_secret_file="$(mktemp "$TMP_ROOT/aiveilix-secret.XXXXXX")"
   chmod 600 "$tmp_secret_file"
   printf '%s' "$value" > "$tmp_secret_file"
   if ! gcloud secrets versions add "$key" --data-file="$tmp_secret_file" >/dev/null; then

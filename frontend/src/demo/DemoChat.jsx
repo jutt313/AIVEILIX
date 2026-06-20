@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { demoApi, DemoLimitError } from './demoApi';
 import { bucketClasses } from './demoTheme';
-import { Spinner } from './DemoShell';
+import { Spinner, DemoModal, DemoButton } from './DemoShell';
 import { cn } from '../lib/utils';
 
 // Copied from App.jsx buildMarkdownComponents so assistant answers render identically.
@@ -85,7 +85,17 @@ const STARTERS = [
   'What should I know first?',
 ];
 
-export default function DemoChat({ theme, activeConversationId, onEnsureConversation, onBusyChange, onAfterTurn, onLimit, hasThread, onComposerFocus }) {
+export default function DemoChat({
+  theme,
+  activeConversationId,
+  onEnsureConversation,
+  onBusyChange,
+  onAfterTurn,
+  onLimit,
+  files = [],
+  onAttach,
+  onComposerFocus,
+}) {
   const t = bucketClasses(theme === 'dark');
   const md = buildMarkdownComponents(t.isDark);
   const [messages, setMessages] = useState([]);
@@ -94,8 +104,55 @@ export default function DemoChat({ theme, activeConversationId, onEnsureConversa
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [webSearch, setWebSearch] = useState(false);
+  const [scope, setScopeState] = useState(null);   // null = all files; array = filtered file ids
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
   const scrollRef = useRef(null);
   const composerRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  // Load the active thread's file filter so the funnel reflects its state.
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeConversationId) { setScopeState(null); return; }
+    demoApi.getScope(activeConversationId)
+      .then((d) => { if (!cancelled) setScopeState(d.scoped ? (d.file_ids || []) : null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeConversationId]);
+
+  // Voice input via the Web Speech API (no backend needed).
+  const toggleVoice = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Voice input isn’t supported in this browser. Try Chrome.'); return; }
+    if (recording) { recognitionRef.current?.stop(); return; }
+    const rec = new SR();
+    rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
+    const base = input;
+    rec.onresult = (e) => {
+      let txt = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) txt += e.results[i][0].transcript;
+      setInput((base ? base + ' ' : '') + txt);
+    };
+    rec.onend = () => setRecording(false);
+    rec.onerror = () => setRecording(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setRecording(true);
+  };
+  useEffect(() => () => { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }, []);
+
+  const applyScope = async (fileIds, scoped) => {
+    let convId = activeConversationId;
+    try { if (!convId) convId = await onEnsureConversation(); }
+    catch (e) { setScopeOpen(false); return; }
+    try {
+      const res = await demoApi.setScope(convId, fileIds, scoped);
+      setScopeState(res.scoped ? (res.file_ids || []) : null);
+    } catch { /* ignore */ }
+    setScopeOpen(false);
+  };
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; });
@@ -140,6 +197,7 @@ export default function DemoChat({ theme, activeConversationId, onEnsureConversa
     setStreaming('');
     try {
       const result = await demoApi.sendMessageStream(convId, content, {
+        webSearch,
         onToken: (tok) => { setThinking(false); setStreaming((s) => (s || '') + tok); },
       });
       setMessages((m) => [...m.filter((x) => x.id !== tempUser.id), result.user_message, result.assistant_message]);
@@ -158,7 +216,7 @@ export default function DemoChat({ theme, activeConversationId, onEnsureConversa
   const empty = messages.length === 0 && !streaming && !thinking;
 
   return (
-    <section className="flex h-[calc(100dvh-2.5rem)] min-w-0 flex-1 flex-col">
+    <section className="flex h-full min-w-0 flex-1 flex-col">
       <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 pb-8 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/10 hover:[&::-webkit-scrollbar-thumb]:bg-black/20">
         <div className="mx-auto flex min-h-full max-w-3xl flex-col">
           {loadingHistory ? (
@@ -223,21 +281,112 @@ export default function DemoChat({ theme, activeConversationId, onEnsureConversa
             placeholder="Message…"
             className={`w-full max-h-[200px] resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-6 outline-none ${t.titleCls}`}
           />
-          <div className="flex items-center justify-end px-3 pb-2 pt-1">
-            <button
-              type="button"
-              data-tour="send"
-              onClick={() => send()}
-              disabled={!input.trim() || sending}
-              className={`flex h-8 w-8 items-center justify-center rounded-full transition disabled:opacity-40 ${t.primary}`}
-            >
-              {sending ? <Spinner className="h-4 w-4" /> : (
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+          {/* bottom toolbar — matches the bucket composer */}
+          <div className="flex items-center justify-between px-3 pb-2 pt-1">
+            <div className="flex items-center gap-1">
+              {onAttach && (
+                <button type="button" onClick={onAttach} title="Add a document" className={cn('flex h-7 w-7 items-center justify-center rounded-full transition', t.muted, 'hover:bg-black/8')}>
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+                </button>
               )}
-            </button>
+              <button
+                type="button"
+                onClick={() => setWebSearch((v) => !v)}
+                title={webSearch ? 'Web search ON — click to disable' : 'Web search OFF — click to enable'}
+                className={cn('flex h-7 items-center gap-1 rounded-full px-2 text-xs font-medium transition',
+                  webSearch ? (t.isDark ? 'bg-blue-500/20 text-blue-300 ring-1 ring-blue-400/40' : 'bg-blue-100 text-blue-700 ring-1 ring-blue-400/50') : cn(t.muted, 'hover:bg-black/8'))}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                {webSearch && <span>Web</span>}
+              </button>
+              <button
+                type="button"
+                onClick={() => setScopeOpen(true)}
+                disabled={files.length === 0}
+                title={scope ? `Filtered: ${scope.length} file(s)` : 'Filter files for this thread'}
+                className={cn('flex h-7 items-center gap-1 rounded-full px-2 text-xs font-medium transition disabled:opacity-40',
+                  scope ? (t.isDark ? 'bg-blue-500/20 text-blue-300 ring-1 ring-blue-400/40' : 'bg-blue-100 text-blue-700 ring-1 ring-blue-400/50') : cn(t.muted, 'hover:bg-black/8'))}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+                {scope && <span>{scope.length}</span>}
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggleVoice}
+                title={recording ? 'Stop recording' : 'Voice input'}
+                className={cn('flex h-8 w-8 items-center justify-center rounded-full transition',
+                  recording ? 'bg-red-500 text-white animate-pulse' : cn(t.muted, 'hover:bg-black/8'))}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="8" y1="22" x2="16" y2="22" /></svg>
+              </button>
+              <button
+                type="button"
+                data-tour="send"
+                onClick={() => send()}
+                disabled={!input.trim() || sending}
+                className={cn('flex h-8 w-8 items-center justify-center rounded-full transition disabled:opacity-40', t.primary)}
+              >
+                {sending ? <Spinner className="h-4 w-4" /> : (
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      <ScopeModal theme={theme} open={scopeOpen} onClose={() => setScopeOpen(false)} files={files} current={scope} onApply={applyScope} />
     </section>
+  );
+}
+
+function ScopeModal({ open, onClose, files, current, onApply, theme }) {
+  const t = bucketClasses(theme === 'dark');
+  const [selected, setSelected] = useState([]);
+  const [allFiles, setAllFiles] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      if (current && current.length >= 0 && current !== null) { setAllFiles(false); setSelected(current); }
+      else { setAllFiles(true); setSelected([]); }
+    }
+  }, [open, current]);
+
+  const toggle = (id) => setSelected((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
+
+  return (
+    <DemoModal open={open} onClose={onClose} theme={theme} widthClass="max-w-md">
+      <div className="p-6">
+        <h2 className={cn('text-lg font-bold', t.titleCls)}>Filter files for this chat</h2>
+        <p className={cn('mt-1 text-sm', t.muted)}>Choose which documents this thread should answer from.</p>
+        <div className="mt-4 space-y-1.5">
+          <button type="button" onClick={() => setAllFiles(true)} className={cn('flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition', allFiles ? t.threadActive : cn(t.line, t.threadIdle))}>
+            <span className={cn('grid h-4 w-4 place-items-center rounded-full border', allFiles ? 'border-blue-500 bg-blue-500' : t.line)}>{allFiles && <span className="h-1.5 w-1.5 rounded-full bg-white" />}</span>
+            <span className={t.titleCls}>All documents</span>
+          </button>
+          <button type="button" onClick={() => setAllFiles(false)} className={cn('flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition', !allFiles ? t.threadActive : cn(t.line, t.threadIdle))}>
+            <span className={cn('grid h-4 w-4 place-items-center rounded-full border', !allFiles ? 'border-blue-500 bg-blue-500' : t.line)}>{!allFiles && <span className="h-1.5 w-1.5 rounded-full bg-white" />}</span>
+            <span className={t.titleCls}>Only selected documents</span>
+          </button>
+        </div>
+        {!allFiles && (
+          <div className={cn('mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border p-2', t.line)}>
+            {files.length === 0 && <p className={cn('px-2 py-3 text-sm', t.muted)}>No documents to filter.</p>}
+            {files.map((f) => (
+              <label key={f.id} className={cn('flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm', t.bodyCls, t.isDark ? 'hover:bg-white/5' : 'hover:bg-slate-50')}>
+                <input type="checkbox" checked={selected.includes(String(f.id))} onChange={() => toggle(String(f.id))} className="accent-blue-600" />
+                <span className="min-w-0 flex-1 truncate">{f.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className={cn('text-sm', t.muted, 'hover:opacity-80')}>Cancel</button>
+          <DemoButton theme={theme} onClick={() => onApply(allFiles ? [] : selected, !allFiles)}>Apply</DemoButton>
+        </div>
+      </div>
+    </DemoModal>
   );
 }

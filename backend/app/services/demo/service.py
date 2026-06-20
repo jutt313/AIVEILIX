@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -133,6 +133,13 @@ async def get_invite_info(db: AsyncSession, token: str) -> dict:
         lead.invite_token_expires_at
         and _aware(lead.invite_token_expires_at) <= datetime.now(timezone.utc)
     )
+    # Resolve who invited them so the page can say "Alex invited you …" instead
+    # of a generic message.
+    inviter_name: str | None = None
+    if lead.invited_by_lead_id is not None:
+        inviter_name = await db.scalar(
+            select(DemoLead.name).where(DemoLead.id == lead.invited_by_lead_id)
+        )
     return {
         "valid": not expired,
         "expired": expired,
@@ -140,6 +147,7 @@ async def get_invite_info(db: AsyncSession, token: str) -> dict:
         "name": lead.name,
         "email": lead.email,
         "color": lead.color,
+        "inviter_name": inviter_name,
     }
 
 
@@ -241,12 +249,68 @@ async def list_messages(db: AsyncSession, session: DemoSession, conversation_id:
     return list(rows.scalars().all())
 
 
+# ── per-thread file scope (reuses conversation_file_scope; read by the harness) ──
+
+async def get_thread_scope(db: AsyncSession, session: DemoSession, conversation_id: str) -> dict:
+    conversation = await get_demo_conversation(db, session, conversation_id)
+    active = await db.scalar(
+        text("SELECT file_scope_active FROM conversations WHERE id = :cid"),
+        {"cid": conversation.id},
+    )
+    rows = await db.execute(
+        text("SELECT file_id FROM conversation_file_scope WHERE conversation_id = :cid"),
+        {"cid": conversation.id},
+    )
+    return {"file_ids": [str(r[0]) for r in rows.fetchall()], "scoped": bool(active)}
+
+
+async def set_thread_scope(
+    db: AsyncSession,
+    session: DemoSession,
+    conversation_id: str,
+    file_ids: list[str],
+    scoped: bool | None,
+) -> dict:
+    conversation = await get_demo_conversation(db, session, conversation_id)
+    # scoped=None -> infer from file_ids (non-empty means filtered).
+    active = scoped if scoped is not None else (len(file_ids) > 0)
+    await db.execute(
+        text("DELETE FROM conversation_file_scope WHERE conversation_id = :cid"),
+        {"cid": conversation.id},
+    )
+    saved: list[str] = []
+    if active:
+        for fid in file_ids:
+            try:
+                fid_uuid = uuid.UUID(fid)
+            except ValueError:
+                continue
+            res = await db.execute(
+                text(
+                    "INSERT INTO conversation_file_scope (conversation_id, file_id) "
+                    "SELECT :cid, :fid WHERE EXISTS ("
+                    "  SELECT 1 FROM files WHERE id = :fid AND bucket_id = :bid"
+                    ") ON CONFLICT DO NOTHING RETURNING file_id"
+                ),
+                {"cid": conversation.id, "fid": fid_uuid, "bid": session.bucket_id},
+            )
+            if res.fetchone() is not None:
+                saved.append(fid)
+    await db.execute(
+        text("UPDATE conversations SET file_scope_active = :a WHERE id = :cid"),
+        {"a": active, "cid": conversation.id},
+    )
+    await db.commit()
+    return {"file_ids": saved, "scoped": active}
+
+
 async def run_demo_turn(
     db: AsyncSession,
     session: DemoSession,
     *,
     conversation_id: str,
     content: str,
+    web_search: bool | None = None,
     on_step=None,
 ):
     """Enforce the message cap, run the existing harness turn as the bucket owner,
@@ -261,6 +325,7 @@ async def run_demo_turn(
         bucket_id=str(session.bucket_id),
         conversation_id=str(conversation.id),
         content=content,
+        web_search_override=web_search,
         on_step=on_step,
     )
     await log_event(

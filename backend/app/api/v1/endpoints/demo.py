@@ -118,6 +118,12 @@ class CreateThreadRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=8000)
+    web_search: bool | None = None
+
+
+class ScopeRequest(BaseModel):
+    file_ids: list[str] = Field(default_factory=list)
+    scoped: bool | None = None
 
 
 class TeamInviteRequest(BaseModel):
@@ -272,7 +278,7 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ):
     result = await demo_service.run_demo_turn(
-        db, session, conversation_id=conversation_id, content=body.content
+        db, session, conversation_id=conversation_id, content=body.content, web_search=body.web_search
     )
     return {
         "user_message": _serialize_message(result.user_message),
@@ -280,6 +286,25 @@ async def send_message(
         "sources": result.sources,
         "used_web_search": result.used_web_search,
     }
+
+
+@router.get("/conversations/{conversation_id}/scope")
+async def get_scope(
+    conversation_id: str,
+    session: DemoSession = Depends(get_demo_session),
+    db: AsyncSession = Depends(get_db),
+):
+    return await demo_service.get_thread_scope(db, session, conversation_id)
+
+
+@router.put("/conversations/{conversation_id}/scope")
+async def set_scope(
+    conversation_id: str,
+    body: ScopeRequest,
+    session: DemoSession = Depends(get_demo_session),
+    db: AsyncSession = Depends(get_db),
+):
+    return await demo_service.set_thread_scope(db, session, conversation_id, body.file_ids, body.scoped)
 
 
 @router.post("/conversations/{conversation_id}/messages/stream")
@@ -305,7 +330,8 @@ async def send_message_stream(
     async def run():
         try:
             result = await demo_service.run_demo_turn(
-                db, session, conversation_id=conversation_id, content=body.content, on_step=on_step
+                db, session, conversation_id=conversation_id, content=body.content,
+                web_search=body.web_search, on_step=on_step,
             )
             await queue.put({
                 "kind": "done",
@@ -424,7 +450,14 @@ async def team_invite(
 
 @router.get("/team")
 async def team(session: DemoSession = Depends(get_demo_session), db: AsyncSession = Depends(get_db)):
+    from datetime import datetime, timedelta, timezone
     rows = await demo_service.list_team(db, session)
+    now = datetime.now(timezone.utc)
+    online_cutoff = now - timedelta(minutes=15)
+
+    def _aware(dt):
+        return dt if (dt and dt.tzinfo) else (dt.replace(tzinfo=timezone.utc) if dt else None)
+
     return {
         "members": [
             {
@@ -432,7 +465,12 @@ async def team(session: DemoSession = Depends(get_demo_session), db: AsyncSessio
                 "name": m.name,
                 "email": m.email,
                 "color": m.color,
+                "role": m.role,
                 "joined": m.comeback_count > 0,
+                "comeback_count": m.comeback_count,
+                "is_online": bool(m.last_seen_at and _aware(m.last_seen_at) >= online_cutoff),
+                "first_seen_at": m.first_seen_at.isoformat() if m.first_seen_at else None,
+                "last_seen_at": m.last_seen_at.isoformat() if m.last_seen_at else None,
             }
             for m in rows
         ]

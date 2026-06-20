@@ -55,18 +55,36 @@ export default function DemoInvitePage() {
       </DemoBackdrop>
     );
   }
+  const firstName = (info?.name || '').split(' ')[0] || 'there';
+  const inviter = (info?.inviter_name || '').trim();
+  const company = info?.company_name || '';
+
   return (
     <DemoBackdrop theme={theme}>
       <div className="absolute right-4 top-4"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
-      <div className="grid min-h-[100dvh] place-items-center px-4">
+      <div className="grid min-h-[100dvh] place-items-center px-4 py-10">
         <div className="w-full max-w-md">
           <div className="mb-6 flex justify-center"><DemoLogo theme={theme} size="lg" /></div>
-          <div className={cn('rounded-[2rem] border p-8 text-center', p.card.split(' hover:')[0])}>
+          <div className={cn('rounded-[2rem] border p-7 text-center', p.card.split(' hover:')[0])}>
             <div className="mb-4 flex justify-center"><Avatar name={info?.name} color={info?.color} size="lg" /></div>
-            <h1 className={cn('text-xl font-bold', p.title)}>Hi {info?.name?.split(' ')[0] || 'there'} 👋</h1>
-            <p className={cn('mt-2 text-sm', p.text)}>You’ve been invited to explore an AIveilix demo built on <span className={cn('font-semibold', p.title)}>{info?.company_name || 'their'}</span> documents. Jump right in — no code needed.</p>
+            <h1 className={cn('text-xl font-bold', p.title)}>Hi {firstName} 👋</h1>
+            <p className={cn('mt-2 text-sm leading-6', p.text)}>
+              {inviter
+                ? <><span className={cn('font-semibold', p.title)}>{inviter}</span> invited you to a private <span className={cn('font-semibold', p.title)}>AIveilix</span> demo</>
+                : <>You’ve been invited to a private <span className={cn('font-semibold', p.title)}>AIveilix</span> demo</>}
+              {company && <> built on <span className={cn('font-semibold', p.title)}>{company}</span>’s own documents.</>}
+            </p>
+            <div className={cn('mt-4 rounded-2xl border p-4 text-left text-[13px] leading-6', theme === 'dark' ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-slate-50')}>
+              <p className={cn('font-semibold', p.title)}>What is AIveilix?</p>
+              <p className={cn('mt-1', p.text)}>
+                AIveilix is a document intelligence tool. Upload your files and get cited answers from an AI built on
+                your own content — no more digging through PDFs. In this demo, the AI has already been built on
+                {company ? ` ${company}'s` : ' the inviter’s'} public documents so you can try it instantly.
+              </p>
+            </div>
             <div className="mt-4"><ErrorNote theme={theme}>{error}</ErrorNote></div>
             <DemoButton theme={theme} className="mx-auto mt-5 w-full" onClick={accept} loading={loading}>Open the demo →</DemoButton>
+            <p className={cn('mt-3 text-[11px]', p.muted)}>No account or code needed — your spot is reserved by this private link.</p>
           </div>
         </div>
       </div>
