@@ -1,128 +1,104 @@
-// Demo chat panel — message list, streaming reply, citations, composer.
+// Demo chat — same look as the BucketPage chat: blue user bubbles, markdown
+// assistant answers (same component map), source chips, and the same composer.
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { motion, AnimatePresence } from 'framer-motion';
 import { demoApi, DemoLimitError } from './demoApi';
-import { Spinner, Avatar, BRAND } from './DemoShell';
+import { bucketClasses } from './demoTheme';
+import { Spinner } from './DemoShell';
 import { cn } from '../lib/utils';
 
-const MD_COMPONENTS = {
-  p: ({ children }) => <p className="mb-3 leading-relaxed last:mb-0">{children}</p>,
-  ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  h1: ({ children }) => <h1 className="mb-2 mt-1 text-lg font-bold">{children}</h1>,
-  h2: ({ children }) => <h2 className="mb-2 mt-1 text-base font-bold">{children}</h2>,
-  h3: ({ children }) => <h3 className="mb-1.5 mt-1 text-sm font-bold">{children}</h3>,
-  strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-indigo-400 underline decoration-indigo-400/40 hover:text-indigo-300">{children}</a>
-  ),
-  code: ({ inline, children }) =>
-    inline ? (
-      <code className="rounded bg-white/10 px-1.5 py-0.5 text-[0.85em] text-indigo-200">{children}</code>
-    ) : (
-      <code className="block overflow-x-auto rounded-xl bg-black/40 p-3 text-[0.85em] text-slate-200 ring-1 ring-white/10">{children}</code>
-    ),
-  blockquote: ({ children }) => (
-    <blockquote className="mb-3 border-l-2 border-indigo-500/50 pl-3 text-slate-300">{children}</blockquote>
-  ),
-  table: ({ children }) => (
-    <div className="mb-3 overflow-x-auto"><table className="w-full border-collapse text-sm">{children}</table></div>
-  ),
-  th: ({ children }) => <th className="border border-white/10 bg-white/5 px-2.5 py-1.5 text-left font-semibold">{children}</th>,
-  td: ({ children }) => <td className="border border-white/10 px-2.5 py-1.5">{children}</td>,
+// Copied from App.jsx buildMarkdownComponents so assistant answers render identically.
+const buildMarkdownComponents = (isDark) => {
+  const inlineCode = isDark ? 'bg-white/10 text-blue-200' : 'bg-slate-100 text-blue-700';
+  const blockCode = isDark ? 'bg-black/30 text-slate-100' : 'bg-slate-100 text-slate-800';
+  const linkCls = isDark ? 'text-blue-400 decoration-blue-400/40 hover:decoration-blue-400' : 'text-blue-600 decoration-blue-600/40 hover:decoration-blue-600';
+  const tableBorder = isDark ? 'border-white/10' : 'border-slate-200';
+  const theadBg = isDark ? 'bg-white/[0.04]' : 'bg-slate-50';
+  const thText = isDark ? 'text-white/90' : 'text-slate-700';
+  const tdText = isDark ? 'text-white/85' : 'text-slate-700';
+  const bqBorder = isDark ? 'border-white/25' : 'border-slate-300';
+  return {
+    h1: (p) => <h1 className="mt-2 text-lg font-semibold" {...p} />,
+    h2: (p) => <h2 className="mt-2 text-lg font-semibold" {...p} />,
+    h3: (p) => <h3 className="mt-2 text-base font-semibold" {...p} />,
+    h4: (p) => <h4 className="mt-2 text-base font-semibold" {...p} />,
+    p: (p) => <p className="whitespace-pre-wrap break-words leading-7" {...p} />,
+    ul: (p) => <ul className="my-1 list-disc space-y-1 pl-5" {...p} />,
+    ol: (p) => <ol className="my-1 list-decimal space-y-1 pl-5" {...p} />,
+    li: (p) => <li className="leading-7" {...p} />,
+    hr: (p) => <hr className={`my-3 ${tableBorder}`} {...p} />,
+    a: (p) => <a className={`underline underline-offset-2 ${linkCls}`} target="_blank" rel="noopener noreferrer" {...p} />,
+    strong: (p) => <strong className="font-semibold" {...p} />,
+    em: (p) => <em className="italic" {...p} />,
+    blockquote: (p) => <blockquote className={`my-2 border-l-2 pl-3 italic opacity-90 ${bqBorder}`} {...p} />,
+    code: ({ inline, className, children, ...rest }) =>
+      inline === false
+        ? <code className={`block whitespace-pre overflow-x-auto rounded-md px-3 py-2 font-mono text-[13px] ${blockCode} ${className || ''}`} {...rest}>{children}</code>
+        : <code className={`rounded px-1 py-0.5 font-mono text-[0.9em] ${inlineCode}`} {...rest}>{children}</code>,
+    table: (p) => <div className={`my-2 overflow-x-auto rounded-lg border ${tableBorder}`}><table className="w-full border-collapse text-sm" {...p} /></div>,
+    thead: (p) => <thead className={theadBg} {...p} />,
+    tr: (p) => <tr className={`border-b last:border-b-0 ${tableBorder}`} {...p} />,
+    th: ({ style, ...p }) => <th style={style} className={`px-3 py-2 text-left font-semibold border-r last:border-r-0 ${thText} ${tableBorder}`} {...p} />,
+    td: ({ style, ...p }) => <td style={style} className={`px-3 py-2 align-top border-r last:border-r-0 ${tdText} ${tableBorder}`} {...p} />,
+  };
 };
 
-function Sources({ sources }) {
+function sourceLabel(s) {
+  if (!s) return null;
+  if (s.file_name || s.fileName) {
+    const name = s.file_name || s.fileName;
+    const page = s.page || s.page_number;
+    return `${name}${page ? ` — Page ${page}` : ''}`;
+  }
+  return s.label || s.title || s.source || (s.file_id ? `Document ${String(s.file_id).slice(0, 6)}` : null);
+}
+
+function Sources({ sources, t }) {
   if (!sources || sources.length === 0) return null;
-  // De-dupe by file name; show up to 6 citation chips.
   const seen = new Set();
-  const chips = [];
+  const items = [];
   for (const s of sources) {
-    const label = s.file_name || s.name || s.title || s.source || (s.file_id ? `Doc ${String(s.file_id).slice(0, 6)}` : null);
+    const label = sourceLabel(s);
     if (!label || seen.has(label)) continue;
     seen.add(label);
-    const page = s.page || s.page_number || (s.pages && s.pages[0]);
-    chips.push({ label, page });
-    if (chips.length >= 6) break;
+    items.push(label);
+    if (items.length >= 8) break;
   }
-  if (chips.length === 0) return null;
+  if (items.length === 0) return null;
   return (
-    <div className="mt-2.5 flex flex-wrap gap-1.5">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Sources</span>
-      {chips.map((c, i) => (
-        <span key={i} className="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-[11px] font-medium text-indigo-300 ring-1 ring-indigo-500/20">
-          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 3v4a1 1 0 001 1h4M5 3h9l5 5v11a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" /></svg>
-          {c.label}{c.page ? ` · p.${c.page}` : ''}
-        </span>
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((label, i) => (
+        <div key={i} className={`flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${t.line} ${t.muted}`}>
+          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+          <span className="min-w-0 max-w-[16rem] truncate">{label}</span>
+        </div>
       ))}
     </div>
   );
 }
 
-function Bubble({ msg, lead }) {
-  const isUser = msg.role === 'user';
-  return (
-    <div className={cn('flex gap-3', isUser ? 'flex-row-reverse' : 'flex-row')}>
-      {isUser ? (
-        <Avatar name={lead?.name} color={lead?.color || BRAND} size="md" />
-      ) : (
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 ring-2 ring-[#020617]">
-          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor"><path d="M12 2l2.4 6.3L21 11l-6.6 2.7L12 20l-2.4-6.3L3 11l6.6-2.7L12 2z" /></svg>
-        </div>
-      )}
-      <div className={cn('min-w-0 max-w-[80%]', isUser ? 'text-right' : 'text-left')}>
-        <div
-          className={cn(
-            'inline-block rounded-2xl px-4 py-2.5 text-left text-[14px]',
-            isUser ? 'bg-indigo-600 text-white' : 'bg-white/[0.06] text-slate-100 ring-1 ring-white/10',
-          )}
-        >
-          {isUser ? (
-            <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-          ) : (
-            <div className="prose-demo"><ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{msg.content || ''}</ReactMarkdown></div>
-          )}
-        </div>
-        {!isUser && <Sources sources={msg.sources} />}
-      </div>
-    </div>
-  );
-}
-
 const STARTERS = [
-  'What is this company about?',
+  'What is this about?',
   'Summarize the key documents',
-  'What are the main products or services?',
-  'What should I know before a meeting?',
+  'What are the main points?',
+  'What should I know first?',
 ];
 
-export default function DemoChat({
-  activeConversationId,
-  onEnsureConversation,
-  onBusyChange,
-  onAfterTurn,
-  onLimit,
-  companyName,
-  readyFiles,
-  composerId,
-}) {
+export default function DemoChat({ theme, activeConversationId, onEnsureConversation, onBusyChange, onAfterTurn, onLimit, hasThread, onComposerFocus }) {
+  const t = bucketClasses(theme === 'dark');
+  const md = buildMarkdownComponents(t.isDark);
   const [messages, setMessages] = useState([]);
-  const [streaming, setStreaming] = useState(null); // live assistant text
+  const [streaming, setStreaming] = useState(null);
   const [thinking, setThinking] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const scrollRef = useRef(null);
-  const lead = (() => { try { return JSON.parse(sessionStorage.getItem('aiveilix-demo-lead') || 'null'); } catch { return null; } })();
+  const composerRef = useRef(null);
 
   const scrollToBottom = useCallback(() => {
-    requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    });
+    requestAnimationFrame(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; });
   }, []);
 
   useEffect(() => {
@@ -133,8 +109,7 @@ export default function DemoChat({
       try {
         const data = await demoApi.getMessages(activeConversationId);
         if (!cancelled) { setMessages(data.messages || []); scrollToBottom(); }
-      } catch { /* ignore */ }
-      finally { if (!cancelled) setLoadingHistory(false); }
+      } catch { /* ignore */ } finally { if (!cancelled) setLoadingHistory(false); }
     }
     load();
     return () => { cancelled = true; };
@@ -149,8 +124,6 @@ export default function DemoChat({
     setSending(true);
     setThinking(true);
     onBusyChange?.(true);
-
-    // optimistic user bubble
     const tempUser = { id: `tmp-${Date.now()}`, role: 'user', content };
     setMessages((m) => [...m, tempUser]);
 
@@ -167,12 +140,9 @@ export default function DemoChat({
     setStreaming('');
     try {
       const result = await demoApi.sendMessageStream(convId, content, {
-        onToken: (t) => { setThinking(false); setStreaming((s) => (s || '') + t); },
+        onToken: (tok) => { setThinking(false); setStreaming((s) => (s || '') + tok); },
       });
-      setMessages((m) => {
-        const withoutTemp = m.filter((x) => x.id !== tempUser.id);
-        return [...withoutTemp, result.user_message, result.assistant_message];
-      });
+      setMessages((m) => [...m.filter((x) => x.id !== tempUser.id), result.user_message, result.assistant_message]);
       setStreaming(null);
       onAfterTurn?.();
     } catch (e) {
@@ -188,90 +158,86 @@ export default function DemoChat({
   const empty = messages.length === 0 && !streaming && !thinking;
 
   return (
-    <div className="flex h-full flex-col">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 sm:px-8">
-        <div className="mx-auto max-w-3xl space-y-5">
-          {empty && !loadingHistory && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pt-6 text-center">
-              <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 shadow-lg shadow-indigo-900/40">
-                <svg viewBox="0 0 24 24" className="h-7 w-7 text-white" fill="currentColor"><path d="M12 2l2.4 6.3L21 11l-6.6 2.7L12 20l-2.4-6.3L3 11l6.6-2.7L12 2z" /></svg>
-              </div>
-              <h2 className="text-lg font-bold">Ask anything about {companyName || 'these documents'}</h2>
-              <p className="mt-1.5 text-sm text-slate-400">
-                This AI is built on {readyFiles ? `${readyFiles} ` : ''}real document{readyFiles === 1 ? '' : 's'}. Every answer is grounded and cited.
-              </p>
-              <div data-tour="starters" className="mx-auto mt-6 grid max-w-xl gap-2 sm:grid-cols-2">
+    <section className="flex h-[calc(100dvh-2.5rem)] min-w-0 flex-1 flex-col">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 pb-8 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/10 hover:[&::-webkit-scrollbar-thumb]:bg-black/20">
+        <div className="mx-auto flex min-h-full max-w-3xl flex-col">
+          {loadingHistory ? (
+            <div className="space-y-4">{[1, 2, 3].map((i) => <div key={i} className={`h-12 animate-pulse rounded-[1.2rem] ${i % 2 === 0 ? 'ml-auto w-2/3' : 'w-3/4'} ${t.subtle}`} />)}</div>
+          ) : empty ? (
+            <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
+              <p className={`text-[15px] ${t.muted}`}>Ask anything about these documents — answers are grounded and cited.</p>
+              <div className="mt-6 grid w-full max-w-xl gap-2 sm:grid-cols-2">
                 {STARTERS.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => send(s)}
-                    className="rounded-xl bg-white/[0.04] px-4 py-3 text-left text-sm text-slate-200 ring-1 ring-white/10 transition hover:bg-white/[0.08] hover:ring-indigo-500/40"
-                  >
-                    {s}
-                  </button>
+                  <button key={s} onClick={() => send(s)} className={`rounded-[0.9rem] border px-4 py-3 text-left text-sm transition ${t.line} ${t.threadIdle} ${t.bodyCls}`}>{s}</button>
                 ))}
               </div>
-            </motion.div>
-          )}
-
-          {loadingHistory && <div className="flex justify-center py-10"><Spinner className="h-6 w-6 text-indigo-400" /></div>}
-
-          {messages.map((m) => <Bubble key={m.id} msg={m} lead={lead} />)}
-
-          <AnimatePresence>
-            {thinking && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-3">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor"><path d="M12 2l2.4 6.3L21 11l-6.6 2.7L12 20l-2.4-6.3L3 11l6.6-2.7L12 2z" /></svg>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((msg) => (
+                <div key={msg.id} className={`group relative flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {msg.role === 'assistant' ? (
+                    <div className={`w-full max-w-[85%] text-[15px] leading-8 ${t.bodyCls}`}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={md}>{msg.content || ''}</ReactMarkdown>
+                      <Sources sources={msg.sources} t={t} />
+                    </div>
+                  ) : (
+                    <div className="flex max-w-[85%] flex-col items-end">
+                      <div className="w-fit max-w-full break-words rounded-[1.05rem] bg-blue-600 px-3.5 py-2 text-[15px] leading-7 text-white">
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-1.5 rounded-2xl bg-white/[0.06] px-4 py-3 ring-1 ring-white/10">
-                  {[0, 1, 2].map((i) => (
-                    <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400" style={{ animationDelay: `${i * 120}ms` }} />
-                  ))}
-                  <span className="ml-1 text-xs text-slate-400">Reading the documents…</span>
+              ))}
+              {thinking && (
+                <div className="flex justify-start">
+                  <div className={`flex items-center gap-2.5 px-1 py-3 text-sm ${t.muted}`}>
+                    <svg className="h-4 w-4 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity=".25" /><path d="M12 2a10 10 0 0 1 10 10" /></svg>
+                    Reading the documents…
+                  </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {streaming != null && (
-            <Bubble msg={{ id: 'streaming', role: 'assistant', content: streaming }} lead={lead} />
+              )}
+              {streaming != null && (
+                <div className="flex justify-start">
+                  <div className={`w-full max-w-[85%] text-[15px] leading-8 ${t.bodyCls}`}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={md}>{streaming}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
 
-      {/* composer */}
-      <div className="border-t border-white/10 bg-[#070C18]/80 px-4 py-3 backdrop-blur sm:px-8">
-        <form
-          id={composerId}
-          onSubmit={(e) => { e.preventDefault(); send(); }}
-          className="mx-auto flex max-w-3xl items-end gap-2"
-        >
+      {/* Composer — same shell as BucketPage */}
+      <div className="px-4 pb-4 pt-1">
+        <div className={`mx-auto max-w-3xl overflow-hidden rounded-[1.25rem] border ${t.subtle} ${t.line}`}>
           <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-            }}
+            ref={composerRef}
             rows={1}
-            placeholder="Ask about the documents…"
-            className="max-h-40 min-h-[48px] flex-1 resize-none rounded-2xl bg-slate-800/70 px-4 py-3 text-sm text-slate-100 outline-none ring-1 ring-white/10 placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500"
+            value={input}
+            onFocus={onComposerFocus}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Message…"
+            className={`w-full max-h-[200px] resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-6 outline-none ${t.titleCls}`}
           />
-          <button
-            type="submit"
-            disabled={!input.trim() || sending}
-            data-tour="send"
-            className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-900/30 transition hover:from-indigo-400 hover:to-indigo-500 disabled:opacity-40"
-          >
-            {sending ? <Spinner className="h-5 w-5" /> : (
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-            )}
-          </button>
-        </form>
-        <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-slate-600">
-          AIveilix can make mistakes. Answers are grounded in the provided documents.
-        </p>
+          <div className="flex items-center justify-end px-3 pb-2 pt-1">
+            <button
+              type="button"
+              data-tour="send"
+              onClick={() => send()}
+              disabled={!input.trim() || sending}
+              className={`flex h-8 w-8 items-center justify-center rounded-full transition disabled:opacity-40 ${t.primary}`}
+            >
+              {sending ? <Spinner className="h-4 w-4" /> : (
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

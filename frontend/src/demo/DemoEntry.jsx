@@ -1,15 +1,15 @@
-// Entry flow for /try/:slug — 4-digit CodeGate → Name/Email/Role capture.
+// Entry flow for /try/:slug — 4-digit CodeGate → Name/Email/Role. Branded to the
+// app's AuthShell look (logo, blue/cyan glow, themed card).
 import React, { useRef, useState } from 'react';
-import { motion } from 'framer-motion';
 import { demoApi } from './demoApi';
-import {
-  DemoBackdrop, DemoLogo, DemoButton, DemoField, DemoInput, ErrorNote,
-} from './DemoShell';
+import { themeOptions } from './demoTheme';
+import { DemoBackdrop, DemoLogo, DemoButton, DemoField, DemoInput, ErrorNote, ThemeToggle } from './DemoShell';
+import { cn } from '../lib/utils';
 
-function CodeBoxes({ value, onChange, onComplete, disabled }) {
+function CodeBoxes({ value, onChange, onComplete, disabled, theme }) {
+  const p = themeOptions[theme];
   const refs = useRef([]);
   const digits = value.padEnd(4, ' ').slice(0, 4).split('');
-
   const setDigit = (i, d) => {
     const next = value.split('');
     next[i] = d;
@@ -18,39 +18,24 @@ function CodeBoxes({ value, onChange, onComplete, disabled }) {
     if (d && i < 3) refs.current[i + 1]?.focus();
     if (joined.length === 4) onComplete?.(joined);
   };
-
   return (
     <div className="flex justify-center gap-3" onPaste={(e) => {
       const text = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 4);
-      if (text) {
-        e.preventDefault();
-        onChange(text);
-        if (text.length === 4) onComplete?.(text);
-        else refs.current[text.length]?.focus();
-      }
+      if (text) { e.preventDefault(); onChange(text); if (text.length === 4) onComplete?.(text); else refs.current[text.length]?.focus(); }
     }}>
       {[0, 1, 2, 3].map((i) => (
-        <input
-          key={i}
-          ref={(el) => (refs.current[i] = el)}
-          value={digits[i].trim()}
-          disabled={disabled}
-          inputMode="numeric"
-          maxLength={1}
-          aria-label={`Digit ${i + 1}`}
+        <input key={i} ref={(el) => (refs.current[i] = el)} value={digits[i].trim()} disabled={disabled} inputMode="numeric" maxLength={1} aria-label={`Digit ${i + 1}`}
           onChange={(e) => setDigit(i, e.target.value.replace(/\D/g, '').slice(-1))}
-          onKeyDown={(e) => {
-            if (e.key === 'Backspace' && !digits[i].trim() && i > 0) refs.current[i - 1]?.focus();
-          }}
-          className="h-16 w-14 rounded-2xl bg-slate-800/70 text-center text-2xl font-bold text-slate-100 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-        />
+          onKeyDown={(e) => { if (e.key === 'Backspace' && !digits[i].trim() && i > 0) refs.current[i - 1]?.focus(); }}
+          className={cn('h-16 w-14 rounded-2xl border text-center text-2xl font-bold outline-none transition focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50', p.input)} />
       ))}
     </div>
   );
 }
 
-export default function DemoEntry({ slug, onEntered }) {
-  const [step, setStep] = useState('code'); // 'code' | 'identity'
+export default function DemoEntry({ slug, onEntered, theme = 'light', onToggleTheme }) {
+  const p = themeOptions[theme];
+  const [step, setStep] = useState('code');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -64,17 +49,10 @@ export default function DemoEntry({ slug, onEntered }) {
     setError(''); setLoading(true);
     try {
       const res = await demoApi.verifyCode(slug, c);
-      if (res.ok) {
-        setStep('identity');
-      } else {
-        setError('That code isn’t right. Check the code in your invite.');
-        setCode('');
-      }
-    } catch (e) {
-      setError(e.message || 'Could not verify the code.');
-    } finally {
-      setLoading(false);
-    }
+      if (res.ok) setStep('identity');
+      else { setError('That code isn’t right. Check the code in your invite.'); setCode(''); }
+    } catch (e) { setError(e.message || 'Could not verify the code.'); }
+    finally { setLoading(false); }
   };
 
   const submitIdentity = async (e) => {
@@ -84,81 +62,49 @@ export default function DemoEntry({ slug, onEntered }) {
     try {
       const data = await demoApi.enter(slug, { code, name: name.trim(), email: email.trim(), role: role.trim() || null });
       onEntered(data.me);
-    } catch (e) {
-      // A wrong/expired code (admin rotated it) sends us back to the code step.
-      if (e.status === 403) { setStep('code'); setCode(''); }
-      setError(e.message || 'Could not enter the demo.');
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { if (e.status === 403) { setStep('code'); setCode(''); } setError(e.message || 'Could not enter the demo.'); }
+    finally { setLoading(false); }
   };
 
   return (
-    <DemoBackdrop className="grid place-items-center p-4">
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
-      >
-        <div className="mb-6 flex justify-center"><DemoLogo size="lg" /></div>
-        <div className="overflow-hidden rounded-3xl bg-[#0B1220]/80 p-7 ring-1 ring-white/10 shadow-2xl backdrop-blur">
-          {step === 'code' ? (
-            <>
-              <h1 className="text-center text-xl font-bold">Welcome to your private demo</h1>
-              <p className="mt-2 text-center text-sm text-slate-400">
-                Enter the 4-digit access code from your invite to explore an AI built on your own documents.
-              </p>
-              <div className="mt-7">
-                <CodeBoxes value={code} onChange={setCode} onComplete={verify} disabled={loading} />
-              </div>
-              <div className="mt-6">
-                <ErrorNote>{error}</ErrorNote>
-              </div>
-              <DemoButton
-                className="mt-5 w-full"
-                onClick={() => verify()}
-                loading={loading}
-                disabled={code.length !== 4}
-              >
-                Continue
-              </DemoButton>
-            </>
-          ) : (
-            <form onSubmit={submitIdentity}>
-              <h1 className="text-center text-xl font-bold">Tell us who you are</h1>
-              <p className="mt-2 text-center text-sm text-slate-400">
-                So we can personalize your demo and follow up if you'd like.
-              </p>
-              <div className="mt-6 space-y-3.5">
-                <DemoField label="Your name">
-                  <DemoInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" autoFocus />
-                </DemoField>
-                <DemoField label="Work email">
-                  <DemoInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@company.com" />
-                </DemoField>
-                <DemoField label="Your role" hint="Optional — helps us tailor the conversation.">
-                  <DemoInput value={role} onChange={(e) => setRole(e.target.value)} placeholder="Head of Operations" />
-                </DemoField>
-              </div>
-              <div className="mt-4"><ErrorNote>{error}</ErrorNote></div>
-              <DemoButton className="mt-5 w-full" type="submit" loading={loading}>
-                Enter the demo →
-              </DemoButton>
-              <button
-                type="button"
-                onClick={() => { setStep('code'); setError(''); }}
-                className="mt-3 w-full text-center text-xs text-slate-500 hover:text-slate-300"
-              >
-                ← Use a different code
-              </button>
-            </form>
-          )}
+    <DemoBackdrop theme={theme}>
+      <div className="absolute right-4 top-4"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
+      <div className="flex min-h-[100dvh] items-center justify-center px-4 py-12">
+        <div className="w-full max-w-[28rem]">
+          <div className="mb-6 flex justify-center"><DemoLogo theme={theme} size="lg" /></div>
+          <section className={cn('rounded-[2rem] border px-5 py-6 transition-all duration-300 sm:px-7', p.card.split(' hover:')[0])}>
+            {step === 'code' ? (
+              <>
+                <div className="text-center">
+                  <p className={cn('text-xs font-semibold uppercase tracking-[0.35em]', p.accent)}>Private demo</p>
+                  <h1 className={cn('mt-3 text-2xl font-semibold tracking-tight', p.title)}>Welcome</h1>
+                  <p className={cn('mt-2 text-sm leading-6', p.text)}>Enter the 4-digit access code from your invite to explore an AI built on your own documents.</p>
+                </div>
+                <div className="mt-7"><CodeBoxes value={code} onChange={setCode} onComplete={verify} disabled={loading} theme={theme} /></div>
+                <div className="mt-5"><ErrorNote theme={theme}>{error}</ErrorNote></div>
+                <DemoButton theme={theme} className="mt-5 w-full" onClick={() => verify()} loading={loading} disabled={code.length !== 4}>Continue</DemoButton>
+              </>
+            ) : (
+              <form onSubmit={submitIdentity}>
+                <div className="text-center">
+                  <p className={cn('text-xs font-semibold uppercase tracking-[0.35em]', p.accent)}>One more step</p>
+                  <h1 className={cn('mt-3 text-2xl font-semibold tracking-tight', p.title)}>Tell us who you are</h1>
+                  <p className={cn('mt-2 text-sm leading-6', p.text)}>So we can personalize your demo and follow up if you’d like.</p>
+                </div>
+                <div className="mt-6 space-y-3.5">
+                  <DemoField theme={theme} label="Your name"><DemoInput theme={theme} value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" autoFocus /></DemoField>
+                  <DemoField theme={theme} label="Work email"><DemoInput theme={theme} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@company.com" /></DemoField>
+                  <DemoField theme={theme} label="Your role" hint="Optional — helps us tailor the conversation."><DemoInput theme={theme} value={role} onChange={(e) => setRole(e.target.value)} placeholder="Head of Operations" /></DemoField>
+                </div>
+                <div className="mt-4"><ErrorNote theme={theme}>{error}</ErrorNote></div>
+                <DemoButton theme={theme} className="mt-5 w-full" type="submit" loading={loading}>Enter the demo →</DemoButton>
+                <button type="button" onClick={() => { setStep('code'); setError(''); }} className={cn('mt-3 w-full text-center text-xs', p.muted, 'hover:opacity-80')}>← Use a different code</button>
+              </form>
+            )}
+          </section>
+          <p className={cn('mt-5 text-center text-[11px]', p.muted)}>Powered by AIveilix · Your data stays private to this demo.</p>
         </div>
-        <p className="mt-5 text-center text-[11px] text-slate-600">
-          Powered by AIveilix · Your data stays private to this demo.
-        </p>
-      </motion.div>
+      </div>
     </DemoBackdrop>
   );
 }

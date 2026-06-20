@@ -1,16 +1,19 @@
-// Standalone route for /try/:slug — its own shell, no dashboard chrome.
-// Resumes an existing demo session (per-tab token) or runs the entry flow.
+// Standalone route for /try/:slug — own shell, no dashboard chrome. Owns theme
+// (light default, persisted) and resumes an existing per-tab demo session.
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { demoApi, getDemoToken, clearDemoToken } from './demoApi';
+import { getInitialTheme, saveTheme } from './demoTheme';
 import DemoEntry from './DemoEntry';
 import DemoWorkspace from './DemoWorkspace';
 import { DemoBackdrop, DemoLogo, Spinner } from './DemoShell';
 
 export default function DemoPage() {
   const { slug } = useParams();
-  const [phase, setPhase] = useState('checking'); // checking | entry | workspace
+  const [phase, setPhase] = useState('checking');
   const [me, setMe] = useState(null);
+  const [theme, setTheme] = useState(getInitialTheme());
+  const onToggleTheme = () => setTheme((prev) => { const next = prev === 'dark' ? 'light' : 'dark'; saveTheme(next); return next; });
 
   useEffect(() => {
     let cancelled = false;
@@ -18,13 +21,9 @@ export default function DemoPage() {
       if (!getDemoToken()) { if (!cancelled) setPhase('entry'); return; }
       try {
         const data = await demoApi.me();
-        // Token could belong to a different slug — only resume if it matches.
         if (data?.slug && data.slug !== slug) { clearDemoToken(); if (!cancelled) setPhase('entry'); return; }
         if (!cancelled) { setMe(data); setPhase('workspace'); }
-      } catch {
-        clearDemoToken();
-        if (!cancelled) setPhase('entry');
-      }
+      } catch { clearDemoToken(); if (!cancelled) setPhase('entry'); }
     }
     resume();
     return () => { cancelled = true; };
@@ -32,23 +31,17 @@ export default function DemoPage() {
 
   if (phase === 'checking') {
     return (
-      <DemoBackdrop className="grid place-items-center">
-        <div className="flex flex-col items-center gap-4">
-          <DemoLogo size="lg" />
-          <Spinner className="h-6 w-6 text-indigo-400" />
+      <DemoBackdrop theme={theme}>
+        <div className="grid min-h-[100dvh] place-items-center">
+          <div className="flex flex-col items-center gap-4"><DemoLogo theme={theme} size="lg" /><Spinner className="h-6 w-6 text-blue-500" /></div>
         </div>
       </DemoBackdrop>
     );
   }
 
   if (phase === 'workspace' && me) {
-    return (
-      <DemoWorkspace
-        initialMe={me}
-        onExpired={() => { clearDemoToken(); setMe(null); setPhase('entry'); }}
-      />
-    );
+    return <DemoWorkspace initialMe={me} theme={theme} onToggleTheme={onToggleTheme} onExpired={() => { clearDemoToken(); setMe(null); setPhase('entry'); }} />;
   }
 
-  return <DemoEntry slug={slug} onEntered={(m) => { setMe(m); setPhase('workspace'); }} />;
+  return <DemoEntry slug={slug} theme={theme} onToggleTheme={onToggleTheme} onEntered={(m) => { setMe(m); setPhase('workspace'); }} />;
 }
