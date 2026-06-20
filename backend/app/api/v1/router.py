@@ -16,6 +16,8 @@ from app.api.v1.endpoints import (
     mcp_tools,
     team,
     admin,
+    admin_demo,
+    demo,
     enterprise,
 )
 
@@ -37,4 +39,6 @@ router.include_router(mcp_tools.router)
 router.include_router(account_mcp_tokens.router)
 router.include_router(team.router)
 router.include_router(admin.router)
+router.include_router(admin_demo.router)
+router.include_router(demo.router)
 router.include_router(enterprise.router)

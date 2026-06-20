@@ -186,9 +186,10 @@ async def change_password(
 async def get_auth_provider_connect_url(
     provider: str,
     redirect_uri: str,
+    state_token: str = "",
     current_user=Depends(get_current_user),
 ):
-    return await get_auth_provider_connect_url_service(provider, redirect_uri)
+    return await get_auth_provider_connect_url_service(provider, redirect_uri, state_token or None)
 
 
 @router.post("/auth-provider/{provider}")

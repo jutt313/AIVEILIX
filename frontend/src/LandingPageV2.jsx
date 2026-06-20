@@ -642,9 +642,9 @@ function Bento({ t, isDark }) {
 
         <Reveal delay={0.14}>
           <div className={`${card} h-full`}>
-            <FeatIcon name="cpu" />
-            <h3 className={`mt-5 text-lg font-semibold ${t.heading}`}>Bring your own model</h3>
-            <p className={`mt-2 text-[0.95rem] ${t.body}`}>Claude, Gemini, GPT-4o, Kimi — connect the model you prefer with your own key.</p>
+            <FeatIcon name="bolt" />
+            <h3 className={`mt-5 text-lg font-semibold ${t.heading}`}>Upload once, use forever</h3>
+            <p className={`mt-2 text-[0.95rem] ${t.body}`}>Your docs live in a permanent bucket, not a throwaway chat. Open a new session tomorrow and everything's still there — no re-uploading, ever.</p>
           </div>
         </Reveal>
       </div>
@@ -847,7 +847,7 @@ function FAQ({ t, isDark }) {
     { q: 'How do I connect AIveilix to my AI?', a: 'Create a bucket, then copy its MCP URL into Claude, ChatGPT, Cursor, or any MCP-compatible client. Your docs become available instantly — no SDK or setup code needed.' },
     { q: 'What file types are supported?', a: 'PDFs, Word docs, slides, spreadsheets, and images. Text and visuals (charts, diagrams, text inside images) are both parsed into the searchable knowledge base.' },
     { q: 'Is my data private?', a: 'Yes. Every bucket is isolated and access is gated by a private token baked into the MCP link. Files never leak across buckets.' },
-    { q: 'Which AI models can I use?', a: 'Bring your own key for Claude, Gemini, GPT-4o, or Kimi. You stay in control of the model and its cost.' },
+    { q: 'Which AI tools can I connect?', a: 'Any MCP-compatible AI — Claude, ChatGPT, Cursor, Claude Desktop, and more. Paste your bucket\'s MCP link and it reads your documents directly, in real time.' },
     { q: 'Can I cancel anytime?', a: 'Yes. Paid plans are month-to-month — cancel from account settings. Your data stays put even if you downgrade.' },
     { q: 'Do answers really cite sources?', a: 'Always. Each response includes the exact file and page (or slide) it drew from, so you can verify in one click.' },
   ];

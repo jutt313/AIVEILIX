@@ -120,6 +120,25 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
+    frontend_allowed_origins: str = ""
+    vite_dev_port: int = 5173
+
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = [self.frontend_url, *self.frontend_allowed_origins.split(",")]
+        if self.app_env == "development":
+            origins.extend([
+                f"http://localhost:{self.vite_dev_port}",
+                f"http://127.0.0.1:{self.vite_dev_port}",
+            ])
+        out: list[str] = []
+        seen: set[str] = set()
+        for origin in origins:
+            cleaned = origin.strip().rstrip("/")
+            if cleaned and cleaned not in seen:
+                out.append(cleaned)
+                seen.add(cleaned)
+        return out
 
     # MCP
     mcp_base_url: str = "https://mcp.aiveilix.com"

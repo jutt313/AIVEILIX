@@ -14,6 +14,20 @@ import WorkspaceSwitcher from './WorkspaceSwitcher';
  * and the slim profile drawer. No stats charts, no create-bucket button,
  * no billing / MCP / danger zone.
  */
+function fmtBucketStorage(storageBytes, storageGb = null) {
+  const bytes = Number(storageBytes);
+  if (Number.isFinite(bytes) && bytes >= 0) {
+    if (bytes >= 1024 ** 3) return `${(bytes / (1024 ** 3)).toFixed(2)} GB`;
+    if (bytes >= 1024 ** 2) return `${(bytes / (1024 ** 2)).toFixed(2)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${bytes.toFixed(0)} B`;
+  }
+
+  const gb = Number(storageGb) || 0;
+  if (gb >= 1) return `${gb.toFixed(2)} GB`;
+  return `${(gb * 1024).toFixed(2)} MB`;
+}
+
 export default function MemberDashboard({ theme, onToggleTheme }) {
   const navigate = useNavigate();
   const { palette } = useAppTheme();
@@ -313,7 +327,7 @@ export default function MemberDashboard({ theme, onToggleTheme }) {
                   <div className={`flex items-center gap-3 text-[11px] ${palette.subtle}`}>
                     <span>{b.file_count} file{b.file_count === 1 ? '' : 's'}</span>
                     <span>·</span>
-                    <span>{(b.storage_gb || 0).toFixed(2)} GB</span>
+                    <span>{fmtBucketStorage(b.storage_used, b.storage_gb)}</span>
                   </div>
                   <span
                     className={`text-[11px] font-medium opacity-0 transition group-hover:opacity-100 ${palette.accent}`}

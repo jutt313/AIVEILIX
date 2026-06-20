@@ -39,6 +39,14 @@ class Conversation(Base):
         nullable=True,
         index=True,
     )
+    # When set, this thread belongs to a public demo visitor (see app.models.demo).
+    # Used to attribute & count demo chats without creating real users.
+    demo_lead_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("demo_leads.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

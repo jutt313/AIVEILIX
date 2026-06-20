@@ -306,7 +306,9 @@ async def get_bucket(db: AsyncSession, user_id: str, bucket_id: str) -> dict:
 async def list_buckets(db: AsyncSession, user_id: str) -> list:
     uid = uuid.UUID(user_id)
     result = await db.execute(
-        select(Bucket).where(Bucket.user_id == uid).order_by(desc(Bucket.updated_at))
+        select(Bucket)
+        .where(Bucket.user_id == uid, Bucket.is_demo.is_(False))
+        .order_by(desc(Bucket.updated_at))
     )
     buckets = result.scalars().all()
 

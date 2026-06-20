@@ -1,0 +1,63 @@
+# AIveilix — Persistent Knowledge Infrastructure for AI
+
+> Upload your documents once and use them inside every AI — Claude, ChatGPT, or any MCP-compatible assistant — without ever re-uploading. AIveilix turns your files into a permanent, private, searchable knowledge base that any AI can read in real time through a single secure link. Stop pasting the same PDFs into every new chat. Give your knowledge a permanent home.
+
+AIveilix ("AI + Veil + lix" — your knowledge, *protected* and *connected*) solves the "blank slate" problem of AI: every chat session forgets what you uploaded a moment ago. AIveilix remembers — forever.
+
+## How it works (60-second walkthrough)
+
+1. **Upload once.** Drop your files — PDFs, docs, decks, spreadsheets, scans, images — into a private **bucket** (your personal knowledge vault). Large files upload straight from your browser, no size headaches.
+2. **We understand it deeply.** AIveilix reads the *text and the visuals* — charts, diagrams, tables, and even text trapped inside images — and builds a structured, searchable knowledge map that preserves the original reading order.
+3. **Get one secure link.** Every bucket gets its own **MCP URL**. Paste it into Claude, ChatGPT, or any MCP-compatible AI.
+4. **Ask anything, anywhere.** Your AI now answers from your real documents — cited to the exact page — in every session, on every device, forever. No re-uploading. No lost context.
+
+## Why connecting via MCP beats re-uploading to a chat
+
+When you paste a document into ChatGPT or Claude, the entire file is stuffed into the model's context window every single time — which burns tokens fast, slows answers down, and still gets forgotten the moment the chat resets.
+
+AIveilix flips this:
+
+- **Massive token savings.** Instead of dumping a whole document into the prompt, the AIveilix MCP retrieves only the few most relevant passages for each question. Your AI reads exactly what it needs — not 200 pages it doesn't. Less context in, lower token cost, faster answers.
+- **Deeper understanding.** Hybrid search plus a reranker surface the *right* chunks, and visual understanding means charts and diagrams are read too — so answers are sharper, not vaguer.
+- **Never forgets.** Your knowledge lives in the bucket, not in a disposable chat thread. Start a brand-new conversation tomorrow and everything is still there — instantly.
+- **Works with the AI you already pay for.** Keep using cloud Claude or ChatGPT exactly as you do now; AIveilix simply gives them a permanent, private memory.
+
+## The built-in AI agent
+
+Prefer to stay inside AIveilix? Every bucket includes a full research assistant:
+
+- **Smart filtering & citations** — dense + sparse hybrid retrieval, then a reranker narrows hundreds of passages down to the few that actually matter. Every answer is cited back to the source page.
+- **Threads** — organize your work into separate conversation threads per bucket, with unlimited messages in each. Context is kept; nothing leaks between projects.
+- **Web search** — pull in fresh information from the open web alongside your private documents.
+- **Voice input** — dictate your questions instead of typing. Great for long research sessions.
+
+## Security & privacy — your data stays yours
+
+Privacy is in the name. AIveilix is built so your knowledge is *protected*, not exposed:
+
+- **Private, isolated buckets.** Each bucket is sealed off — your files never leak across buckets, projects, or other users.
+- **Never sold, never used to train AI.** Your data exists to answer *your* questions, nothing else.
+- **Encrypted and access-controlled.** Strong authentication (hashed passwords, optional two-factor, OAuth) and token-protected MCP links that you alone control — revoke access anytime.
+- **Trusted infrastructure only.** The third-party services AIveilix runs on are enterprise-grade and operate under strict data-protection agreements — they store and serve your files; they do not share, sell, or train on them.
+
+## Pricing
+
+A 15-day free trial on paid plans — try it, keep what works, cancel anytime.
+
+- **Individual — $15/month.** For solo users. Persistent buckets, visual document understanding, and MCP access.
+- **Team — $49/month.** For small teams. Shared buckets, more seats, larger uploads, and team management.
+- **Enterprise — Custom pricing.** For large organizations. Custom document & storage volumes, more user seats, higher MCP rate limits, invoice billing, and priority support & onboarding. **Contact sales** for a quote.
+
+## Key links
+
+- Home: https://aiveilix.com/
+- Sign up (free): https://aiveilix.com/signup
+- Pricing: https://aiveilix.com/#pricing
+- Enterprise / contact sales: https://aiveilix.com/enterprise-contact
+- Docs / how to connect: https://aiveilix.com/docs
+- Privacy policy: https://aiveilix.com/privacy-policy
+- Terms of service: https://aiveilix.com/terms
+
+## In one line
+
+AIveilix is persistent, private knowledge infrastructure for AI: upload once, connect via MCP, and let any AI — Claude, ChatGPT, and more — answer from your real documents forever, with fewer tokens and zero re-uploading.

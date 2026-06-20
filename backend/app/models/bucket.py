@@ -21,6 +21,9 @@ class Bucket(Base):
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#3B82F6")
     icon: Mapped[str] = mapped_column(String(50), nullable=False, default="folder")
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Demo buckets back a public /try/:slug page. They are hidden from the normal
+    # dashboard and never count against the owning (admin) account's plan quota.
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     storage_used: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

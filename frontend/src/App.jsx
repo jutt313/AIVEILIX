@@ -36,6 +36,9 @@ import MemberDashboard from './components/team/MemberDashboard';
 import WorkspaceSwitcher from './components/team/WorkspaceSwitcher';
 import { useTeamContext } from './components/team/useTeamContext';
 import SenderBadge, { bubbleStyleForSender } from './components/team/SenderBadge';
+import DemoPage from './demo/DemoPage';
+import DemoInvitePage from './demo/DemoInvitePage';
+import DemoAdminPanel from './demo/DemoAdminPanel';
 
 const themeOptions = {
   dark: {
@@ -190,12 +193,41 @@ function buildOAuthRedirectUri() {
   return `${window.location.origin}/oauth/callback`;
 }
 
+function buildOAuthStateStorageKey(mode, provider) {
+  return `aiveilix-oauth-state:${mode}:${provider}`;
+}
+
+function createOAuthStateToken() {
+  if (typeof window === 'undefined') return '';
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  if (window.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function rememberOAuthState(mode, provider, token) {
+  if (typeof window === 'undefined' || !token) return;
+  sessionStorage.setItem(buildOAuthStateStorageKey(mode, provider), token);
+}
+
+function consumeOAuthState(mode, provider) {
+  if (typeof window === 'undefined') return '';
+  const key = buildOAuthStateStorageKey(mode, provider);
+  const token = sessionStorage.getItem(key) || '';
+  sessionStorage.removeItem(key);
+  return token;
+}
+
 function parseOAuthState(rawState) {
   if (!rawState) return { mode: 'login', provider: '' };
-  const [mode, provider] = String(rawState).split(':');
+  const [mode, provider, token = ''] = String(rawState).split(':');
   return {
     mode: mode === 'connect' ? 'connect' : 'login',
     provider: provider || '',
+    token,
   };
 }
 
@@ -602,7 +634,9 @@ function LoginPage({ theme }) {
   const handleSocialAuth = async (provider) => {
     setError('');
     try {
-      const result = await authApi.getOAuthAuthorizeUrl(provider, buildOAuthRedirectUri(), 'login');
+      const stateToken = createOAuthStateToken();
+      rememberOAuthState('login', provider, stateToken);
+      const result = await authApi.getOAuthAuthorizeUrl(provider, buildOAuthRedirectUri(), 'login', stateToken);
       window.location.href = result.url;
     } catch (err) {
       setError(err.message);
@@ -667,7 +701,9 @@ function SignupPage({ theme }) {
   const handleSocialAuth = async (provider) => {
     setError('');
     try {
-      const result = await authApi.getOAuthAuthorizeUrl(provider, buildOAuthRedirectUri(), 'login');
+      const stateToken = createOAuthStateToken();
+      rememberOAuthState('login', provider, stateToken);
+      const result = await authApi.getOAuthAuthorizeUrl(provider, buildOAuthRedirectUri(), 'login', stateToken);
       window.location.href = result.url;
     } catch (err) {
       setError(err.message);
@@ -720,8 +756,9 @@ function OAuthCallbackPage({ theme }) {
       const params = new URLSearchParams(location.search);
       const oauthError = params.get('error');
       const code = params.get('code');
-      const { mode, provider } = parseOAuthState(params.get('state'));
+      const { mode, provider, token } = parseOAuthState(params.get('state'));
       const redirectUri = buildOAuthRedirectUri();
+      const expectedToken = provider ? consumeOAuthState(mode, provider) : '';
 
       if (oauthError) {
         if (!cancelled) setError('The provider denied the sign-in request.');
@@ -729,6 +766,10 @@ function OAuthCallbackPage({ theme }) {
       }
       if (!code || !provider) {
         if (!cancelled) setError('OAuth callback is missing required details.');
+        return;
+      }
+      if (!token || !expectedToken || token !== expectedToken) {
+        if (!cancelled) setError('OAuth callback state did not match. Please try again.');
         return;
       }
 
@@ -1156,7 +1197,7 @@ function PrivacyPolicyPage({ theme, onToggleTheme }) {
           <PolicySectionHeading theme={theme}>7. Your Rights</PolicySectionHeading>
           <p>
             Depending on where you live, you may have the right to access, correct, delete, or export your personal data, or to object to or restrict certain processing. To request this, contact us at{' '}
-            <a href="mailto:info@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>info@aiveilix.com</a>. We will respond as required by law.
+            <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a>. We will respond as required by law.
           </p>
           <p className="mt-3">You can also update account details and preferences in the app where we provide those options.</p>
         </section>
@@ -1211,7 +1252,7 @@ function PrivacyPolicyPage({ theme, onToggleTheme }) {
           </ul>
           <p className="mt-3">
             To report a suspected security issue, contact us immediately at{' '}
-            <a href="mailto:info@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>info@aiveilix.com</a>.
+            <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a>.
           </p>
         </section>
 
@@ -1220,7 +1261,7 @@ function PrivacyPolicyPage({ theme, onToggleTheme }) {
           <p>For privacy questions, requests, or complaints, contact us at:</p>
           <p className="mt-2">
             <strong className={palette.title}>Email:</strong>{' '}
-            <a href="mailto:info@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>info@aiveilix.com</a>
+            <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a>
           </p>
         </section>
 
@@ -1370,7 +1411,7 @@ function TermsPage({ theme, onToggleTheme }) {
           <p>For questions about these Terms, contact us at:</p>
           <p className="mt-2">
             <strong className={palette.title}>Email:</strong>{' '}
-            <a href="mailto:info@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>info@aiveilix.com</a>
+            <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a>
           </p>
           <p className="mt-3">We will respond to reasonable requests as soon as practicable.</p>
         </section>
@@ -1416,7 +1457,7 @@ function TokushoPage({ theme, onToggleTheme }) {
                   ['代表者', <>CHAUDHARY ABDUL JABBAR JUTT</>],
                   ['所在地', <>〒455-0834<br />愛知県名古屋市港区神宮寺1丁目1303-1<br />レンダイスクォッター401</>],
                   ['電話番号', <>070-9114-6677</>],
-                  ['メールアドレス', <a href="mailto:info@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>info@aiveilix.com</a>],
+                  ['メールアドレス', <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a>],
                   ['販売価格', (
                     <>
                       <p>料金はサービス内の表示に従います。無料でご利用いただける場合があります。</p>
@@ -1442,7 +1483,7 @@ function TokushoPage({ theme, onToggleTheme }) {
                       <p>本サービスはデジタルサービス（SaaS）のため、以下のとおりとします。</p>
                       <ul className="mt-2 list-disc space-y-1 pl-5">
                         <li><strong className={palette.title}>返金：</strong>返金は行いません。デジタルサービスの性質上、ご利用開始後・お支払い後の返金はお受けしておりません。</li>
-                        <li><strong className={palette.title}>キャンセル：</strong>有料プランをご利用の場合は、サービス内の手順または info@aiveilix.com へのご連絡でキャンセルできます。</li>
+                        <li><strong className={palette.title}>キャンセル：</strong>有料プランをご利用の場合は、サービス内の手順または contact@aiveilix.com へのご連絡でキャンセルできます。</li>
                       </ul>
                       <p className={`mt-2 text-xs ${palette.muted}`}>※ 返金に関する例外は法令で認められる場合を除き、ご対応しておりません。</p>
                     </>
@@ -1477,7 +1518,7 @@ function TokushoPage({ theme, onToggleTheme }) {
                       <p>ご不明な点やご質問がございましたら、以下の連絡先までお気軽にお問い合わせください。</p>
                       <p className="mt-2">
                         <strong className={palette.title}>メール:</strong>{' '}
-                        <a href="mailto:info@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>info@aiveilix.com</a><br />
+                        <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a><br />
                         <strong className={palette.title}>電話:</strong> 070-9114-6677<br />
                         <strong className={palette.title}>受付時間:</strong> 平日 9:00 - 18:00（日本時間）
                       </p>
@@ -1901,7 +1942,7 @@ function DocsPage({ theme, onToggleTheme }) {
                 </DocsFaqItem>
 
                 <DocsFaqItem theme={theme} q="Where do I get help?">
-                  Email <a href="mailto:info@aiveilix.com" className={p.link}>info@aiveilix.com</a> and we'll get back to you.
+                  Email <a href="mailto:contact@aiveilix.com" className={p.link}>contact@aiveilix.com</a> and we'll get back to you.
                   Include screenshots if something looks wrong — it helps us answer faster.
                 </DocsFaqItem>
               </div>
@@ -2471,7 +2512,15 @@ function fmtStorage(gb) {
   return `${gb.toFixed(2)} GB`;
 }
 
-function fmtBucketStorage(storageGb) {
+function fmtBucketStorage(storageBytes, storageGb = null) {
+  const bytes = Number(storageBytes);
+  if (Number.isFinite(bytes) && bytes >= 0) {
+    if (bytes >= 1024 ** 3) return `${(bytes / (1024 ** 3)).toFixed(2)} GB`;
+    if (bytes >= 1024 ** 2) return `${(bytes / (1024 ** 2)).toFixed(2)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${bytes.toFixed(0)} B`;
+  }
+
   const gb = Number(storageGb) || 0;
   if (gb >= 1) return `${gb.toFixed(2)} GB`;
   return `${(gb * 1024).toFixed(2)} MB`;
@@ -3967,7 +4016,9 @@ function DashboardPage({ theme, onToggleTheme, workspaces, activeWorkspace }) {
     setConnectingProvider(provider);
     setProfileFeedback(null);
     try {
-      const result = await dashboardApi.getProviderConnectUrl(provider, buildOAuthRedirectUri());
+      const stateToken = createOAuthStateToken();
+      rememberOAuthState('connect', provider, stateToken);
+      const result = await dashboardApi.getProviderConnectUrl(provider, buildOAuthRedirectUri(), stateToken);
       localStorage.setItem('aiveilix-profile-open', '1');
       window.location.href = result.url;
     } catch (err) {
@@ -4390,7 +4441,7 @@ function DashboardPage({ theme, onToggleTheme, workspaces, activeWorkspace }) {
                       </div>
                       <span>{fmtDate(b.created_at)}</span>
                       <span>{b.file_count}</span>
-                      <span>{fmtBucketStorage(b.storage_gb)}</span>
+                      <span>{fmtBucketStorage(b.storage_used, b.storage_gb)}</span>
                       <div className="flex items-center justify-center gap-3">
                         {/* Fixed-width slot keeps the delete button in place no matter how many members */}
                         <div className="flex w-28 justify-end">
@@ -7837,6 +7888,8 @@ function AdminPage({ theme }) {
 
         {phase === 'panel' && (
           <>
+            <DemoAdminPanel session={session} dark={dark} />
+
             <div className={`mt-6 rounded-2xl p-5 ${card}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -8448,6 +8501,8 @@ export default function App() {
         <Route path="/admin" element={<AdminPage theme={theme} />} />
         <Route path="/enterprise-contact" element={<EnterpriseContactPage theme={theme} />} />
         <Route path="/invite/:token" element={<InviteAcceptPage />} />
+        <Route path="/try/invite/:token" element={<DemoInvitePage />} />
+        <Route path="/try/:slug" element={<DemoPage />} />
         <Route path="*" element={<NotFoundPage theme={theme} onToggleTheme={toggleTheme} />} />
       </Routes>
       <TeamRoleBanner />

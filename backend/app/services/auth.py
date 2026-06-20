@@ -79,18 +79,39 @@ async def _delete_refresh_token(token: str):
     await v.delete(f"refresh:{token}")
 
 
+def _oauth_error_detail(response: httpx.Response, fallback: str) -> str:
+    try:
+        data = response.json()
+    except ValueError:
+        data = {}
+    if isinstance(data, dict):
+        for key in ("error_description", "error", "message"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+    text = response.text.strip()
+    return text or fallback
+
+
 async def _blacklist_access_token(jti: str, ttl: int):
     v = get_valkey()
     await v.setex(f"blacklist:{jti}", ttl, "1")
 
 
-def get_oauth_authorize_url(provider: str, redirect_uri: str, mode: str = "login") -> dict:
+def get_oauth_authorize_url(
+    provider: str,
+    redirect_uri: str,
+    mode: str = "login",
+    state_token: str | None = None,
+) -> dict:
     if provider not in {"google", "github"}:
         raise HTTPException(status_code=400, detail="Unsupported auth provider.")
     if mode not in {"login", "connect"}:
         raise HTTPException(status_code=400, detail="Invalid OAuth mode.")
 
     state = f"{mode}:{provider}"
+    if state_token:
+        state = f"{state}:{state_token}"
     if provider == "google":
         if not settings.google_client_id or settings.google_client_id == "your-google-client-id":
             raise HTTPException(status_code=400, detail="Google sign-in is not configured.")
@@ -484,22 +505,41 @@ async def exchange_google_oauth(code: str, redirect_uri: str) -> dict:
             "redirect_uri": redirect_uri,
             "grant_type": "authorization_code",
         })
+        if token_resp.is_error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Google token exchange failed: {_oauth_error_detail(token_resp, 'OAuth request was rejected.')}",
+            )
         token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise HTTPException(status_code=400, detail="Google token exchange did not return an access token.")
         user_resp = await client.get(
             "https://www.googleapis.com/oauth2/v2/userinfo",
-            headers={"Authorization": f"Bearer {token_data['access_token']}"},
+            headers={"Authorization": f"Bearer {access_token}"},
         )
+        if user_resp.is_error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Google user profile fetch failed: {_oauth_error_detail(user_resp, 'Unable to load Google profile.')}",
+            )
         user_info = user_resp.json()
 
     expires_at = None
     if token_data.get("expires_in"):
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(token_data["expires_in"]))
 
+    email = user_info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account did not provide an email address.")
+    if user_info.get("verified_email") is False or user_info.get("email_verified") is False:
+        raise HTTPException(status_code=400, detail="Google account email is not verified.")
+
     return {
-        "email": user_info["email"],
+        "email": email,
         "name": user_info.get("name", ""),
         "provider_id": user_info["id"],
-        "access_token": token_data.get("access_token"),
+        "access_token": access_token,
         "refresh_token": token_data.get("refresh_token"),
         "expires_at": expires_at,
     }

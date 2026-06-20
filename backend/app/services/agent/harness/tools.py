@@ -922,8 +922,11 @@ def build_registry() -> dict[str, ToolDefinition]:
         ToolDefinition(
             name="ask_user",
             description=(
-                "Ask the user a clarifying question when you genuinely cannot decide WHICH file "
-                "they mean or WHICH action they want. Do NOT use for trivial follow-ups."
+                "LAST RESORT only. Ask a clarifying question ONLY when you truly cannot proceed: "
+                "the answer would differ by file AND searching across all files can't disambiguate, "
+                "or the action is destructive/irreversible. Do NOT use it to ask which file when an "
+                "all-files search would answer, to fix typos / sloppy phrasing, or for trivial "
+                "follow-ups. Prefer attempting over asking."
             ),
             params_schema={
                 "type": "object",

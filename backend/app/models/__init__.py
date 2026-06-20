@@ -1,4 +1,11 @@
 from app.models.bucket import Bucket, Category
+from app.models.demo import (
+    DemoEvent,
+    DemoLead,
+    DemoLink,
+    DemoMeetingRequest,
+    DemoSurvey,
+)
 from app.models.mcp_token import AccountMcpToken, BucketMcpToken, McpAccessLog
 from app.models.conversation import Conversation, Message, ConversationChunk
 from app.models.user import User, Profile, OAuthToken
@@ -43,6 +50,11 @@ __all__ = [
     "BucketMcpToken",
     "McpAccessLog",
     "AccountMcpToken",
+    "DemoLink",
+    "DemoLead",
+    "DemoEvent",
+    "DemoSurvey",
+    "DemoMeetingRequest",
     "OAuthAuthorizationCode",
     "ApiKey",
     "TeamMember",

@@ -94,8 +94,9 @@ export const authApi = {
   resetPassword: (token, newPassword) =>
     request('POST', '/auth/reset-password', { token, new_password: newPassword }),
 
-  getOAuthAuthorizeUrl: (provider, redirectUri, mode = 'login') => {
+  getOAuthAuthorizeUrl: (provider, redirectUri, mode = 'login', stateToken = '') => {
     const params = new URLSearchParams({ redirect_uri: redirectUri, mode });
+    if (stateToken) params.set('state_token', stateToken);
     return request('GET', `/auth/${provider}/authorize-url?${params.toString()}`);
   },
 
@@ -291,8 +292,9 @@ export const dashboardApi = {
     formData.append('file', file);
     return requestForm('PUT', '/user/avatar', formData, authToken());
   },
-  getProviderConnectUrl: (provider, redirectUri) => {
+  getProviderConnectUrl: (provider, redirectUri, stateToken = '') => {
     const params = new URLSearchParams({ redirect_uri: redirectUri });
+    if (stateToken) params.set('state_token', stateToken);
     return request('GET', `/user/auth-provider/${provider}/connect-url?${params.toString()}`, null, authToken());
   },
   connectAuthProvider: (provider, code, redirectUri) =>
@@ -357,7 +359,24 @@ async function adminSessionRequest(method, path, body, session) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.detail || 'Request failed.');
+  if (!res.ok) {
+    const detail = data?.detail;
+    throw new Error(typeof detail === 'string' ? detail : 'Request failed.');
+  }
+  return data;
+}
+
+// Verified admin multipart upload (prebuild demo files).
+async function adminSessionForm(method, path, formData, session) {
+  const headers = { 'X-Admin-Session': session || '' };
+  const token = authToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${BASE}/v1${path}`, { method, headers, body: formData });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = data?.detail;
+    throw new Error(typeof detail === 'string' ? detail : 'Upload failed.');
+  }
   return data;
 }
 
@@ -384,6 +403,21 @@ export const adminApi = {
     adminSessionRequest('POST', `/admin/limit-requests/${requestId}/reject`, {
       admin_note: adminNote || null,
     }, session),
+
+  // ── Demo buckets ──
+  listDemoBuckets: (session) => adminSessionRequest('GET', '/admin/demo-buckets', null, session),
+  createDemoBucket: (payload, session) => adminSessionRequest('POST', '/admin/demo-buckets', payload, session),
+  getDemoBucket: (id, session) => adminSessionRequest('GET', `/admin/demo-buckets/${id}`, null, session),
+  updateDemoBucket: (id, payload, session) => adminSessionRequest('PATCH', `/admin/demo-buckets/${id}`, payload, session),
+  uploadDemoFiles: (id, files, session) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append('files', f));
+    return adminSessionForm('POST', `/admin/demo-buckets/${id}/files`, fd, session);
+  },
+  getDemoActivity: (id, session) => adminSessionRequest('GET', `/admin/demo-buckets/${id}/activity`, null, session),
+  listDemoMeetings: (session, status = 'pending') =>
+    adminSessionRequest('GET', `/admin/demo-meetings?status=${encodeURIComponent(status)}`, null, session),
+  updateDemoMeeting: (id, payload, session) => adminSessionRequest('PATCH', `/admin/demo-meetings/${id}`, payload, session),
 };
 
 export const enterpriseApi = {

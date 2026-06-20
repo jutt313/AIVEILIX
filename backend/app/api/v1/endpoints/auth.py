@@ -91,8 +91,13 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
 
 
 @router.get("/{provider}/authorize-url")
-async def get_oauth_authorize_url(provider: str, redirect_uri: str, mode: str = "login"):
-    return auth_service.get_oauth_authorize_url(provider, redirect_uri, mode)
+async def get_oauth_authorize_url(
+    provider: str,
+    redirect_uri: str,
+    mode: str = "login",
+    state_token: str = "",
+):
+    return auth_service.get_oauth_authorize_url(provider, redirect_uri, mode, state_token or None)
 
 
 @router.post("/google", response_model=OAuthResponse)

@@ -52,7 +52,9 @@ async def enforce_bucket_quota(db: AsyncSession, owner_user_id: uuid.UUID) -> Ef
     if ep.locked:
         _deny("Your free trial has ended. Choose a plan to keep creating buckets.")
     count = await db.scalar(
-        select(func.count()).select_from(Bucket).where(Bucket.user_id == owner_user_id)
+        select(func.count())
+        .select_from(Bucket)
+        .where(Bucket.user_id == owner_user_id, Bucket.is_demo.is_(False))
     ) or 0
     if count >= ep.limits.max_buckets:
         _deny(
@@ -98,7 +100,10 @@ async def enforce_upload_quota(
         )
 
     doc_count = await db.scalar(
-        select(func.count()).select_from(File).where(File.user_id == owner_user_id)
+        select(func.count())
+        .select_from(File)
+        .join(Bucket, File.bucket_id == Bucket.id)
+        .where(File.user_id == owner_user_id, Bucket.is_demo.is_(False))
     ) or 0
     if doc_count + incoming_files > lim.max_documents:
         remaining = max(0, lim.max_documents - doc_count)
@@ -108,7 +113,10 @@ async def enforce_upload_quota(
         )
 
     used_bytes = await db.scalar(
-        select(func.coalesce(func.sum(File.size), 0)).where(File.user_id == owner_user_id)
+        select(func.coalesce(func.sum(File.size), 0))
+        .select_from(File)
+        .join(Bucket, File.bucket_id == Bucket.id)
+        .where(File.user_id == owner_user_id, Bucket.is_demo.is_(False))
     ) or 0
     if used_bytes + incoming_bytes > lim.max_storage_bytes:
         gb = lim.max_storage_bytes / (1024 ** 3)
@@ -130,6 +138,7 @@ async def enforce_chat_quota(db: AsyncSession, owner_user_id: uuid.UUID) -> Effe
         .join(Bucket, Conversation.bucket_id == Bucket.id)
         .where(
             Bucket.user_id == owner_user_id,
+            Bucket.is_demo.is_(False),
             Message.role == "user",
             Message.created_at >= _month_start(),
         )
@@ -172,7 +181,12 @@ async def page_quota_status(
     Returns (within_limit, used_pages, max_pages, plan_name).
     """
     ep = await owner_effective_plan(db, owner_user_id)
-    q = select(func.coalesce(func.sum(File.page_count), 0)).where(File.user_id == owner_user_id)
+    q = (
+        select(func.coalesce(func.sum(File.page_count), 0))
+        .select_from(File)
+        .join(Bucket, File.bucket_id == Bucket.id)
+        .where(File.user_id == owner_user_id, Bucket.is_demo.is_(False))
+    )
     if exclude_file_id is not None:
         q = q.where(File.id != exclude_file_id)
     used = await db.scalar(q) or 0
@@ -192,7 +206,12 @@ async def image_quota_status(
     Returns (within_limit, used_images, max_images, plan_name).
     """
     ep = await owner_effective_plan(db, owner_user_id)
-    q = select(func.coalesce(func.sum(File.image_count), 0)).where(File.user_id == owner_user_id)
+    q = (
+        select(func.coalesce(func.sum(File.image_count), 0))
+        .select_from(File)
+        .join(Bucket, File.bucket_id == Bucket.id)
+        .where(File.user_id == owner_user_id, Bucket.is_demo.is_(False))
+    )
     if exclude_file_id is not None:
         q = q.where(File.id != exclude_file_id)
     used = await db.scalar(q) or 0

@@ -1,0 +1,67 @@
+# AIveilix — robots.txt
+# Persistent knowledge infrastructure for AI. We WELCOME AI crawlers.
+# Human-readable product brief for LLMs: https://aiveilix.com/llms.txt
+
+# --- Default: allow crawling of public pages ---
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /bucket/
+Disallow: /onboarding
+Disallow: /oauth/
+Disallow: /connect/
+Disallow: /invite/
+Disallow: /confirm-email
+Disallow: /verify-email
+Disallow: /forgot-password
+Disallow: /temp-pipeline
+
+# --- AI / LLM crawlers (explicitly allowed) ---
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+# Sitemap
+Sitemap: https://aiveilix.com/sitemap.xml

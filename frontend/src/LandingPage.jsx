@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AnimatedBeam, AnimatedGridPattern, BackgroundBeams, BentoGrid, BentoGridItem,
-  BlurFade, BorderBeam, CardHoverSpotlight, ContainerScroll, GradientText,
+  BlurFade, CardHoverSpotlight, ContainerScroll, GradientText,
   Marquee, ShimmerButton, Spotlight,
 } from './landing-components';
 import { TOOLS } from './brand-logos';
@@ -486,45 +486,62 @@ function HowMcpWorks({ p, theme }) {
           </p>
         </BlurFade>
 
-        {/* Animated beam diagram with REAL logos */}
+        {/* Animated radial hub — one bucket broadcasting to every AI, real logos */}
         <BlurFade delay={0.15}>
-          <div ref={containerRef} className={`relative mx-auto mt-14 grid h-[340px] max-w-3xl grid-cols-2 items-center justify-items-center gap-y-8 rounded-2xl p-8 sm:h-[400px] ${p.soft}`}>
-            {/* AIveilix bucket node — using real logo */}
-            <div className="row-span-4 flex flex-col items-center">
-              <div ref={bucketRef} className="relative flex h-24 w-24 items-center justify-center rounded-2xl bg-white p-2 shadow-xl shadow-blue-500/30 ring-1 ring-blue-400/40 sm:h-28 sm:w-28">
+          <div ref={containerRef} className={`relative mx-auto mt-14 h-[380px] max-w-3xl overflow-hidden rounded-3xl sm:h-[460px] ${p.soft}`}>
+            {/* soft radial glow behind the hub */}
+            <div className="pointer-events-none absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-tr from-blue-500/25 via-cyan-400/15 to-purple-500/25 blur-3xl" />
+
+            {/* slowly rotating dashed orbit ring */}
+            <svg className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" width="320" height="320" viewBox="0 0 320 320" aria-hidden="true">
+              <motion.circle
+                cx="160" cy="160" r="132" fill="none"
+                stroke={isDark ? 'rgba(148,163,184,0.22)' : 'rgba(100,116,139,0.22)'}
+                strokeWidth="1.5" strokeDasharray="3 9"
+                style={{ transformOrigin: '160px 160px' }}
+                animate={{ rotate: 360 }}
+                transition={{ duration: 44, ease: 'linear', repeat: Infinity }}
+              />
+            </svg>
+
+            {/* center hub — the AIveilix bucket */}
+            <div className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center">
+              <motion.span
+                className="absolute -inset-3 rounded-[1.75rem] border border-blue-400/40"
+                animate={{ scale: [1, 1.4], opacity: [0.55, 0] }}
+                transition={{ duration: 2.6, ease: 'easeOut', repeat: Infinity }}
+              />
+              <div ref={bucketRef} className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white p-2 shadow-xl shadow-blue-500/40 ring-1 ring-blue-400/50 sm:h-24 sm:w-24">
                 <img src="/logo-tight.png" alt="AIveilix" className="h-full w-full rounded-xl object-contain" />
               </div>
-              <p className={`mt-3 text-sm font-semibold ${p.title}`}>AIveilix bucket</p>
-              <p className={`text-xs ${p.muted}`}>via MCP link</p>
+              <span className={`mt-2.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${p.pillBlue}`}>1 bucket · 1 link</span>
             </div>
 
-            {/* AI tool tiles — real logos, clickable to /connect/<id> */}
+            {/* satellite AI nodes around the hub — real logos, clickable */}
             {TOOLS.map((t, i) => {
               const Logo = t.Logo;
+              const pos = ['left-[6%] top-[12%]', 'right-[6%] top-[12%]', 'left-[6%] bottom-[12%]', 'right-[6%] bottom-[12%]'][i];
               return (
                 <button
                   key={t.id}
-                  ref={aiRefs[i]}
                   onClick={() => navigate(`/connect/${t.id}`)}
-                  className={`group flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${p.card} ${p.title} ${isDark ? 'hover:border-white/40 hover:shadow-blue-500/20' : 'hover:border-slate-400 hover:shadow-slate-400/30'}`}
+                  className={`group absolute z-10 flex flex-col items-center gap-1.5 ${pos}`}
                   style={{ ['--brand']: t.brand }}
+                  aria-label={`Connect ${t.label}`}
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Logo className="h-7 w-7 flex-none transition group-hover:scale-110" />
-                    <span>{t.label}</span>
+                  <span ref={aiRefs[i]} className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-lg group-hover:shadow-blue-500/20 sm:h-16 sm:w-16 ${p.card}`}>
+                    <Logo className="h-7 w-7 transition group-hover:scale-110 sm:h-8 sm:w-8" />
                   </span>
-                  <span className={`inline-flex items-center gap-1 text-xs font-medium opacity-0 transition group-hover:opacity-100 ${p.accent}`}>
-                    Setup
-                    <Icon name="arrow" className="h-3 w-3" />
-                  </span>
+                  <span className={`text-[11px] font-medium ${p.text}`}>{t.label}</span>
                 </button>
               );
             })}
 
-            <AnimatedBeam containerRef={containerRef} fromRef={bucketRef} toRef={aiRefs[0]} curvature={-60} duration={3.5} />
-            <AnimatedBeam containerRef={containerRef} fromRef={bucketRef} toRef={aiRefs[1]} curvature={-20} duration={4}   delay={0.6} />
-            <AnimatedBeam containerRef={containerRef} fromRef={bucketRef} toRef={aiRefs[2]} curvature={20}  duration={4.5} delay={1.2} />
-            <AnimatedBeam containerRef={containerRef} fromRef={bucketRef} toRef={aiRefs[3]} curvature={60}  duration={5}   delay={1.8} />
+            {/* animated beams fan out from the hub to each AI */}
+            <AnimatedBeam containerRef={containerRef} fromRef={bucketRef} toRef={aiRefs[0]} curvature={75}  duration={3.5} />
+            <AnimatedBeam containerRef={containerRef} fromRef={bucketRef} toRef={aiRefs[1]} curvature={75}  duration={4}   delay={0.5} />
+            <AnimatedBeam containerRef={containerRef} fromRef={bucketRef} toRef={aiRefs[2]} curvature={-75} duration={4.5} delay={1} />
+            <AnimatedBeam containerRef={containerRef} fromRef={bucketRef} toRef={aiRefs[3]} curvature={-75} duration={5}   delay={1.5} />
           </div>
         </BlurFade>
 
@@ -543,6 +560,118 @@ function HowMcpWorks({ p, theme }) {
               </div>
             </BlurFade>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────── MCP SERVER — dedicated developer section ─────────── */
+const MCP_TOOLS = [
+  'search', 'query', 'list_files', 'get_file', 'get_file_summary',
+  'get_file_layout', 'list_categories', 'get_bucket_info', 'list_chunks',
+  'get_chunk', 'list_visuals', 'get_visual',
+];
+
+function McpServer({ p }) {
+  const [copied, setCopied] = useState(false);
+  const snippet = `{
+  "mcpServers": {
+    "aiveilix": {
+      "url": "https://mcp.aiveilix.com/bucket/AVX_live_••••"
+    }
+  }
+}`;
+  const copy = () => {
+    navigator.clipboard?.writeText(snippet);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  return (
+    <section id="mcp-server" className={`border-b ${p.divider}`}>
+      <div className="mx-auto max-w-7xl px-6 py-28">
+        <BlurFade>
+          <p className={`text-center text-xs font-semibold uppercase tracking-[0.22em] ${p.accent}`}>For developers</p>
+          <h2 className={`mx-auto mt-3 max-w-3xl text-center text-3xl font-semibold tracking-tight sm:text-5xl ${p.title}`}>
+            A full <GradientText>MCP server</GradientText> for every bucket
+          </h2>
+          <p className={`mx-auto mt-5 max-w-2xl text-center text-base ${p.text}`}>
+            Standards-based Model Context Protocol — no SDK, no glue code. Point any MCP client at your bucket&apos;s URL and your agent gets a complete, ready-to-reason toolset over your documents.
+          </p>
+        </BlurFade>
+
+        <div className="mt-16 grid items-center gap-10 md:grid-cols-2 lg:gap-16">
+          {/* LEFT — config card */}
+          <BlurFade delay={0.1}>
+            <div className="relative overflow-hidden rounded-2xl shadow-2xl shadow-blue-500/10">
+              <div className="rounded-2xl border border-white/10 bg-[#0b1120]">
+                {/* window chrome */}
+                <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+                  <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+                  <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+                  <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+                  <span className="ml-2 font-mono text-xs text-slate-400">mcp.json</span>
+                  <button onClick={copy} className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-white/15 px-2 py-1 font-mono text-[11px] text-slate-300 transition hover:bg-white/10">
+                    <Icon name={copied ? 'check' : 'link'} className="h-3 w-3" />
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <pre className="overflow-x-auto px-5 py-5 font-mono text-[12.5px] leading-6 text-slate-300">
+                  <code>
+                    {'{'}{'\n'}
+                    {'  '}<span className="text-sky-300">"mcpServers"</span>{': {'}{'\n'}
+                    {'    '}<span className="text-sky-300">"aiveilix"</span>{': {'}{'\n'}
+                    {'      '}<span className="text-sky-300">"url"</span>{': '}<span className="text-emerald-300">"https://mcp.aiveilix.com/bucket/AVX_live_••••"</span>{'\n'}
+                    {'    '}{'}'}{'\n'}
+                    {'  '}{'}'}{'\n'}
+                    {'}'}
+                  </code>
+                </pre>
+              </div>
+            </div>
+            <p className={`mt-3 text-center text-xs ${p.muted}`}>Same URL drops into Claude, ChatGPT, Cursor, or any MCP-ready client.</p>
+          </BlurFade>
+
+          {/* RIGHT — tools + capabilities */}
+          <BlurFade delay={0.18}>
+            <h3 className={`text-xl font-semibold ${p.title}`}>The toolset your agent gets, instantly</h3>
+            <p className={`mt-2 text-sm leading-relaxed ${p.text}`}>
+              One link exposes a typed toolset — hybrid search, structured retrieval, and document layout — so your agent calls straight into your knowledge.
+            </p>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              {MCP_TOOLS.map((t) => (
+                <span key={t} className={`rounded-lg px-2.5 py-1 font-mono text-xs ${p.chip}`}>{t}()</span>
+              ))}
+              <span className={`rounded-lg px-2.5 py-1 font-mono text-xs ${p.muted}`}>+ more</span>
+            </div>
+
+            <ul className="mt-7 space-y-3.5">
+              {[
+                ['Hybrid search + rerank', 'Dense + sparse retrieval and a reranker, built into the search tool.'],
+                ['Page-level citations', 'Every result carries its source file and page — ready to cite.'],
+                ['Account-scoped server too', 'A second URL exposes list_buckets, create_bucket and get_account_info to manage everything programmatically.'],
+                ['Scoped & revocable', 'Each link is a scoped credential. Rotate or revoke it any time.'],
+              ].map(([t, b]) => (
+                <li key={t} className="flex gap-3">
+                  <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                    <Icon name="check" className="h-3 w-3" />
+                  </span>
+                  <span className="text-sm leading-relaxed">
+                    <strong className={`font-semibold ${p.title}`}>{t}.</strong> <span className={p.text}>{b}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-7 flex flex-wrap items-center gap-2">
+              <span className={`text-xs ${p.muted}`}>Works with</span>
+              {['Claude', 'ChatGPT', 'Cursor', 'Cline', 'Zed', 'Continue'].map((c) => (
+                <span key={c} className={`rounded-md px-2 py-0.5 text-xs ${p.chip}`}>{c}</span>
+              ))}
+            </div>
+          </BlurFade>
         </div>
       </div>
     </section>
@@ -926,7 +1055,7 @@ function Features({ p, theme }) {
         <BlurFade>
           <p className={`text-center text-xs font-semibold uppercase tracking-[0.22em] ${p.accent}`}>What you get</p>
           <h2 className={`mx-auto mt-3 max-w-2xl text-center text-3xl font-semibold tracking-tight sm:text-5xl ${p.title}`}>
-            Built for doc handlers,<br/>not devs.
+            Built for doc handlers.<br/>Loved by devs.
           </h2>
         </BlurFade>
 
@@ -1265,7 +1394,7 @@ function Footer({ p }) {
             <Link to="/docs"           className={`${p.text} transition hover:${p.title}`}>Docs</Link>
             <Link to="/privacy-policy" className={`${p.text} transition hover:${p.title}`}>Privacy</Link>
             <Link to="/terms"          className={`${p.text} transition hover:${p.title}`}>Terms</Link>
-            <a   href="mailto:info@aiveilix.com" className={`${p.text} transition hover:${p.title}`}>info@aiveilix.com</a>
+            <a   href="mailto:contact@aiveilix.com" className={`${p.text} transition hover:${p.title}`}>contact@aiveilix.com</a>
           </nav>
         </div>
       </div>
@@ -1290,6 +1419,7 @@ export default function LandingPage({ theme }) {
       <ProblemSolution p={p} theme={theme} />
       <HowItWorks p={p} theme={theme} />
       <HowMcpWorks p={p} theme={theme} />
+      <McpServer p={p} />
       <BucketShowcase p={p} theme={theme} />
       <Features p={p} theme={theme} />
       <UseCases p={p} />

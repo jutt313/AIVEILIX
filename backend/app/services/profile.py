@@ -172,8 +172,12 @@ async def change_password(db: AsyncSession, user_id: str, current_password: str,
     return {"message": "Password set successfully." if is_first_password else "Password changed successfully."}
 
 
-async def get_auth_provider_connect_url(provider: str, redirect_uri: str) -> dict:
-    return get_oauth_authorize_url(provider, redirect_uri, mode="connect")
+async def get_auth_provider_connect_url(
+    provider: str,
+    redirect_uri: str,
+    state_token: str | None = None,
+) -> dict:
+    return get_oauth_authorize_url(provider, redirect_uri, mode="connect", state_token=state_token)
 
 
 async def connect_auth_provider(db: AsyncSession, user_id: str, provider: str, code: str, redirect_uri: str) -> dict:
