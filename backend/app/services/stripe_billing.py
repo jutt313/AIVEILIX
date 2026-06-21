@@ -170,8 +170,8 @@ async def create_checkout_session(
         "client_reference_id": str(owner_user_id),
         "metadata": metadata,
         "subscription_data": {"metadata": metadata},
-        "success_url": f"{base}/?billing=success&session_id={{CHECKOUT_SESSION_ID}}",
-        "cancel_url": f"{base}/?billing=cancelled",
+        "success_url": f"{base}/dashboard?billing=success&session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url": f"{base}/dashboard?billing=cancelled",
         "allow_promotion_codes": True,
     }
     # Reuse the saved customer if we have one, otherwise let Checkout create it.
@@ -198,7 +198,7 @@ async def create_portal_session(
     session = await asyncio.to_thread(
         stripe.billing_portal.Session.create,
         customer=sub.stripe_customer_id,
-        return_url=f"{base}/?billing=portal",
+        return_url=f"{base}/dashboard?billing=portal",
     )
     return session.url
 

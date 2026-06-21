@@ -333,6 +333,7 @@ export const dashboardApi = {
 
 export const billingApi = {
   getPlan: () => request('GET', '/billing/plan', null, authToken()),
+  getHistory: () => request('GET', '/billing/history', null, authToken()),
   // Start a Stripe Checkout session for a paid plan; returns { url } to redirect to.
   createCheckout: (plan) => request('POST', '/billing/checkout', { plan }, authToken()),
   // Stripe Customer Portal (manage card / downgrade / cancel); returns { url }.

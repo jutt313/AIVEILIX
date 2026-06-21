@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from datetime import date, datetime, timezone
@@ -323,12 +324,48 @@ async def cancel_subscription(
 
 
 @router.get("/history")
-async def billing_history(current_user=Depends(get_current_user)):
-    return {
-        "items": [],
-        "total": 0,
-        "message": f'No billing history is available yet for user {current_user["user_id"]}.',
-    }
+async def billing_history(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+    x_workspace: str | None = Header(default=None, alias="X-Workspace"),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    ctx = await resolve_user_context(db, user_id, parse_active_workspace(x_workspace, user_id))
+    sub = (
+        await db.execute(select(Subscription).where(Subscription.user_id == ctx.owner_user_id))
+    ).scalar_one_or_none()
+
+    if not sub or not sub.stripe_customer_id or not stripe_billing.is_configured():
+        return {"items": [], "total": 0}
+
+    try:
+        invoices = await asyncio.to_thread(
+            stripe.Invoice.list,
+            customer=sub.stripe_customer_id,
+            limit=24,
+        )
+        items = []
+        for inv in invoices.data:
+            desc = None
+            if inv.lines and inv.lines.data:
+                desc = inv.lines.data[0].description
+            items.append({
+                "id": inv.id,
+                "amount_paid": inv.amount_paid,
+                "amount_due": inv.amount_due,
+                "currency": inv.currency.upper(),
+                "status": inv.status,
+                "created": inv.created,
+                "period_start": inv.period_start,
+                "period_end": inv.period_end,
+                "hosted_invoice_url": inv.hosted_invoice_url,
+                "invoice_pdf": inv.invoice_pdf,
+                "description": desc,
+            })
+        return {"items": items, "total": len(items)}
+    except Exception:
+        logger.exception("Could not fetch Stripe invoices for user %s", ctx.owner_user_id)
+        return {"items": [], "total": 0, "error": "Could not load billing history."}
 
 
 @router.post("/webhook")

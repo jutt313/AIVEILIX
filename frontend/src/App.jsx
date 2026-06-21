@@ -3286,11 +3286,25 @@ function ProfileDrawer({
   const [avatarPreviewError, setAvatarPreviewError] = useState(false);
   const [billingBusy, setBillingBusy] = useState('');
   const [billingError, setBillingError] = useState('');
+  const [billingHistory, setBillingHistory] = useState(null);
+  const [billingHistoryLoading, setBillingHistoryLoading] = useState(false);
 
   const planKey = billingPlan?.plan;
   const isEnterprise = planKey === 'business';
   const isPaidPlan = !!billingPlan && !billingPlan.is_trial && !billingPlan.locked
     && (planKey === 'individual' || planKey === 'team');
+  const isIndividualPaid = isPaidPlan && planKey === 'individual';
+  const isTeamPaid = isPaidPlan && planKey === 'team';
+
+  // Load billing history when drawer opens
+  useEffect(() => {
+    if (!open) return;
+    setBillingHistoryLoading(true);
+    billingApi.getHistory()
+      .then((data) => setBillingHistory(data))
+      .catch(() => setBillingHistory(null))
+      .finally(() => setBillingHistoryLoading(false));
+  }, [open]);
 
   const handleSubscribe = async (plan) => {
     setBillingError('');
@@ -3660,13 +3674,46 @@ function ProfileDrawer({
                   </div>
                 )}
 
+                {/* Trial info banner */}
+                {billingPlan?.is_trial && billingPlan?.trial_ends_at && (
+                  <div className={`mt-4 rounded-xl px-4 py-3 text-sm ${isDark ? 'bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/20' : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'}`}>
+                    Free trial ends {new Date(billingPlan.trial_ends_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} — upgrade before then to keep full access.
+                  </div>
+                )}
+                {billingPlan?.locked && (
+                  <div className={`mt-4 rounded-xl px-4 py-3 text-sm ${isDark ? 'bg-red-500/10 text-red-300 ring-1 ring-red-500/20' : 'bg-red-50 text-red-700 ring-1 ring-red-200'}`}>
+                    Your trial has ended. Upgrade to restore access.
+                  </div>
+                )}
+
                 {billingError && (
                   <p className="mt-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">{billingError}</p>
                 )}
 
                 {isEnterprise ? (
                   <p className={`mt-5 text-sm ${helperText}`}>Enterprise account — billing and limits are managed by our team.</p>
-                ) : isPaidPlan ? (
+                ) : isIndividualPaid ? (
+                  /* Individual paid → offer upgrade to Pro (Team) + cancel */
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSubscribe('team')}
+                      disabled={!!billingBusy}
+                      className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${palette.primary}`}
+                    >
+                      {billingBusy === 'team' ? 'Redirecting...' : 'Upgrade to Pro · $49/mo'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelSubscription}
+                      disabled={!!billingBusy}
+                      className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${isDark ? 'bg-white/8 text-slate-100 hover:bg-white/12' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}
+                    >
+                      {billingBusy === 'cancel' ? 'Cancelling...' : 'Cancel subscription'}
+                    </button>
+                  </div>
+                ) : isTeamPaid ? (
+                  /* Pro (Team) paid → offer downgrade via portal + cancel */
                   <div className="mt-5 flex flex-wrap gap-3">
                     <button
                       type="button"
@@ -3674,7 +3721,7 @@ function ProfileDrawer({
                       disabled={!!billingBusy}
                       className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${palette.primary}`}
                     >
-                      {billingBusy === 'portal' ? 'Opening...' : 'Upgrade plan'}
+                      {billingBusy === 'portal' ? 'Opening...' : 'Manage / Downgrade Plan'}
                     </button>
                     <button
                       type="button"
@@ -3686,6 +3733,7 @@ function ProfileDrawer({
                     </button>
                   </div>
                 ) : (
+                  /* Trial or locked → offer both plans */
                   <div className="mt-5 flex flex-wrap gap-3">
                     <button
                       type="button"
@@ -3693,7 +3741,7 @@ function ProfileDrawer({
                       disabled={!!billingBusy}
                       className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${palette.primary}`}
                     >
-                      {billingBusy === 'individual' ? 'Redirecting...' : 'Upgrade to Individual · $15/mo'}
+                      {billingBusy === 'individual' ? 'Redirecting...' : 'Start Individual · $15/mo'}
                     </button>
                     <button
                       type="button"
@@ -3701,18 +3749,60 @@ function ProfileDrawer({
                       disabled={!!billingBusy}
                       className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${isDark ? 'bg-white/8 text-slate-100 hover:bg-white/12' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}
                     >
-                      {billingBusy === 'team' ? 'Redirecting...' : 'Upgrade to Team · $49/mo'}
+                      {billingBusy === 'team' ? 'Redirecting...' : 'Start Pro · $49/mo'}
                     </button>
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => onRequestLimitIncrease?.(billingPlan)}
-                  className={`mt-3 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${isDark ? 'bg-white/8 text-slate-100 hover:bg-white/12' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}
-                >
-                  {isEnterprise ? 'Request More Limits' : 'Increase Limits'}
-                </button>
+                {!isEnterprise && (
+                  <button
+                    type="button"
+                    onClick={() => onRequestLimitIncrease?.(billingPlan)}
+                    className={`mt-3 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${isDark ? 'bg-white/8 text-slate-100 hover:bg-white/12' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}
+                  >
+                    Increase Limits
+                  </button>
+                )}
+
+                {/* Billing History */}
+                <div className="mt-6">
+                  <p className={`mb-3 text-sm font-semibold ${palette.title}`}>Payment History</p>
+                  {billingHistoryLoading ? (
+                    <p className={`text-sm ${helperText}`}>Loading...</p>
+                  ) : !billingHistory || billingHistory.items?.length === 0 ? (
+                    <p className={`text-sm ${helperText}`}>No payments yet.</p>
+                  ) : (
+                    <div className={`overflow-hidden rounded-xl border ${sectionBorder}`}>
+                      {billingHistory.items.map((inv) => (
+                        <div key={inv.id} className={`flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0 ${sectionBorder}`}>
+                          <div className="min-w-0">
+                            <p className={`text-sm font-medium ${palette.title}`}>
+                              {inv.description || (inv.period_start && inv.period_end
+                                ? `${new Date(inv.period_start * 1000).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+                                : 'Subscription')}
+                            </p>
+                            <p className={`text-xs ${helperText}`}>{new Date(inv.created * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3">
+                            <span className={`text-sm font-semibold ${inv.status === 'paid' ? 'text-emerald-500' : 'text-amber-500'}`}>
+                              {inv.currency} {((inv.amount_paid || inv.amount_due) / 100).toFixed(2)}
+                            </span>
+                            {inv.hosted_invoice_url && (
+                              <a
+                                href={inv.hosted_invoice_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`text-xs font-medium underline underline-offset-2 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}
+                              >
+                                View
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </section>
 
               <section className={`pb-8 ${sectionBorder} border-b`}>
@@ -3790,11 +3880,13 @@ const BUCKET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#
 function DashboardPage({ theme, onToggleTheme, workspaces, activeWorkspace }) {
   const palette = themeOptions[theme];
   const navigate = useNavigate();
+  const location = useLocation();
   const currentMonth = toMonthInputValue(new Date());
 
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState(null);
   const [billingPlan, setBillingPlan] = useState(null);
+  const [billingBanner, setBillingBanner] = useState(null); // 'success' | 'cancelled' | 'portal'
   const [monthly, setMonthly] = useState([]);
   const [buckets, setBuckets] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -3855,6 +3947,26 @@ function DashboardPage({ theme, onToggleTheme, workspaces, activeWorkspace }) {
     if (!token) { navigate('/login'); return; }
     loadDashboardData().finally(() => setLoading(false));
   }, [navigate]);
+
+  // Handle Stripe redirect query params (?billing=success|cancelled|portal)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const billing = params.get('billing');
+    if (billing === 'success' || billing === 'cancelled' || billing === 'portal') {
+      setBillingBanner(billing);
+      // Clean the URL so it doesn't persist on refresh
+      navigate('/dashboard', { replace: true });
+    }
+  }, [location.search, navigate]);
+
+  // Auto-show upgrade modal when trial expires (account locked)
+  useEffect(() => {
+    if (billingPlan?.locked) {
+      window.dispatchEvent(new CustomEvent('aiveilix:limit-hit', {
+        detail: { message: 'Your free trial has ended. Upgrade to keep full access to AIveilix.' },
+      }));
+    }
+  }, [billingPlan?.locked]);
 
   useEffect(() => {
     const token = sessionStorage.getItem('access_token');
@@ -4295,6 +4407,25 @@ function DashboardPage({ theme, onToggleTheme, workspaces, activeWorkspace }) {
 
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 pb-8 pt-4 sm:px-6 sm:pb-10 sm:pt-5">
+        {/* Billing redirect banners */}
+        {billingBanner === 'success' && (
+          <div className="mb-5 flex items-center justify-between gap-3 rounded-xl bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-600 ring-1 ring-emerald-500/20">
+            <span>🎉 Payment successful! Your plan has been activated.</span>
+            <button type="button" onClick={() => setBillingBanner(null)} className="shrink-0 text-emerald-500 hover:text-emerald-400">✕</button>
+          </div>
+        )}
+        {billingBanner === 'cancelled' && (
+          <div className="mb-5 flex items-center justify-between gap-3 rounded-xl bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-600 ring-1 ring-amber-500/20">
+            <span>Checkout was cancelled — no changes were made.</span>
+            <button type="button" onClick={() => setBillingBanner(null)} className="shrink-0 text-amber-500 hover:text-amber-400">✕</button>
+          </div>
+        )}
+        {billingBanner === 'portal' && (
+          <div className="mb-5 flex items-center justify-between gap-3 rounded-xl bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-600 ring-1 ring-blue-500/20">
+            <span>Billing settings updated.</span>
+            <button type="button" onClick={() => setBillingBanner(null)} className="shrink-0 text-blue-500 hover:text-blue-400">✕</button>
+          </div>
+        )}
         <div className="mb-6 flex justify-end">
           <button
             type="button"
@@ -8355,8 +8486,8 @@ function UpgradeModal({ theme }) {
     >
       <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl ${card}`} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
-          <span className="text-xl">!</span>
-          <h3 className="text-lg font-semibold">You've hit a plan limit</h3>
+          <span className="text-xl">⚡</span>
+          <h3 className="text-lg font-semibold">{planData?.locked ? 'Trial ended — upgrade to continue' : "You've hit a plan limit"}</h3>
         </div>
         <p className="mt-3 text-sm">{message}</p>
         {error && <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</p>}
@@ -8366,20 +8497,42 @@ function UpgradeModal({ theme }) {
           <>
             <p className={`mt-3 text-sm ${muted}`}>
               {isTeam
-                ? 'Team has fixed limits. Move to Enterprise for custom limits and higher capacity.'
-                : 'Individual has fixed limits. Upgrade to Team for higher limits, or choose Enterprise for custom limits.'}
+                ? 'Pro plan has fixed limits. Move to Enterprise for custom limits and higher capacity.'
+                : planData?.locked
+                  ? 'Choose a plan to restore access to your buckets and files.'
+                  : 'Individual plan has fixed limits. Upgrade to Pro for higher limits, or choose Enterprise.'}
             </p>
             <div className="mt-5 flex flex-wrap justify-end gap-3">
-              <button onClick={() => setOpen(false)} disabled={requesting} className={`rounded-full px-4 py-2 text-sm font-medium ${ghost}`}>
-                Not now
-              </button>
+              {!planData?.locked && (
+                <button onClick={() => setOpen(false)} disabled={requesting} className={`rounded-full px-4 py-2 text-sm font-medium ${ghost}`}>
+                  Not now
+                </button>
+              )}
+              {isIndividual && !planData?.locked && (
+                <button
+                  onClick={() => startCheckout('individual')}
+                  disabled={requesting}
+                  className={`rounded-full px-5 py-2 text-sm font-semibold ${dark ? 'bg-white/10 text-slate-100 hover:bg-white/15' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'} disabled:opacity-60`}
+                >
+                  {requesting ? 'Opening...' : 'Individual · $15/mo'}
+                </button>
+              )}
+              {(planData?.locked) && (
+                <button
+                  onClick={() => startCheckout('individual')}
+                  disabled={requesting}
+                  className={`rounded-full px-5 py-2 text-sm font-semibold ${dark ? 'bg-white/10 text-slate-100 hover:bg-white/15' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'} disabled:opacity-60`}
+                >
+                  {requesting ? 'Opening...' : 'Individual · $15/mo'}
+                </button>
+              )}
               {isIndividual && (
                 <button
                   onClick={() => startCheckout('team')}
                   disabled={requesting}
                   className="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
                 >
-                  {requesting ? 'Opening...' : 'Upgrade to Team'}
+                  {requesting ? 'Opening...' : 'Pro · $49/mo'}
                 </button>
               )}
               <button
