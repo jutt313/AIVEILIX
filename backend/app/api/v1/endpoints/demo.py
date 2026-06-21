@@ -107,8 +107,12 @@ class VerifyCodeRequest(BaseModel):
 
 class EnterRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=8)
-    name: str = Field(..., min_length=1, max_length=200)
-    email: str = Field(..., min_length=3, max_length=320)
+    # Identity is optional — admin pre-captures the primary lead at bucket
+    # creation, so the visitor's entry page only needs the access code. We keep
+    # these fields as a fallback for demo buckets created before this feature
+    # (or for the rare case of an admin who left them blank).
+    name: str | None = Field(default=None, max_length=200)
+    email: str | None = Field(default=None, max_length=320)
     role: str | None = Field(default=None, max_length=200)
 
 
@@ -130,6 +134,8 @@ class TeamInviteRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     email: str = Field(..., min_length=3, max_length=320)
     color: str | None = Field(default=None, max_length=16)
+    can_view_threads: bool = Field(default=False)
+    can_view_team: bool = Field(default=False)
 
 
 class SurveyRequest(BaseModel):
@@ -165,13 +171,24 @@ def _serialize_message(msg) -> dict:
     }
 
 
-def _serialize_conversation(conv) -> dict:
-    return {
+def _serialize_conversation(conv, owner_lead=None, *, current_lead_id=None) -> dict:
+    """Owner info lets a permission-granted viewer see "Sarah's thread" with
+    her avatar color. ``current_lead_id`` flags rows the viewer owns."""
+    out = {
         "id": str(conv.id),
         "title": conv.title,
         "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
     }
+    if owner_lead is not None:
+        out["owner"] = {
+            "id": str(owner_lead.id),
+            "name": owner_lead.name,
+            "color": owner_lead.color,
+            "is_team_member": owner_lead.is_team_member,
+        }
+        out["is_mine"] = (current_lead_id is not None and str(owner_lead.id) == str(current_lead_id))
+    return out
 
 
 # ── entry: verify-code / enter / invite ───────────────────────────────────────
@@ -247,7 +264,12 @@ async def files(session: DemoSession = Depends(get_demo_session), db: AsyncSessi
 @router.get("/conversations")
 async def list_conversations(session: DemoSession = Depends(get_demo_session), db: AsyncSession = Depends(get_db)):
     rows = await demo_service.list_threads(db, session)
-    return {"conversations": [_serialize_conversation(c) for c in rows]}
+    return {
+        "conversations": [
+            _serialize_conversation(conv, owner, current_lead_id=session.lead_id)
+            for conv, owner in rows
+        ]
+    }
 
 
 @router.post("/conversations")
@@ -257,7 +279,7 @@ async def create_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     conv = await demo_service.create_thread(db, session, title=body.title)
-    return _serialize_conversation(conv)
+    return _serialize_conversation(conv, session.demo_lead, current_lead_id=session.lead_id)
 
 
 @router.get("/conversations/{conversation_id}/messages")
@@ -426,7 +448,13 @@ async def team_invite(
     db: AsyncSession = Depends(get_db),
 ):
     member = await demo_service.invite_team_member(
-        db, session, name=body.name, email=body.email, color=body.color
+        db,
+        session,
+        name=body.name,
+        email=body.email,
+        color=body.color,
+        can_view_threads=body.can_view_threads,
+        can_view_team=body.can_view_team,
     )
     # Best-effort email — never fail the request on a delivery hiccup.
     try:
@@ -445,6 +473,8 @@ async def team_invite(
         "name": member.name,
         "email": member.email,
         "color": member.color,
+        "can_view_threads": member.can_view_threads,
+        "can_view_team": member.can_view_team,
     }
 
 
@@ -469,6 +499,11 @@ async def team(session: DemoSession = Depends(get_demo_session), db: AsyncSessio
                 "joined": m.comeback_count > 0,
                 "comeback_count": m.comeback_count,
                 "is_online": bool(m.last_seen_at and _aware(m.last_seen_at) >= online_cutoff),
+                "is_team_member": m.is_team_member,
+                "is_primary": not m.is_team_member,
+                "is_self": str(m.id) == str(session.lead_id),
+                "can_view_threads": m.can_view_threads,
+                "can_view_team": m.can_view_team,
                 "first_seen_at": m.first_seen_at.isoformat() if m.first_seen_at else None,
                 "last_seen_at": m.last_seen_at.isoformat() if m.last_seen_at else None,
             }

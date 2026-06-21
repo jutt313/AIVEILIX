@@ -58,8 +58,14 @@ async function req(method, path, body, { auth = false } = {}) {
 export const demoApi = {
   // ── entry ──
   verifyCode: (slug, code) => req('POST', `/${encodeURIComponent(slug)}/verify-code`, { code }),
-  enter: async (slug, { code, name, email, role }) => {
-    const data = await req('POST', `/${encodeURIComponent(slug)}/enter`, { code, name, email, role });
+  // name/email/role are optional now — admin pre-captures the primary lead
+  // when creating the bucket, so code-only entry is the normal path.
+  enter: async (slug, { code, name, email, role } = {}) => {
+    const body = { code };
+    if (name) body.name = name;
+    if (email) body.email = email;
+    if (role) body.role = role;
+    const data = await req('POST', `/${encodeURIComponent(slug)}/enter`, body);
     if (data.token) setDemoToken(data.token);
     return data;
   },

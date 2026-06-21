@@ -43,16 +43,39 @@ export default function DemoEntry({ slug, onEntered, theme = 'light', onToggleTh
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Admin pre-captures the primary lead at bucket creation, so the normal path
+  // is code → straight into the demo. The identity form is only used as a
+  // fallback for legacy buckets created without primary-lead info.
   const verify = async (value) => {
     const c = value || code;
     if (c.length !== 4) return;
     setError(''); setLoading(true);
     try {
       const res = await demoApi.verifyCode(slug, c);
-      if (res.ok) setStep('identity');
-      else { setError('That code isn’t right. Check the code in your invite.'); setCode(''); }
-    } catch (e) { setError(e.message || 'Could not verify the code.'); }
-    finally { setLoading(false); }
+      if (!res.ok) {
+        setError('That code isn’t right. Check the code in your invite.');
+        setCode('');
+        return;
+      }
+      try {
+        const data = await demoApi.enter(slug, { code: c });
+        onEntered(data.me);
+      } catch (entryErr) {
+        // Legacy bucket without a pre-set primary lead → ask for identity.
+        if (entryErr.status === 400) {
+          setStep('identity');
+        } else if (entryErr.status === 403) {
+          setError(entryErr.message || 'This demo is no longer available.');
+          setCode('');
+        } else {
+          setError(entryErr.message || 'Could not enter the demo.');
+        }
+      }
+    } catch (e) {
+      setError(e.message || 'Could not verify the code.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const submitIdentity = async (e) => {

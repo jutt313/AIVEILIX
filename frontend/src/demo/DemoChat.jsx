@@ -95,6 +95,11 @@ export default function DemoChat({
   files = [],
   onAttach,
   onComposerFocus,
+  // Color for the user-message bubble — defaults to AIveilix blue-600.
+  // For a teammate's thread this is the thread owner's avatar color; for
+  // your own thread it's your own color.
+  userBubbleColor,
+  readOnly = false,
 }) {
   const t = bucketClasses(theme === 'dark');
   const md = buildMarkdownComponents(t.isDark);
@@ -176,7 +181,7 @@ export default function DemoChat({
 
   const send = async (text) => {
     const content = (text ?? input).trim();
-    if (!content || sending) return;
+    if (!content || sending || readOnly) return;
     setInput('');
     setSending(true);
     setThinking(true);
@@ -223,12 +228,18 @@ export default function DemoChat({
             <div className="space-y-4">{[1, 2, 3].map((i) => <div key={i} className={`h-12 animate-pulse rounded-[1.2rem] ${i % 2 === 0 ? 'ml-auto w-2/3' : 'w-3/4'} ${t.subtle}`} />)}</div>
           ) : empty ? (
             <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
-              <p className={`text-[15px] ${t.muted}`}>Ask anything about these documents — answers are grounded and cited.</p>
-              <div className="mt-6 grid w-full max-w-xl gap-2 sm:grid-cols-2">
-                {STARTERS.map((s) => (
-                  <button key={s} onClick={() => send(s)} className={`rounded-[0.9rem] border px-4 py-3 text-left text-sm transition ${t.line} ${t.threadIdle} ${t.bodyCls}`}>{s}</button>
-                ))}
-              </div>
+              <p className={`text-[15px] ${t.muted}`}>
+                {readOnly
+                  ? 'No messages in this thread yet.'
+                  : 'Ask anything about these documents — answers are grounded and cited.'}
+              </p>
+              {!readOnly && (
+                <div className="mt-6 grid w-full max-w-xl gap-2 sm:grid-cols-2">
+                  {STARTERS.map((s) => (
+                    <button key={s} onClick={() => send(s)} className={`rounded-[0.9rem] border px-4 py-3 text-left text-sm transition ${t.line} ${t.threadIdle} ${t.bodyCls}`}>{s}</button>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -241,7 +252,10 @@ export default function DemoChat({
                     </div>
                   ) : (
                     <div className="flex max-w-[85%] flex-col items-end">
-                      <div className="w-fit max-w-full break-words rounded-[1.05rem] bg-blue-600 px-3.5 py-2 text-[15px] leading-7 text-white">
+                      <div
+                        className="w-fit max-w-full break-words rounded-[1.05rem] px-3.5 py-2 text-[15px] leading-7 text-white"
+                        style={{ backgroundColor: userBubbleColor || '#2563EB' }}
+                      >
                         <p className="whitespace-pre-wrap">{msg.content}</p>
                       </div>
                     </div>
@@ -270,15 +284,21 @@ export default function DemoChat({
 
       {/* Composer — same shell as BucketPage */}
       <div className="px-4 pb-4 pt-1">
-        <div className={`mx-auto max-w-3xl overflow-hidden rounded-[1.25rem] border ${t.subtle} ${t.line}`}>
+        {readOnly && (
+          <div className={cn('mx-auto mb-2 max-w-3xl rounded-[0.9rem] border px-3 py-2 text-center text-[12px]', t.line, t.muted)}>
+            You’re viewing a teammate’s thread. Start a new thread to chat yourself.
+          </div>
+        )}
+        <div className={`mx-auto max-w-3xl overflow-hidden rounded-[1.25rem] border ${t.subtle} ${t.line} ${readOnly ? 'opacity-50' : ''}`}>
           <textarea
             ref={composerRef}
             rows={1}
             value={input}
+            disabled={readOnly}
             onFocus={onComposerFocus}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder="Message…"
+            placeholder={readOnly ? 'Read-only — open a new thread to chat' : 'Message…'}
             className={`w-full max-h-[200px] resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-6 outline-none ${t.titleCls}`}
           />
           {/* bottom toolbar — matches the bucket composer */}
@@ -325,7 +345,7 @@ export default function DemoChat({
                 type="button"
                 data-tour="send"
                 onClick={() => send()}
-                disabled={!input.trim() || sending}
+                disabled={!input.trim() || sending || readOnly}
                 className={cn('flex h-8 w-8 items-center justify-center rounded-full transition disabled:opacity-40', t.primary)}
               >
                 {sending ? <Spinner className="h-4 w-4" /> : (

@@ -161,6 +161,14 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
   const snoozeRemaining = snoozeUntil - nowTick;
   const bucketName = me?.company_name || 'Demo';
 
+  // Color the user bubble in the active thread by whoever owns it. For my own
+  // threads this is my color; for a teammate's thread (visible to me via
+  // can_view_threads) it's theirs.
+  const activeConv = conversations.find((c) => String(c.id) === String(activeConvId));
+  const isMyThread = activeConv ? activeConv.is_mine !== false : true;
+  const userBubbleColor = activeConv?.owner?.color || lead.color || undefined;
+  const chatReadOnly = Boolean(activeConv) && !isMyThread;
+
   return (
     <main className={cn('flex h-[100dvh] flex-col overflow-hidden', t.bg)}>
       {/* ── top header (with the feedback reminder folded in) ── */}
@@ -188,7 +196,7 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
             )}
             <Counter label="Visit" value={lead.comeback_count} max={caps.comebacks} t={t} />
             <Counter label="Msgs" value={usage.messages} max={caps.messages} t={t} />
-            <DemoTeamFacepile theme={theme} members={team} capTeamMembers={caps.team_members} onChange={() => { loadTeam(); refreshMe(); }} onLimit={openLimit} />
+            <DemoTeamFacepile theme={theme} members={team} capTeamMembers={caps.team_members} canInvite={!!lead.can_invite} onChange={() => { loadTeam(); refreshMe(); }} onLimit={openLimit} />
             <button data-tour="mcp" onClick={() => setMcpOpen(true)} title="Use in ChatGPT / Claude" className={cn('hidden h-8 items-center rounded-full border px-3 text-xs font-semibold transition sm:flex', t.line, t.accent || '', isDark ? 'text-blue-400 hover:bg-blue-500/10' : 'text-blue-600 hover:bg-blue-50')}>MCP</button>
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             <button data-tour="feedback" onClick={() => setFeedback({ open: true, limit: null, auto: false })} className="rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-500">Feedback</button>
@@ -215,21 +223,40 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
               <p className={cn('px-2 py-4 text-sm', t.muted)}>No threads yet. Create one above.</p>
             ) : (
               <div className="space-y-1.5">
-                {conversations.map((c) => (
-                  <div
-                    key={c.id}
-                    onClick={() => setActiveConvId(c.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveConvId(c.id); } }}
-                    className={cn('group relative w-full cursor-pointer rounded-[0.9rem] border px-2.5 py-1.5 text-left transition', String(c.id) === String(activeConvId) ? t.threadActive : t.threadIdle)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <svg viewBox="0 0 24 24" className={cn('h-[18px] w-[18px] shrink-0', t.muted)} fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                      <p className={cn('min-w-0 flex-1 truncate text-[14px] font-semibold', t.titleCls)}>{c.title}</p>
+                {conversations.map((c) => {
+                  const owner = c.owner;
+                  const showOwner = owner && c.is_mine === false;
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => setActiveConvId(c.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveConvId(c.id); } }}
+                      className={cn('group relative w-full cursor-pointer rounded-[0.9rem] border px-2.5 py-1.5 text-left transition', String(c.id) === String(activeConvId) ? t.threadActive : t.threadIdle)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {showOwner ? (
+                          <div
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                            style={{ backgroundColor: owner.color || '#64748b' }}
+                            title={owner.name || ''}
+                          >
+                            {(owner.name || '?').charAt(0).toUpperCase()}
+                          </div>
+                        ) : (
+                          <svg viewBox="0 0 24 24" className={cn('h-[18px] w-[18px] shrink-0', t.muted)} fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className={cn('truncate text-[14px] font-semibold', t.titleCls)}>{c.title}</p>
+                          {showOwner && (
+                            <p className={cn('truncate text-[11px]', t.muted)}>by {owner.name}</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -245,6 +272,8 @@ export default function DemoWorkspace({ initialMe, onExpired, theme, onToggleThe
           onLimit={openLimit}
           files={files}
           onAttach={() => setUploadOpen(true)}
+          userBubbleColor={userBubbleColor}
+          readOnly={chatReadOnly}
         />
 
         {/* files */}

@@ -50,6 +50,13 @@ class DemoLink(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Captured by admin at creation time so the visitor's /try/:slug entry can
+    # skip the "tell us who you are" step — we already know.
+    primary_lead_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primary_lead_email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primary_lead_role: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -86,6 +93,10 @@ class DemoLead(Base):
     invite_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     comeback_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # ++ on each successful entry
     color: Mapped[str | None] = mapped_column(Text, nullable=True)                   # avatar color for team members
+    # Per-team-member visibility granted by the primary lead at invite time.
+    # Primary leads default both to TRUE (they always see everything).
+    can_view_threads: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_view_team: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

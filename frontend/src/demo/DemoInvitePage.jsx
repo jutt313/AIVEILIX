@@ -1,7 +1,7 @@
 // Standalone route for /try/invite/:token — a teammate joins directly (no code).
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { demoApi } from './demoApi';
+import { demoApi, getDemoToken, clearDemoToken } from './demoApi';
 import { getInitialTheme, saveTheme, themeOptions } from './demoTheme';
 import DemoWorkspace from './DemoWorkspace';
 import { DemoBackdrop, DemoLogo, DemoButton, Spinner, Avatar, ErrorNote, ThemeToggle } from './DemoShell';
@@ -20,9 +20,31 @@ export default function DemoInvitePage() {
 
   useEffect(() => {
     let cancelled = false;
-    demoApi.inviteInfo(token)
-      .then((data) => { if (cancelled) return; if (data?.valid) { setInfo(data); setPhase('invite'); } else { setInfo(data); setPhase('invalid'); } })
-      .catch(() => !cancelled && setPhase('invalid'));
+    async function resume() {
+      // If we already have a demo token in this tab, jump straight back to the
+      // workspace instead of forcing the teammate through the invite page again.
+      if (getDemoToken()) {
+        try {
+          const data = await demoApi.me();
+          if (cancelled) return;
+          setMe(data);
+          setPhase('workspace');
+          return;
+        } catch {
+          clearDemoToken();
+          if (cancelled) return;
+        }
+      }
+      try {
+        const data = await demoApi.inviteInfo(token);
+        if (cancelled) return;
+        if (data?.valid) { setInfo(data); setPhase('invite'); }
+        else { setInfo(data); setPhase('invalid'); }
+      } catch {
+        if (!cancelled) setPhase('invalid');
+      }
+    }
+    resume();
     return () => { cancelled = true; };
   }, [token]);
 
@@ -37,7 +59,7 @@ export default function DemoInvitePage() {
     return <DemoBackdrop theme={theme}><div className="grid min-h-[100dvh] place-items-center"><div className="flex flex-col items-center gap-4"><DemoLogo theme={theme} size="lg" /><Spinner className="h-6 w-6 text-blue-500" /></div></div></DemoBackdrop>;
   }
   if (phase === 'workspace' && me) {
-    return <DemoWorkspace initialMe={me} theme={theme} onToggleTheme={onToggleTheme} onExpired={() => setPhase('invalid')} />;
+    return <DemoWorkspace initialMe={me} theme={theme} onToggleTheme={onToggleTheme} onExpired={() => { clearDemoToken(); setMe(null); setPhase('invalid'); }} />;
   }
   if (phase === 'invalid') {
     return (

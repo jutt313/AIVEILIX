@@ -69,26 +69,37 @@ async def enter_demo(
     db: AsyncSession,
     link: DemoLink,
     *,
-    name: str,
-    email: str,
-    role: str | None,
+    name: str | None = None,
+    email: str | None = None,
+    role: str | None = None,
 ) -> tuple[DemoLead, str]:
-    """Upsert the primary lead by email, enforce the comeback cap, count the
-    visit, log ``login``, and issue a demo session token."""
-    email_norm = _norm_email(email)
-    name = (name or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Please enter your name.")
-    if "@" not in email_norm:
-        raise HTTPException(status_code=400, detail="Please enter a valid email.")
+    """Identify the primary lead (or upsert one if no pre-created lead exists),
+    enforce the comeback cap, count the visit, log ``login``, and issue a demo
+    session token.
 
+    For buckets created with primary-lead info (the normal path now), name and
+    email are not required — the pre-created lead is resolved automatically.
+    The legacy code+identity flow still works for older buckets that have no
+    primary lead row yet.
+    """
+    # Prefer the pre-created primary lead — there is at most one per link
+    # (is_team_member = false).
     lead = await db.scalar(
         select(DemoLead).where(
             DemoLead.demo_link_id == link.id,
-            func.lower(DemoLead.email) == email_norm,
+            DemoLead.is_team_member.is_(False),
         )
     )
+
     if lead is None:
+        # Legacy fallback: no pre-created primary lead, so we need identity in
+        # the request to create one (old buckets / admin left it blank).
+        name = (name or "").strip()
+        email_norm = _norm_email(email or "")
+        if not name:
+            raise HTTPException(status_code=400, detail="Please enter your name.")
+        if "@" not in email_norm:
+            raise HTTPException(status_code=400, detail="Please enter a valid email.")
         lead = DemoLead(
             demo_link_id=link.id,
             name=name,
@@ -96,15 +107,15 @@ async def enter_demo(
             role=(role or "").strip() or None,
             is_team_member=False,
             comeback_count=0,
+            can_view_threads=True,
+            can_view_team=True,
         )
         db.add(lead)
         await db.flush()
     else:
         # Returning visitor — enforce the per-lead comeback cap before counting.
-        await check_cap(db, link, "comebacks", lead=lead)
-        lead.name = name or lead.name
-        if role is not None:
-            lead.role = (role or "").strip() or None
+        if lead.comeback_count > 0:
+            await check_cap(db, link, "comebacks", lead=lead)
 
     lead.comeback_count += 1
     lead.last_seen_at = datetime.now(timezone.utc)
@@ -192,17 +203,25 @@ async def bucket_owner_id(db: AsyncSession, link: DemoLink) -> uuid.UUID:
 
 # ── threads + chat ─────────────────────────────────────────────────────────────
 
-async def list_threads(db: AsyncSession, session: DemoSession) -> list[Conversation]:
-    """A lead sees only their own threads."""
-    rows = await db.execute(
-        select(Conversation)
-        .where(
-            Conversation.bucket_id == session.bucket_id,
-            Conversation.demo_lead_id == session.lead_id,
-        )
+async def list_threads(db: AsyncSession, session: DemoSession) -> list[tuple[Conversation, DemoLead | None]]:
+    """Return threads visible to this lead, with the owning DemoLead.
+
+    The primary lead (and any team member granted ``can_view_threads``) sees
+    every thread in the bucket. Other team members see only their own.
+    """
+    lead = session.demo_lead
+    can_see_all = (not lead.is_team_member) or bool(lead.can_view_threads)
+
+    stmt = (
+        select(Conversation, DemoLead)
+        .join(DemoLead, Conversation.demo_lead_id == DemoLead.id, isouter=True)
+        .where(Conversation.bucket_id == session.bucket_id)
         .order_by(Conversation.updated_at.desc())
     )
-    return list(rows.scalars().all())
+    if not can_see_all:
+        stmt = stmt.where(Conversation.demo_lead_id == session.lead_id)
+    rows = await db.execute(stmt)
+    return list(rows.all())
 
 
 async def create_thread(db: AsyncSession, session: DemoSession, *, title: str | None) -> Conversation:
@@ -222,18 +241,35 @@ async def create_thread(db: AsyncSession, session: DemoSession, *, title: str | 
     return conversation
 
 
-async def get_demo_conversation(db: AsyncSession, session: DemoSession, conversation_id: str) -> Conversation:
+async def get_demo_conversation(
+    db: AsyncSession,
+    session: DemoSession,
+    conversation_id: str,
+    *,
+    write: bool = False,
+) -> Conversation:
+    """Resolve a conversation respecting visibility.
+
+    Read access follows ``can_view_threads`` (primary lead and granted team
+    members can read anyone's thread). Write access (sending a message,
+    changing scope) is always restricted to the thread's own lead so one
+    teammate can't post in another's thread.
+    """
     try:
         cid = uuid.UUID(conversation_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Conversation not found.")
-    conversation = await db.scalar(
-        select(Conversation).where(
-            Conversation.id == cid,
-            Conversation.bucket_id == session.bucket_id,
-            Conversation.demo_lead_id == session.lead_id,
-        )
+
+    lead = session.demo_lead
+    can_see_all = (not lead.is_team_member) or bool(lead.can_view_threads)
+
+    stmt = select(Conversation).where(
+        Conversation.id == cid,
+        Conversation.bucket_id == session.bucket_id,
     )
+    if write or not can_see_all:
+        stmt = stmt.where(Conversation.demo_lead_id == session.lead_id)
+    conversation = await db.scalar(stmt)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
     return conversation
@@ -271,7 +307,7 @@ async def set_thread_scope(
     file_ids: list[str],
     scoped: bool | None,
 ) -> dict:
-    conversation = await get_demo_conversation(db, session, conversation_id)
+    conversation = await get_demo_conversation(db, session, conversation_id, write=True)
     # scoped=None -> infer from file_ids (non-empty means filtered).
     active = scoped if scoped is not None else (len(file_ids) > 0)
     await db.execute(
@@ -315,7 +351,7 @@ async def run_demo_turn(
 ):
     """Enforce the message cap, run the existing harness turn as the bucket owner,
     tag the demo lead, and log ``message_sent``."""
-    conversation = await get_demo_conversation(db, session, conversation_id)
+    conversation = await get_demo_conversation(db, session, conversation_id, write=True)
     await check_cap(db, session.demo_link, "messages")
     owner_id = await bucket_owner_id(db, session.demo_link)
 
@@ -359,8 +395,20 @@ async def invite_team_member(
     name: str,
     email: str,
     color: str | None,
+    can_view_threads: bool = False,
+    can_view_team: bool = False,
 ) -> DemoLead:
-    """Create an invited team-member lead (cap-checked) with a fresh invite token."""
+    """Create an invited team-member lead (cap-checked) with a fresh invite token.
+
+    Only the primary lead (the customer who entered the demo) can invite;
+    invited team members are demo-takers, not owners.
+    """
+    if session.demo_lead.is_team_member:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the primary contact for this demo can invite teammates.",
+        )
+
     name = (name or "").strip()
     email_norm = _norm_email(email)
     if not name:
@@ -401,6 +449,8 @@ async def invite_team_member(
         invite_token_expires_at=datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS),
         color=chosen_color,
         comeback_count=0,
+        can_view_threads=bool(can_view_threads),
+        can_view_team=bool(can_view_team),
     )
     db.add(member)
     await log_event(
@@ -416,11 +466,23 @@ async def invite_team_member(
 
 
 async def list_team(db: AsyncSession, session: DemoSession) -> list[DemoLead]:
-    rows = await db.execute(
+    """Return team members visible to the viewer.
+
+    Primary leads and team members with ``can_view_team`` see the entire team
+    (including the primary lead, sorted to the top). Other team members see
+    only themselves.
+    """
+    lead = session.demo_lead
+    can_see_all = (not lead.is_team_member) or bool(lead.can_view_team)
+
+    stmt = (
         select(DemoLead)
-        .where(DemoLead.demo_link_id == session.link_id, DemoLead.is_team_member.is_(True))
-        .order_by(DemoLead.first_seen_at.asc())
+        .where(DemoLead.demo_link_id == session.link_id)
+        .order_by(DemoLead.is_team_member.asc(), DemoLead.first_seen_at.asc())
     )
+    if not can_see_all:
+        stmt = stmt.where(DemoLead.id == session.lead_id)
+    rows = await db.execute(stmt)
     return list(rows.scalars().all())
 
 
@@ -550,6 +612,10 @@ async def me_payload(db: AsyncSession, session: DemoSession) -> dict:
             "role": lead.role,
             "color": lead.color,
             "is_team_member": lead.is_team_member,
+            "is_primary": not lead.is_team_member,
+            "can_view_threads": bool(lead.can_view_threads) or not lead.is_team_member,
+            "can_view_team": bool(lead.can_view_team) or not lead.is_team_member,
+            "can_invite": not lead.is_team_member,
             "comeback_count": lead.comeback_count,
         },
         "caps": caps,
