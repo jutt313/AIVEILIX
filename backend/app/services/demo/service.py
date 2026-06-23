@@ -73,17 +73,17 @@ async def enter_demo(
     email: str | None = None,
     role: str | None = None,
 ) -> tuple[DemoLead, str]:
-    """Identify the primary lead (or upsert one if no pre-created lead exists),
-    enforce the comeback cap, count the visit, log ``login``, and issue a demo
-    session token.
+    """Resolve the bucket's single owner (primary lead), enforce the comeback
+    cap, count the visit, log ``login``, and issue a demo session token.
 
-    For buckets created with primary-lead info (the normal path now), name and
-    email are not required — the pre-created lead is resolved automatically.
-    The legacy code+identity flow still works for older buckets that have no
-    primary lead row yet.
+    The access code maps to ONE owner per bucket:
+      * First visitor — no owner exists yet, so name + email are required; we
+        create the owner with full permissions and save their info.
+      * Every later entry with the same code — the owner already exists, so the
+        code alone is enough (name/email not needed). If the owner shares the
+        code, whoever enters it comes in *as that same owner*. This is by design.
     """
-    # Prefer the pre-created primary lead — there is at most one per link
-    # (is_team_member = false).
+    # There is at most one owner per link (is_team_member = false).
     lead = await db.scalar(
         select(DemoLead).where(
             DemoLead.demo_link_id == link.id,
@@ -92,8 +92,7 @@ async def enter_demo(
     )
 
     if lead is None:
-        # Legacy fallback: no pre-created primary lead, so we need identity in
-        # the request to create one (old buckets / admin left it blank).
+        # First visitor → capture identity once and save it as the owner.
         name = (name or "").strip()
         email_norm = _norm_email(email or "")
         if not name:
@@ -140,6 +139,9 @@ async def get_invite_info(db: AsyncSession, token: str) -> dict:
     link = await db.get(DemoLink, lead.demo_link_id)
     if link is None or not link.is_active or _link_expired(link):
         return {"valid": False, "expired": True}
+    # Single-use: once accepted, the link is spent.
+    if lead.comeback_count > 0:
+        return {"valid": False, "used": True}
     expired = bool(
         lead.invite_token_expires_at
         and _aware(lead.invite_token_expires_at) <= datetime.now(timezone.utc)
@@ -163,7 +165,13 @@ async def get_invite_info(db: AsyncSession, token: str) -> dict:
 
 
 async def accept_invite(db: AsyncSession, token: str) -> tuple[DemoLink, DemoLead, str]:
-    """Resolve a team invite → confirm the lead, count the visit, issue a token."""
+    """Resolve a team invite → confirm the lead, count the visit, issue a token.
+
+    Invites are **single-use**: one URL admits exactly one teammate. The first
+    accept consumes the token; any later click on the same link is rejected so a
+    forwarded link can't let several people in on one invitation. The teammate
+    who accepted stays in via their per-tab session token (resumed on refresh).
+    """
     lead = await db.scalar(select(DemoLead).where(DemoLead.invite_token == token))
     if lead is None or not lead.is_team_member:
         raise HTTPException(status_code=404, detail="This invite was not found.")
@@ -172,6 +180,11 @@ async def accept_invite(db: AsyncSession, token: str) -> tuple[DemoLink, DemoLea
         raise HTTPException(status_code=403, detail="This demo is no longer available.")
     if lead.invite_token_expires_at and _aware(lead.invite_token_expires_at) <= datetime.now(timezone.utc):
         raise HTTPException(status_code=410, detail="This invite has expired. Ask for a new one.")
+    if lead.comeback_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="This invite has already been used. Ask for a fresh invite link.",
+        )
 
     lead.comeback_count += 1
     lead.last_seen_at = datetime.now(timezone.utc)

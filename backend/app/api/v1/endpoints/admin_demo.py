@@ -34,7 +34,6 @@ from app.models.conversation import Conversation, Message
 from app.models.demo import DemoEvent, DemoLead, DemoLink, DemoMeetingRequest, DemoSurvey
 from app.models.file import File
 from app.models.user import User
-from app.services.demo.service import DEFAULT_TEAM_COLORS
 from app.services.pipeline.upload import intake_upload
 
 router = APIRouter(prefix="/admin", tags=["admin-demo"])
@@ -68,11 +67,6 @@ class CreateDemoBucketRequest(BaseModel):
     access_code: str = Field(..., min_length=4, max_length=4)
     caps: CapsModel = Field(default_factory=CapsModel)
     expires_at: datetime | None = None
-    # Pre-captured customer identity so the /try/:slug entry can skip the
-    # "tell us who you are" step. Name + email required; role optional.
-    primary_lead_name: str = Field(..., min_length=1, max_length=200)
-    primary_lead_email: str = Field(..., min_length=3, max_length=320)
-    primary_lead_role: str | None = Field(default=None, max_length=200)
 
 
 class UpdateDemoBucketRequest(BaseModel):
@@ -81,9 +75,6 @@ class UpdateDemoBucketRequest(BaseModel):
     is_active: bool | None = None
     expires_at: datetime | None = None
     caps: dict[str, int] | None = None
-    primary_lead_name: str | None = Field(default=None, max_length=200)
-    primary_lead_email: str | None = Field(default=None, max_length=320)
-    primary_lead_role: str | None = Field(default=None, max_length=200)
 
 
 class UpdateMeetingRequest(BaseModel):
@@ -170,9 +161,6 @@ async def _link_summary(db: AsyncSession, link: DemoLink) -> dict:
         "expires_at": link.expires_at.isoformat() if link.expires_at else None,
         "created_at": link.created_at.isoformat() if link.created_at else None,
         "caps": {f: getattr(link, f) for f in _CAP_FIELDS},
-        "primary_lead_name": link.primary_lead_name,
-        "primary_lead_email": link.primary_lead_email,
-        "primary_lead_role": link.primary_lead_role,
         "files": files,
         "counts": {
             "leads": leads,
@@ -205,13 +193,6 @@ async def create_demo_bucket(
     slug = _validate_slug(body.slug)
     code = _validate_code(body.access_code)
 
-    primary_email = (body.primary_lead_email or "").strip().lower()
-    primary_name = (body.primary_lead_name or "").strip()
-    if "@" not in primary_email:
-        raise HTTPException(status_code=400, detail="Primary contact email is invalid.")
-    if not primary_name:
-        raise HTTPException(status_code=400, detail="Primary contact name is required.")
-
     existing = await db.scalar(select(DemoLink).where(DemoLink.slug == slug))
     if existing is not None:
         raise HTTPException(status_code=409, detail="That slug is already taken. Pick another.")
@@ -227,6 +208,8 @@ async def create_demo_bucket(
     db.add(bucket)
     await db.flush()
 
+    # The owner (primary lead) is created by the FIRST visitor who enters the
+    # code and fills name/email/role — not here. See enter_demo().
     link = DemoLink(
         bucket_id=bucket.id,
         company_name=body.company_name.strip(),
@@ -234,29 +217,9 @@ async def create_demo_bucket(
         access_code=code,
         created_by=admin.id,
         expires_at=body.expires_at,
-        primary_lead_name=primary_name,
-        primary_lead_email=primary_email,
-        primary_lead_role=(body.primary_lead_role or "").strip() or None,
         **body.caps.model_dump(),
     )
     db.add(link)
-    await db.flush()
-
-    # Pre-create the primary lead so /try/:slug code entry can identify them
-    # without an identity form. Primary leads always see everything.
-    primary_lead = DemoLead(
-        demo_link_id=link.id,
-        name=primary_name,
-        email=primary_email,
-        role=(body.primary_lead_role or "").strip() or None,
-        is_team_member=False,
-        comeback_count=0,
-        color=DEFAULT_TEAM_COLORS[0],
-        can_view_threads=True,
-        can_view_team=True,
-    )
-    db.add(primary_lead)
-
     await db.commit()
     await db.refresh(link)
     return await _link_summary(db, link)
@@ -346,35 +309,6 @@ async def update_demo_bucket(
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise HTTPException(status_code=400, detail=f"'{key}' must be a non-negative integer.")
             setattr(link, key, value)
-
-    # Primary contact edits — also sync the pre-created lead row so /me reflects them.
-    primary_changed = (
-        body.primary_lead_name is not None
-        or body.primary_lead_email is not None
-        or body.primary_lead_role is not None
-    )
-    if primary_changed:
-        new_email = (body.primary_lead_email or link.primary_lead_email or "").strip().lower()
-        new_name = (body.primary_lead_name or link.primary_lead_name or "").strip()
-        new_role = body.primary_lead_role
-        if body.primary_lead_email is not None and "@" not in new_email:
-            raise HTTPException(status_code=400, detail="Primary contact email is invalid.")
-        link.primary_lead_email = new_email or link.primary_lead_email
-        link.primary_lead_name = new_name or link.primary_lead_name
-        if new_role is not None:
-            link.primary_lead_role = new_role.strip() or None
-
-        existing_primary = await db.scalar(
-            select(DemoLead).where(
-                DemoLead.demo_link_id == link.id,
-                DemoLead.is_team_member.is_(False),
-            )
-        )
-        if existing_primary is not None:
-            existing_primary.name = link.primary_lead_name or existing_primary.name
-            existing_primary.email = link.primary_lead_email or existing_primary.email
-            if new_role is not None:
-                existing_primary.role = link.primary_lead_role
 
     await db.commit()
     await db.refresh(link)

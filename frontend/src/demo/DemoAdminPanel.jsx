@@ -151,9 +151,6 @@ function CreateForm({ dark, input, sub, label, onCreate }) {
   const [slug, setSlug] = useState('');
   const [slugEdited, setSlugEdited] = useState(false);
   const [code, setCode] = useState('');
-  const [primaryName, setPrimaryName] = useState('');
-  const [primaryEmail, setPrimaryEmail] = useState('');
-  const [primaryRole, setPrimaryRole] = useState('');
   const [caps, setCaps] = useState({ ...DEFAULT_CAPS });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -163,19 +160,9 @@ function CreateForm({ dark, input, sub, label, onCreate }) {
     if (!company.trim()) return setErr('Company name is required.');
     if (!/^[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?$/.test(slug)) return setErr('Slug: lowercase letters, numbers, hyphens.');
     if (!/^\d{4}$/.test(code)) return setErr('Access code must be 4 digits.');
-    if (!primaryName.trim()) return setErr('Primary contact name is required.');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primaryEmail.trim())) return setErr('Primary contact email is invalid.');
     setBusy(true);
     try {
-      await onCreate({
-        company_name: company.trim(),
-        slug,
-        access_code: code,
-        caps,
-        primary_lead_name: primaryName.trim(),
-        primary_lead_email: primaryEmail.trim(),
-        primary_lead_role: primaryRole.trim() || null,
-      });
+      await onCreate({ company_name: company.trim(), slug, access_code: code, caps });
     } catch (e) { setErr(e.message || 'Could not create.'); }
     finally { setBusy(false); }
   };
@@ -201,24 +188,7 @@ function CreateForm({ dark, input, sub, label, onCreate }) {
             onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="0000" />
         </label>
       </div>
-      <div className="mt-4">
-        <p className={`text-xs font-semibold ${label}`}>Primary contact (the person we’re sending the demo to)</p>
-        <p className={`mt-0.5 text-[11px] ${label}`}>Pre-fills their identity so they only need the access code — no “tell us who you are” step.</p>
-        <div className="mt-2 grid gap-3 sm:grid-cols-3">
-          <label className="block">
-            <span className={`text-xs ${label}`}>Name</span>
-            <input className={`mt-1 ${input}`} value={primaryName} onChange={(e) => setPrimaryName(e.target.value)} placeholder="Sarah Park" />
-          </label>
-          <label className="block">
-            <span className={`text-xs ${label}`}>Email</span>
-            <input className={`mt-1 ${input}`} type="email" value={primaryEmail} onChange={(e) => setPrimaryEmail(e.target.value)} placeholder="sarah@acme.com" />
-          </label>
-          <label className="block">
-            <span className={`text-xs ${label}`}>Role (optional)</span>
-            <input className={`mt-1 ${input}`} value={primaryRole} onChange={(e) => setPrimaryRole(e.target.value)} placeholder="Head of Operations" />
-          </label>
-        </div>
-      </div>
+      <p className={`mt-2 text-[11px] ${label}`}>The first person to enter the code fills in their name &amp; email — they become the demo owner.</p>
       <div className="mt-3">
         <span className={`text-xs ${label}`}>Caps</span>
         <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -245,9 +215,6 @@ function BucketCard({ bucket, dark, sub, label, ghost, input, session, expanded,
   const [caps, setCaps] = useState({});
   const [code, setCode] = useState(bucket.access_code);
   const [active, setActive] = useState(bucket.is_active);
-  const [primaryName, setPrimaryName] = useState('');
-  const [primaryEmail, setPrimaryEmail] = useState('');
-  const [primaryRole, setPrimaryRole] = useState('');
   const [savingCfg, setSavingCfg] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [activity, setActivity] = useState(null);
@@ -259,27 +226,14 @@ function BucketCard({ bucket, dark, sub, label, ghost, input, session, expanded,
   useEffect(() => {
     if (!expanded) return;
     adminApi.getDemoBucket(bucket.id, session).then((d) => {
-      setDetail(d);
-      setCaps(d.caps || {});
-      setCode(d.access_code);
-      setActive(d.is_active);
-      setPrimaryName(d.primary_lead_name || '');
-      setPrimaryEmail(d.primary_lead_email || '');
-      setPrimaryRole(d.primary_lead_role || '');
+      setDetail(d); setCaps(d.caps || {}); setCode(d.access_code); setActive(d.is_active);
     }).catch((e) => onError(e.message));
   }, [expanded, bucket.id, session, onError]);
 
   const saveConfig = async () => {
     setSavingCfg(true);
     try {
-      await adminApi.updateDemoBucket(bucket.id, {
-        caps,
-        access_code: code,
-        is_active: active,
-        primary_lead_name: primaryName.trim() || null,
-        primary_lead_email: primaryEmail.trim() || null,
-        primary_lead_role: primaryRole.trim() || null,
-      }, session);
+      await adminApi.updateDemoBucket(bucket.id, { caps, access_code: code, is_active: active }, session);
       onFlash('Saved.');
       onChanged();
       const d = await adminApi.getDemoBucket(bucket.id, session); setDetail(d);
@@ -344,20 +298,6 @@ function BucketCard({ bucket, dark, sub, label, ghost, input, session, expanded,
             <label className="flex items-center gap-2 pt-5 text-sm">
               <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
               <span className={label}>Active</span>
-            </label>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className={`text-[11px] ${label}`}>Primary contact name</span>
-              <input className={`mt-0.5 ${input}`} value={primaryName} onChange={(e) => setPrimaryName(e.target.value)} placeholder="Sarah Park" />
-            </label>
-            <label className="block">
-              <span className={`text-[11px] ${label}`}>Primary contact email</span>
-              <input className={`mt-0.5 ${input}`} type="email" value={primaryEmail} onChange={(e) => setPrimaryEmail(e.target.value)} placeholder="sarah@acme.com" />
-            </label>
-            <label className="block">
-              <span className={`text-[11px] ${label}`}>Primary contact role</span>
-              <input className={`mt-0.5 ${input}`} value={primaryRole} onChange={(e) => setPrimaryRole(e.target.value)} placeholder="Head of Ops" />
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

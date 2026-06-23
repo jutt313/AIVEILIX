@@ -1,17 +1,14 @@
-"""add demo primary-lead fields + per-lead view permissions
+"""add per-lead view permissions for the demo team layer
 
 Revision ID: e8a1c0d4f7b2
 Revises: d6f8b2c4a1e7
 Create Date: 2026-06-21
 
 Adds:
-  * demo_links.primary_lead_name / primary_lead_email / primary_lead_role
-    so admin captures the customer's identity when creating the bucket — the
-    /try/:slug entry page can then skip the "tell us who you are" step.
   * demo_leads.can_view_threads / can_view_team — per-team-member visibility
-    granted by the primary lead at invite time. Primary leads default to TRUE
-    for both (they always see everything). Existing rows: primary leads get
-    TRUE, team members get FALSE (safe default).
+    granted by the owner (primary lead) at invite time. The owner (the first
+    visitor who entered the code) always sees everything; existing primary-lead
+    rows are backfilled to TRUE, invited team members default to FALSE.
 """
 from typing import Sequence, Union
 
@@ -26,19 +23,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "demo_links",
-        sa.Column("primary_lead_name", sa.Text(), nullable=True),
-    )
-    op.add_column(
-        "demo_links",
-        sa.Column("primary_lead_email", sa.Text(), nullable=True),
-    )
-    op.add_column(
-        "demo_links",
-        sa.Column("primary_lead_role", sa.Text(), nullable=True),
-    )
-
     op.add_column(
         "demo_leads",
         sa.Column(
@@ -58,7 +42,7 @@ def upgrade() -> None:
         ),
     )
 
-    # Backfill: primary leads (is_team_member = false) always see everything.
+    # Backfill: the owner (is_team_member = false) always sees everything.
     op.execute(
         "UPDATE demo_leads SET can_view_threads = true, can_view_team = true "
         "WHERE is_team_member = false"
@@ -68,6 +52,3 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("demo_leads", "can_view_team")
     op.drop_column("demo_leads", "can_view_threads")
-    op.drop_column("demo_links", "primary_lead_role")
-    op.drop_column("demo_links", "primary_lead_email")
-    op.drop_column("demo_links", "primary_lead_name")

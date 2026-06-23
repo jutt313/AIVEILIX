@@ -70,7 +70,7 @@ export default function DemoInvitePage() {
             <div className="mb-6 flex justify-center"><DemoLogo theme={theme} size="lg" /></div>
             <div className={cn('rounded-[2rem] border p-8', p.card.split(' hover:')[0])}>
               <h1 className={cn('text-lg font-bold', p.title)}>This invite isn’t available</h1>
-              <p className={cn('mt-2 text-sm', p.text)}>{info?.expired ? 'It looks like this invite has expired.' : 'This invite link is invalid or has been removed.'} Ask whoever invited you to send a new one.</p>
+              <p className={cn('mt-2 text-sm', p.text)}>{info?.used ? 'This invite link has already been used — each link works for one person only.' : info?.expired ? 'It looks like this invite has expired.' : 'This invite link is invalid or has been removed.'} Ask whoever invited you to send a new one.</p>
             </div>
           </div>
         </div>

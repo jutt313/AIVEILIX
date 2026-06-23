@@ -51,12 +51,6 @@ class DemoLink(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # Captured by admin at creation time so the visitor's /try/:slug entry can
-    # skip the "tell us who you are" step — we already know.
-    primary_lead_name: Mapped[str | None] = mapped_column(Text, nullable=True)
-    primary_lead_email: Mapped[str | None] = mapped_column(Text, nullable=True)
-    primary_lead_role: Mapped[str | None] = mapped_column(Text, nullable=True)
-
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

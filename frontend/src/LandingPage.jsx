@@ -637,7 +637,7 @@ function McpServer({ p }) {
           <BlurFade delay={0.18}>
             <h3 className={`text-xl font-semibold ${p.title}`}>The toolset your agent gets, instantly</h3>
             <p className={`mt-2 text-sm leading-relaxed ${p.text}`}>
-              One link exposes a typed toolset — hybrid search, structured retrieval, and document layout — so your agent calls straight into your knowledge.
+              One link exposes a typed toolset — search, structured retrieval, and document layout — so your agent calls straight into your knowledge.
             </p>
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -649,7 +649,7 @@ function McpServer({ p }) {
 
             <ul className="mt-7 space-y-3.5">
               {[
-                ['Hybrid search + rerank', 'Dense + sparse retrieval and a reranker, built into the search tool.'],
+                ['Relevance-ranked search', 'Returns the passages that actually answer the question, built into the search tool.'],
                 ['Page-level citations', 'Every result carries its source file and page — ready to cite.'],
                 ['Account-scoped server too', 'A second URL exposes list_buckets, create_bucket and get_account_info to manage everything programmatically.'],
                 ['Scoped & revocable', 'Each link is a scoped credential. Rotate or revoke it any time.'],
@@ -1301,9 +1301,12 @@ function Pricing({ p, theme }) {
 
 /* ─────────────────────────── FAQ ────────────────────────────── */
 const FAQ = [
+  { q: 'Who is behind AIveilix?', a: 'AIveilix is an independent software startup based in Nagoya, Japan, founded in 2026. We build persistent, private knowledge infrastructure for AI. Reach us anytime at contact@aiveilix.com — more on our About page.' },
   { q: 'Who is AIveilix for?', a: 'Anyone who works with documents — researchers, lawyers, consultants, analysts, students. If you read a lot of PDFs and ask AI about them, AIveilix is for you.' },
-  { q: 'Do I need to know what MCP is?', a: 'No. Think of MCP as a one-click link that lets Claude, ChatGPT, and other AI tools read your docs. You copy a link, paste it into your AI, done.' },
-  { q: 'Are my documents private?', a: 'Yes. Files in a bucket are private to your account, never shared with other users, never used to train public AI models.' },
+  { q: 'Which AI tools does it work with?', a: 'Any assistant that supports custom MCP connectors — including Claude (desktop and web) and MCP-capable IDEs and clients today. MCP support is rolling out across the ecosystem, so support widens over time; the same bucket link works with each new client as it ships.' },
+  { q: 'How accurate are the answers?', a: 'Every answer is cited to the exact source page, so you can verify it. In a published head-to-head benchmark against AnythingLLM (22 documents, 80 questions, scored by an independent LLM judge), AIveilix scored higher on answer correctness — and answers correctly the large majority of the time. It reads visuals too: charts, tables, and text inside images.' },
+  { q: 'Do I need to know what MCP is?', a: 'No. Think of MCP as a one-click link that lets Claude and other MCP-compatible AI tools read your docs. You copy a link, paste it into your AI, done.' },
+  { q: 'Is my data private and secure?', a: 'Yes. Files live in private, isolated buckets, encrypted in transit and at rest, and are never sold or used to train AI models. We run on enterprise infrastructure (Cloudflare, Google Cloud, Stripe) whose providers hold independent SOC 2 / ISO 27001 certifications. Full detail — including every sub-processor — is on our Security & Compliance page.' },
   { q: 'What file types are supported?', a: 'PDFs (including scanned), Word docs, plain text, CSV, Markdown, and common image formats.' },
   { q: 'Can I cancel anytime?', a: 'Yes. Paid plans are month-to-month. Cancel from your account settings. Your data stays put even after you downgrade.' },
 ];
@@ -1388,9 +1391,11 @@ function Footer({ p }) {
           <div className="flex items-center gap-2.5">
             <img src="/logo-tight.png" alt="AIveilix" className="h-7 w-7 rounded-md" />
             <span className={`text-sm font-semibold ${p.title}`}>AIveilix</span>
-            <span className={`text-xs ${p.muted}`}>© {new Date().getFullYear()}</span>
+            <span className={`text-xs ${p.muted}`}>© {new Date().getFullYear()} · Nagoya, Japan</span>
           </div>
           <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            <Link to="/about"          className={`${p.text} transition hover:${p.title}`}>About</Link>
+            <Link to="/security"       className={`${p.text} transition hover:${p.title}`}>Security</Link>
             <Link to="/docs"           className={`${p.text} transition hover:${p.title}`}>Docs</Link>
             <Link to="/privacy-policy" className={`${p.text} transition hover:${p.title}`}>Privacy</Link>
             <Link to="/terms"          className={`${p.text} transition hover:${p.title}`}>Terms</Link>

@@ -9,7 +9,7 @@
     <meta name="description" content="Upload your documents once and use them inside every AI — Claude, ChatGPT, or any MCP-compatible assistant — without re-uploading. AIveilix turns your files into a permanent, private, searchable knowledge base. Fewer tokens, no lost context, cited to the page. Plans from $15/mo; Enterprise available." />
     <meta name="keywords" content="AIveilix, MCP, RAG, AI knowledge base, persistent AI memory, document AI, Claude MCP, ChatGPT MCP, upload documents to AI, private AI knowledge" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
-    <meta name="theme-color" content="#0A0F1E" />
+    <meta name="theme-color" content="#eff5ff" />
     <link rel="canonical" href="https://aiveilix.com/" />
     <link rel="icon" type="image/png" href="/logo-tight.png" />
     <link rel="apple-touch-icon" href="/logo-tight.png" />
@@ -41,9 +41,30 @@
           "@type": "Organization",
           "@id": "https://aiveilix.com/#organization",
           "name": "AIveilix",
+          "legalName": "SAAD INTERNATIONAL Co., Ltd.",
           "url": "https://aiveilix.com/",
           "logo": "https://aiveilix.com/logo-tight.png",
-          "description": "Persistent knowledge infrastructure for AI. Upload documents once and use them inside every AI assistant via MCP — private, searchable, and cited to the page."
+          "description": "Persistent knowledge infrastructure for AI. Upload documents once and use them inside every AI assistant via MCP — private, searchable, and cited to the page.",
+          "foundingDate": "2026",
+          "foundingLocation": {
+            "@type": "Place",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Nagoya",
+              "addressCountry": "JP"
+            }
+          },
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Nagoya",
+            "addressCountry": "JP"
+          },
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "email": "contact@aiveilix.com",
+            "contactType": "customer support",
+            "availableLanguage": ["English", "Japanese"]
+          }
         },
         {
           "@type": "WebSite",
@@ -81,6 +102,44 @@
               "description": "Custom pricing. Custom document & storage volumes, more user seats, higher MCP rate limits, invoice billing, and priority support & onboarding."
             }
           ]
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://aiveilix.com/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Who is behind AIveilix?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "AIveilix is an independent software startup based in Nagoya, Japan, founded in 2026. It builds persistent, private knowledge infrastructure for AI. Contact: contact@aiveilix.com."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Is my data private and secure with AIveilix?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes. Files live in private, isolated buckets, encrypted in transit (TLS) and at rest, and are never sold or used to train AI models. AIveilix runs on enterprise infrastructure — Cloudflare for storage, Google Cloud for hosting and AI processing, and Stripe for payments — whose providers hold independent SOC 2 / ISO 27001 certifications. Content sent to our AI provider is contractually not used to train any model. A GDPR Data Processing Agreement is available on request. Full detail is published at https://aiveilix.com/security."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Which AI tools does AIveilix work with?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Any assistant that supports custom MCP connectors — including Claude (desktop and web) and MCP-capable IDEs and clients today. MCP support is expanding across the ecosystem, and the same bucket link works with each new compatible client as it ships."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How accurate are AIveilix's answers?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "AIveilix is both an MCP infrastructure layer and a high-accuracy document-answering engine. Every answer is cited to the exact source page so it can be verified. In a published independent-judge benchmark against AnythingLLM (22 documents, 80 questions), AIveilix scored higher on average answer correctness, and answers correctly the large majority of the time. Benchmark: https://aiveilix.com/benchmark.html"
+              }
+            }
+          ]
         }
       ]
     }
@@ -106,7 +165,9 @@
         <h2>Built-in AI agent</h2>
         <p>Smart filtering and citations, conversation threads, web search, and voice input.</p>
         <h2>Security &amp; privacy</h2>
-        <p>Private, isolated buckets. Your data is never sold and never used to train AI. Encrypted, access-controlled, token-protected MCP links you alone control. Trusted third-party infrastructure that stores and serves your files but does not share, sell, or train on them.</p>
+        <p>Private, isolated buckets. Your data is never sold and never used to train AI. Encrypted in transit (TLS) and at rest, access-controlled, with token-protected MCP links you alone control and can revoke. AIveilix runs on enterprise infrastructure — Cloudflare (storage), Google Cloud (hosting and AI processing), and Stripe (payments) — whose providers hold independent SOC 2 / ISO 27001 certifications. Content sent to our AI provider is contractually not used to train any model. A GDPR Data Processing Agreement is available on request. Full detail: <a href="https://aiveilix.com/security">aiveilix.com/security</a>.</p>
+        <h2>About</h2>
+        <p>AIveilix is an independent software startup based in Nagoya, Japan, founded in 2026. More at <a href="https://aiveilix.com/about">aiveilix.com/about</a>. Contact: <a href="mailto:contact@aiveilix.com">contact@aiveilix.com</a>.</p>
         <h2>Pricing</h2>
         <ul>
           <li><strong>Individual — $15/month.</strong> For solo users. 15-day free trial.</li>

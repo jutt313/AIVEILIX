@@ -26,7 +26,6 @@ import { uploadFilesDirect } from './api/uploads';
 import { teamApi } from './api/team';
 import threadChatIcon from './thread-chat-icon.svg';
 import LandingPage from './LandingPage';
-import LandingPageV2 from './LandingPageV2';
 import ConnectGuide from './ConnectGuide';
 import InviteAcceptPage from './components/team/InviteAcceptPage';
 import TeamFacepile from './components/team/TeamFacepile';
@@ -1653,6 +1652,454 @@ function DocsFaqItem({ theme, q, children }) {
         {children}
       </div>
     </details>
+  );
+}
+
+function AboutPage({ theme, onToggleTheme }) {
+  const palette = themeOptions[theme];
+  const cardTone = theme === 'dark' ? 'border-white/10 bg-white/[0.02]' : 'border-slate-200 bg-white';
+  return (
+    <PolicyShell theme={theme} onToggleTheme={onToggleTheme} maxWidth="max-w-3xl">
+      <header className="mb-10">
+        <p className={`text-xs font-semibold uppercase tracking-[0.35em] ${palette.accent}`}>About</p>
+        <h1 className={`mt-3 text-3xl font-semibold tracking-tight sm:text-4xl ${palette.title}`}>The company behind AIveilix</h1>
+        <p className={`mt-3 text-base ${palette.text}`}>
+          AIveilix is an independent software startup based in <strong className={palette.title}>Nagoya, Japan</strong>, founded in 2026. We build persistent, private knowledge infrastructure for AI.
+        </p>
+      </header>
+
+      <div className={`mb-10 grid grid-cols-1 gap-3 sm:grid-cols-3`}>
+        {[
+          { k: 'Founded', v: '2026' },
+          { k: 'Based in', v: 'Nagoya, Japan' },
+          { k: 'Contact', v: 'contact@aiveilix.com' },
+        ].map((item) => (
+          <div key={item.k} className={`rounded-2xl border px-5 py-4 ${cardTone}`}>
+            <p className={`text-xs font-semibold uppercase tracking-wide ${palette.muted}`}>{item.k}</p>
+            <p className={`mt-1 text-sm font-medium ${palette.title}`}>{item.v}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className={`space-y-8 leading-relaxed ${palette.text}`}>
+        <section>
+          <PolicySectionHeading theme={theme}>Why we built AIveilix</PolicySectionHeading>
+          <p>
+            Every AI chat starts from a blank slate. You paste the same PDFs into a new conversation, wait while the whole file is read again, burn tokens, and watch it all get forgotten the moment the session resets. We thought knowledge you have already shared with an AI should stay with you — protected, searchable, and ready in every future conversation.
+          </p>
+          <p className="mt-3">
+            So we built AIveilix: a private vault for your documents that any MCP-compatible AI can read in real time through a single secure link. Upload once; use everywhere. The name says what we care about — <strong className={palette.title}>AI + Veil + lix</strong>: your knowledge, <em>protected</em> and <em>connected</em>.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>What we do</PolicySectionHeading>
+          <p>
+            AIveilix turns your files into a structured, searchable knowledge base. We read the text <em>and</em> the visuals — charts, diagrams, tables, and text trapped inside images — and preserve the original reading order. Each bucket gets its own MCP URL you paste into Claude, ChatGPT, or any MCP-compatible assistant, and your AI answers from your real documents, cited to the exact page, in every session.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Who it's for</PolicySectionHeading>
+          <p>
+            Researchers, lawyers, consultants, analysts, founders, and students — anyone who works with documents and asks AI about them. If you read a lot of PDFs and re-upload them into every new chat, AIveilix is built for you.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>How we think about your data</PolicySectionHeading>
+          <p>
+            Privacy is in the name. Your documents are yours: stored in private, isolated buckets, never sold, and never used to train AI models. We run only on enterprise-grade infrastructure from providers that maintain independent security certifications. For the full technical detail — where your data lives, how it is encrypted, and every third-party service we rely on — see our{' '}
+            <Link to="/security" className={`font-medium hover:underline ${palette.accent}`}>Security &amp; Compliance</Link> page.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Talk to us</PolicySectionHeading>
+          <p>
+            We are a small, focused team and we read every message. Questions about the product, security, partnerships, or enterprise needs:
+          </p>
+          <p className="mt-2">
+            <strong className={palette.title}>Email:</strong>{' '}
+            <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a>
+          </p>
+        </section>
+
+        <div className={`mt-10 border-t pt-8 text-center text-sm ${palette.muted} ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
+          <p>
+            <Link to="/security" className={`font-medium hover:underline ${palette.accent}`}>Security &amp; Compliance</Link>
+            {' · '}
+            <Link to="/signup" className={`font-medium hover:underline ${palette.accent}`}>Start free</Link>
+            {' · '}
+            <Link to="/docs" className={`font-medium hover:underline ${palette.accent}`}>Docs</Link>
+          </p>
+        </div>
+      </div>
+    </PolicyShell>
+  );
+}
+
+const SECURITY_SUBPROCESSORS = [
+  { name: 'Cloudflare', purpose: 'Encrypted storage for your uploaded files and content delivery', region: 'Global edge', cert: 'SOC 2 Type II, ISO 27001' },
+  { name: 'Google Cloud', purpose: 'Application hosting, compute, and AI processing', region: 'Asia / Global', cert: 'SOC 2 / 3, ISO 27001, 27017, 27018' },
+  { name: 'Stripe', purpose: 'Subscription billing and payments', region: 'Global', cert: 'PCI-DSS Level 1, SOC 2' },
+];
+
+function SecurityPage({ theme, onToggleTheme }) {
+  const palette = themeOptions[theme];
+  const isDark = theme === 'dark';
+  const cardTone = isDark ? 'border-white/10 bg-white/[0.02]' : 'border-slate-200 bg-white';
+  const headRow = isDark ? 'border-white/10 text-slate-400' : 'border-slate-200 text-slate-500';
+  const bodyRow = isDark ? 'border-white/5' : 'border-slate-100';
+  return (
+    <PolicyShell theme={theme} onToggleTheme={onToggleTheme} maxWidth="max-w-4xl">
+      <header className="mb-10">
+        <p className={`text-xs font-semibold uppercase tracking-[0.35em] ${palette.accent}`}>Trust</p>
+        <h1 className={`mt-3 text-3xl font-semibold tracking-tight sm:text-4xl ${palette.title}`}>Security &amp; Compliance</h1>
+        <p className={`mt-3 text-base ${palette.text}`}>
+          AIveilix is built so your knowledge is protected, not exposed. This page is the specific, verifiable detail — where your data lives, how it is protected, and exactly which third parties touch it. No vague promises.
+        </p>
+        <p className={`mt-2 text-sm ${palette.muted}`}>Last updated: {POLICY_LAST_UPDATED}</p>
+      </header>
+
+      {/* Quick commitments */}
+      <div className="mb-10 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {[
+          { t: 'Never used to train AI', b: 'Your documents are never used to train any AI model — ours or a third party’s. The AI providers we use contractually do not train on content sent through their APIs.' },
+          { t: 'Never sold', b: 'We do not sell or rent your data, ever. It exists for one purpose: to answer your questions.' },
+          { t: 'Private, isolated buckets', b: 'Each bucket is sealed off. Your files never leak across buckets, projects, or other users.' },
+          { t: 'You hold the keys', b: 'MCP links are token-protected and tied to your account. You can revoke access at any time.' },
+        ].map((c) => (
+          <div key={c.t} className={`rounded-2xl border px-5 py-4 ${cardTone}`}>
+            <p className={`text-sm font-semibold ${palette.title}`}>{c.t}</p>
+            <p className={`mt-1 text-sm ${palette.text}`}>{c.b}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className={`space-y-8 leading-relaxed ${palette.text}`}>
+        <section>
+          <PolicySectionHeading theme={theme}>Encryption</PolicySectionHeading>
+          <ul className="list-disc space-y-1 pl-6">
+            <li><strong className={palette.title}>In transit:</strong> All traffic to AIveilix and between our services is encrypted with TLS (HTTPS).</li>
+            <li><strong className={palette.title}>At rest:</strong> Your files are stored encrypted at rest in Cloudflare R2; account and metadata are stored in an access-controlled, encrypted PostgreSQL database.</li>
+          </ul>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Access control</PolicySectionHeading>
+          <ul className="list-disc space-y-1 pl-6">
+            <li>Strong authentication: hashed passwords, OAuth sign-in, and optional protections on your account.</li>
+            <li>Every bucket’s MCP link carries a secret token. Without it, the bucket cannot be read. Rotate or revoke it whenever you want.</li>
+            <li>Retrieval is scoped to a single bucket — an AI connected to one bucket can never see another.</li>
+          </ul>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Where your data lives — sub-processors</PolicySectionHeading>
+          <p>
+            AIveilix runs entirely on enterprise-grade infrastructure. We do not operate our own data centers; instead we build on providers that maintain independent, audited security certifications. These are the core infrastructure providers we rely on:
+          </p>
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+              <thead>
+                <tr className={`border-b ${headRow}`}>
+                  <th className="py-2 pr-4 font-medium">Provider</th>
+                  <th className="py-2 pr-4 font-medium">What it does</th>
+                  <th className="py-2 font-medium">Security posture</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SECURITY_SUBPROCESSORS.map((s) => (
+                  <tr key={s.name} className={`border-b ${bodyRow}`}>
+                    <td className={`py-3 pr-4 align-top font-medium ${palette.title}`}>{s.name}</td>
+                    <td className="py-3 pr-4 align-top">{s.purpose}</td>
+                    <td className="py-3 align-top">{s.cert}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className={`mt-3 text-xs ${palette.muted}`}>
+            Certifications listed are those independently held and published by each provider. Our payment processor (Stripe) handles all card data directly — AIveilix never sees or stores your full card details.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>How AI processing works</PolicySectionHeading>
+          <p>
+            When you ask a question, AIveilix sends only the few most relevant passages from your bucket — never your whole library — to our enterprise AI provider to compose an answer cited to the source page. Under that provider’s API terms, the content we send is <strong className={palette.title}>not used to train their models</strong>. Your documents remain yours.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Data ownership, retention &amp; deletion</PolicySectionHeading>
+          <ul className="list-disc space-y-1 pl-6">
+            <li>You own your content. We process it only to provide the service to you.</li>
+            <li>Delete a file or a bucket and we remove it from storage and from the search index.</li>
+            <li>Delete your account and we delete or anonymize your data within a reasonable period, except where law requires us to retain it.</li>
+          </ul>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Compliance status</PolicySectionHeading>
+          <ul className="list-disc space-y-1 pl-6">
+            <li><strong className={palette.title}>GDPR:</strong> We honor access, correction, export, and deletion requests. Read our{' '}
+              <Link to="/dpa" className={`font-medium hover:underline ${palette.accent}`}>Data Processing Agreement (DPA)</Link>, available to business customers — countersigned copies on request.</li>
+            <li><strong className={palette.title}>Sub-processor certifications:</strong> Our infrastructure providers are independently SOC 2 / ISO 27001 audited (see the table above).</li>
+            <li><strong className={palette.title}>SOC 2 for AIveilix:</strong> A formal SOC 2 program is on our roadmap. We will publish our status here as it progresses — we will never claim a certification we do not hold.</li>
+          </ul>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Report a security issue</PolicySectionHeading>
+          <p>
+            Found a vulnerability or have a security question? We want to hear from you. Email{' '}
+            <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a> and we will respond promptly.
+          </p>
+        </section>
+
+        <div className={`mt-10 border-t pt-8 text-center text-sm ${palette.muted} ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
+          <p>
+            <Link to="/about" className={`font-medium hover:underline ${palette.accent}`}>About AIveilix</Link>
+            {' · '}
+            <Link to="/privacy-policy" className={`font-medium hover:underline ${palette.accent}`}>Privacy Policy</Link>
+            {' · '}
+            <Link to="/terms" className={`font-medium hover:underline ${palette.accent}`}>Terms</Link>
+          </p>
+        </div>
+      </div>
+    </PolicyShell>
+  );
+}
+
+function DpaPage({ theme, onToggleTheme }) {
+  const palette = themeOptions[theme];
+  const isDark = theme === 'dark';
+  const cardTone = isDark ? 'border-white/10 bg-white/[0.02]' : 'border-slate-200 bg-white';
+  const headRow = isDark ? 'border-white/10 text-slate-400' : 'border-slate-200 text-slate-500';
+  const bodyRow = isDark ? 'border-white/5' : 'border-slate-100';
+  return (
+    <PolicyShell theme={theme} onToggleTheme={onToggleTheme} maxWidth="max-w-4xl">
+      <header className="mb-10">
+        <p className={`text-xs font-semibold uppercase tracking-[0.35em] ${palette.accent}`}>Legal</p>
+        <h1 className={`mt-3 text-3xl font-semibold tracking-tight sm:text-4xl ${palette.title}`}>Data Processing Agreement</h1>
+        <p className={`mt-3 text-base ${palette.text}`}>
+          This Data Processing Agreement (“DPA”) governs the processing of personal data by AIveilix on behalf of its customers, in accordance with the EU General Data Protection Regulation (“GDPR”). It supplements and forms part of our{' '}
+          <Link to="/terms" className={`font-medium hover:underline ${palette.accent}`}>Terms of Service</Link>.
+        </p>
+        <p className={`mt-2 text-sm ${palette.muted}`}>Last updated: {POLICY_LAST_UPDATED}</p>
+      </header>
+
+      <div className={`mb-8 rounded-2xl border px-5 py-4 text-sm ${cardTone} ${palette.text}`}>
+        <p>
+          <strong className={palette.title}>How to use this DPA:</strong> business customers who require a signed DPA can countersign this document. Email{' '}
+          <a href="mailto:contact@aiveilix.com" className={`font-medium hover:underline ${palette.accent}`}>contact@aiveilix.com</a>{' '}
+          with your legal entity details and we will return a countersigned copy. By using AIveilix you accept the data-protection commitments described here.
+        </p>
+      </div>
+
+      <div className={`space-y-8 leading-relaxed ${palette.text}`}>
+        <section>
+          <PolicySectionHeading theme={theme}>1. Parties &amp; roles</PolicySectionHeading>
+          <p>This DPA is entered into between:</p>
+          <ul className="mt-2 list-disc space-y-1 pl-6">
+            <li><strong className={palette.title}>Processor:</strong> 株式会社 SAAD INTERNATIONAL (SAAD INTERNATIONAL Co., Ltd.), operator of the AIveilix service, Nagoya, Japan (“AIveilix”, “we”, “Processor”). Contact: contact@aiveilix.com. Full registered address provided on request / at signing.</li>
+            <li><strong className={palette.title}>Controller:</strong> the customer that has agreed to the AIveilix Terms of Service (“Customer”, “you”, “Controller”).</li>
+          </ul>
+          <p className="mt-3">
+            For personal data contained in documents and content you upload and process through AIveilix, you act as the <strong className={palette.title}>data controller</strong> and AIveilix acts as the <strong className={palette.title}>data processor</strong>. Where you process personal data on behalf of your own customers, you may be a processor and AIveilix a sub-processor; the same terms apply.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>2. Processing on documented instructions</PolicySectionHeading>
+          <p>
+            AIveilix processes personal data only on your documented instructions, including with regard to international transfers, unless required to do otherwise by applicable law (in which case we will inform you, unless that law prohibits it). Your use of the service, the configuration of your account and buckets, and this DPA together constitute your complete instructions. AIveilix will not process personal data for any other purpose, and will never sell it or use it to train AI models.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>3. Confidentiality</PolicySectionHeading>
+          <p>
+            AIveilix ensures that persons authorized to process personal data are bound by appropriate confidentiality obligations and access it only as needed to provide and support the service.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>4. Security of processing (Art. 32)</PolicySectionHeading>
+          <p>
+            AIveilix implements appropriate technical and organizational measures to protect personal data, including encryption in transit (TLS) and at rest, isolated per-customer buckets, access controls, and token-protected access links. These measures are summarized in Annex 2 and described in detail on our{' '}
+            <Link to="/security" className={`font-medium hover:underline ${palette.accent}`}>Security &amp; Compliance</Link> page, which forms part of this DPA.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>5. Sub-processors</PolicySectionHeading>
+          <p>
+            You provide general authorization for AIveilix to engage the sub-processors listed in Annex 3 to help deliver the service. Each sub-processor is bound by data-protection obligations no less protective than those in this DPA. AIveilix remains responsible for its sub-processors’ performance.
+          </p>
+          <p className="mt-3">
+            We will give you reasonable prior notice (at least 30 days where practical) of any intended addition or replacement of a sub-processor by updating Annex 3 / our Security page, so you have the opportunity to object on reasonable data-protection grounds.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>6. Assistance with data-subject rights</PolicySectionHeading>
+          <p>
+            Taking into account the nature of the processing, AIveilix assists you by appropriate technical and organizational measures, insofar as possible, to respond to requests from data subjects exercising their rights (access, rectification, erasure, restriction, portability, and objection). Many of these you can fulfill directly in-product by editing or deleting buckets, files, and account data.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>7. Personal-data breach notification</PolicySectionHeading>
+          <p>
+            AIveilix notifies you without undue delay, and in any event within <strong className={palette.title}>72 hours</strong> of becoming aware of a personal-data breach affecting your data, providing the information you reasonably need to meet your own GDPR obligations. Report suspected issues to contact@aiveilix.com.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>8. DPIAs and prior consultation</PolicySectionHeading>
+          <p>
+            AIveilix provides reasonable assistance with data-protection impact assessments and prior consultations with supervisory authorities, taking into account the nature of processing and the information available to us.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>9. International transfers</PolicySectionHeading>
+          <p>
+            AIveilix is established in <strong className={palette.title}>Japan</strong>, a country recognized by the European Commission as providing an <strong className={palette.title}>adequate level of data protection</strong> (EU–Japan adequacy decision, 2019), so transfers of personal data from the EEA to AIveilix do not require additional safeguards.
+          </p>
+          <p className="mt-3">
+            Where sub-processors process personal data outside the EEA or Japan (e.g. in the United States), such transfers are covered by appropriate safeguards, including the European Commission’s <strong className={palette.title}>Standard Contractual Clauses (SCCs)</strong> as implemented by those providers. The relevant SCCs are incorporated into this DPA by reference for any such onward transfer.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>10. Return and deletion of data</PolicySectionHeading>
+          <p>
+            On termination of the service, or earlier on your request, AIveilix deletes or returns your personal data and deletes existing copies (from object storage and the search index) within a reasonable period, unless applicable law requires continued storage. Deleting a file, bucket, or account triggers deletion of the associated data.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>11. Audits and information</PolicySectionHeading>
+          <p>
+            AIveilix makes available the information reasonably necessary to demonstrate compliance with Art. 28 GDPR and allows for and contributes to audits, including inspections, conducted by you or an auditor you mandate, subject to reasonable notice, confidentiality, and frequency, and conducted so as not to compromise the security or privacy of other customers.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>12. Liability, term &amp; precedence</PolicySectionHeading>
+          <ul className="list-disc space-y-1 pl-6">
+            <li>This DPA takes effect when you accept the Terms of Service and remains in force for as long as AIveilix processes personal data on your behalf.</li>
+            <li>Liability under this DPA is subject to the limitations and exclusions set out in the Terms of Service.</li>
+            <li>If there is a conflict between this DPA and the Terms of Service regarding the processing of personal data, this DPA prevails.</li>
+          </ul>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>13. Governing law</PolicySectionHeading>
+          <p>
+            This DPA is governed by the laws of Japan. The Nagoya District Court (名古屋地方裁判所) shall have exclusive jurisdiction as the court of first instance, without prejudice to any mandatory rights data subjects may have under the GDPR.
+          </p>
+        </section>
+
+        {/* ANNEXES */}
+        <section>
+          <PolicySectionHeading theme={theme}>Annex 1 — Details of processing</PolicySectionHeading>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+              <tbody>
+                {[
+                  ['Subject matter', 'Provision of the AIveilix document-intelligence service (storage, indexing, semantic search, and AI chat over Customer documents).'],
+                  ['Duration', 'For the term of the Customer’s use of the service, plus the limited retention period described in section 10.'],
+                  ['Nature & purpose', 'Storage, processing, indexing, retrieval, and AI-assisted analysis of Customer content to answer the Customer’s questions.'],
+                  ['Categories of data subjects', 'Any individuals whose personal data the Customer includes in uploaded documents or content (e.g. the Customer’s staff, clients, or third parties), plus the Customer’s own account users.'],
+                  ['Types of personal data', 'Any personal data contained in Customer-uploaded files, plus account data (name, email) and usage/technical logs. AIveilix does not require or request special-category data; the Customer controls what it uploads.'],
+                ].map(([k, v], idx, arr) => (
+                  <tr key={k} className={idx < arr.length - 1 ? `border-b ${bodyRow}` : ''}>
+                    <th className={`w-44 py-3 pr-4 text-left align-top font-medium ${palette.title}`}>{k}</th>
+                    <td className="py-3 align-top">{v}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Annex 2 — Technical &amp; organizational measures</PolicySectionHeading>
+          <ul className="list-disc space-y-1 pl-6">
+            <li>Encryption of data in transit (TLS/HTTPS) and at rest.</li>
+            <li>Private, isolated buckets; retrieval scoped to a single bucket.</li>
+            <li>Authentication with hashed passwords and OAuth; token-protected, revocable access links.</li>
+            <li>Access on a need-to-know basis; activity and error logging.</li>
+            <li>Use of enterprise infrastructure providers holding independent SOC 2 / ISO 27001 certifications.</li>
+          </ul>
+          <p className="mt-2 text-sm">
+            The current, detailed measures are published on the{' '}
+            <Link to="/security" className={`font-medium hover:underline ${palette.accent}`}>Security &amp; Compliance</Link> page and form part of this Annex.
+          </p>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Annex 3 — Approved sub-processors</PolicySectionHeading>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+              <thead>
+                <tr className={`border-b ${headRow}`}>
+                  <th className="py-2 pr-4 font-medium">Sub-processor</th>
+                  <th className="py-2 pr-4 font-medium">Purpose</th>
+                  <th className="py-2 font-medium">Safeguards</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SECURITY_SUBPROCESSORS.map((s) => (
+                  <tr key={s.name} className={`border-b ${bodyRow}`}>
+                    <td className={`py-3 pr-4 align-top font-medium ${palette.title}`}>{s.name}</td>
+                    <td className="py-3 pr-4 align-top">{s.purpose}</td>
+                    <td className="py-3 align-top">{s.cert}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <PolicySectionHeading theme={theme}>Signatures</PolicySectionHeading>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className={`rounded-2xl border px-5 py-5 ${cardTone}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wide ${palette.muted}`}>Processor</p>
+              <p className={`mt-1 text-sm font-medium ${palette.title}`}>株式会社 SAAD INTERNATIONAL</p>
+              <p className={`text-sm ${palette.text}`}>SAAD INTERNATIONAL Co., Ltd. (AIveilix)</p>
+              <p className={`mt-4 text-sm ${palette.muted}`}>By: Representative Director</p>
+              <p className={`mt-3 text-sm ${palette.muted}`}>Name: ____________________</p>
+              <p className={`mt-3 text-sm ${palette.muted}`}>Date: ____________________</p>
+            </div>
+            <div className={`rounded-2xl border px-5 py-5 ${cardTone}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wide ${palette.muted}`}>Controller (Customer)</p>
+              <p className={`mt-1 text-sm font-medium ${palette.title}`}>____________________</p>
+              <p className={`text-sm ${palette.text}`}>Legal entity</p>
+              <p className={`mt-4 text-sm ${palette.muted}`}>By: ____________________</p>
+              <p className={`mt-3 text-sm ${palette.muted}`}>Name: ____________________</p>
+              <p className={`mt-3 text-sm ${palette.muted}`}>Date: ____________________</p>
+            </div>
+          </div>
+        </section>
+
+        <div className={`mt-10 border-t pt-8 text-center text-sm ${palette.muted} ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
+          <p>
+            <Link to="/security" className={`font-medium hover:underline ${palette.accent}`}>Security &amp; Compliance</Link>
+            {' · '}
+            <Link to="/privacy-policy" className={`font-medium hover:underline ${palette.accent}`}>Privacy Policy</Link>
+            {' · '}
+            <Link to="/terms" className={`font-medium hover:underline ${palette.accent}`}>Terms</Link>
+          </p>
+        </div>
+      </div>
+    </PolicyShell>
   );
 }
 
@@ -6710,1003 +7157,6 @@ function BucketPage({ theme }) {
   );
 }
 
-const PIPELINE_FLOW_STEPS = [
-  {
-    step: '1',
-    title: 'User uploads file',
-    service: 'Frontend -> POST /v1/buckets/{bucket_id}/files',
-    detail: 'The browser sends multipart file data to the backend.',
-    output: 'UploadFile payload arrives at FastAPI.',
-  },
-  {
-    step: '2',
-    title: 'Backend saves raw file to R2',
-    service: 'app.services.pipeline.upload + app.services.storage.r2',
-    detail: 'Raw bytes are stored first at a versioned object key in Cloudflare R2.',
-    output: 'raw/{file_id}/v1/{filename}',
-  },
-  {
-    step: '3',
-    title: 'Postgres creates file row',
-    service: 'files + file_versions tables',
-    detail: 'The backend creates the file metadata row and version history row after raw storage succeeds.',
-    output: 'files.id + file_versions.version_number=1',
-  },
-  {
-    step: '4',
-    title: 'Status = processing',
-    service: 'files.status',
-    detail: 'The file becomes processing before background orchestration starts.',
-    output: 'status=processing',
-  },
-  {
-    step: '5',
-    title: 'Docling extracts text/layout',
-    service: 'app.services.processing.docling_service',
-    detail: 'Docling reads the raw document and returns structured blocks and page count.',
-    output: 'DoclingResult(blocks, page_count)',
-  },
-  {
-    step: '6',
-    title: 'Gemini reads images/visual parts',
-    service: 'app.services.processing.gemini_service',
-    detail: 'Every extracted image is described and OCR text is pulled out. If Gemini is required and fails, the file fails.',
-    output: 'GeminiImageResult[]',
-  },
-  {
-    step: '7',
-    title: 'Layout JSON is built',
-    service: 'app.services.processing.layout_builder',
-    detail: 'Docling blocks and Gemini visual results are merged into one layout map.',
-    output: 'layout.json object',
-  },
-  {
-    step: '8',
-    title: 'Layout JSON saved to R2',
-    service: 'app.services.storage.r2.upload_json',
-    detail: 'The canonical layout artifact is stored in R2.',
-    output: 'layouts/{file_id}/layout.json',
-  },
-  {
-    step: '9',
-    title: 'Content is chunked',
-    service: 'app.services.processing.chunker',
-    detail: 'Text, tables, headings, and image-adjacent metadata are turned into chunk records. Image-only files get fallback searchable chunks.',
-    output: 'ChunkRecord[]',
-  },
-  {
-    step: '10',
-    title: 'Text embeddings are created',
-    service: 'BGE-M3',
-    detail: 'Each searchable text chunk is embedded into dense + sparse vectors.',
-    output: 'dense + sparse vectors',
-  },
-  {
-    step: '11',
-    title: 'Image embeddings are created',
-    service: 'CLIP',
-    detail: 'Each extracted image gets its own image vector.',
-    output: '512-d image vectors',
-  },
-  {
-    step: '12',
-    title: 'Vectors saved to Qdrant',
-    service: 'text_chunks + image_chunks collections',
-    detail: 'Text and image vectors are upserted before Postgres chunk rows are finalized.',
-    output: 'Qdrant points with status=active',
-  },
-  {
-    step: '13',
-    title: 'Postgres chunks updated',
-    service: 'chunks table',
-    detail: 'Embedded chunk rows are written after Qdrant succeeds.',
-    output: 'chunks.status=embedded',
-  },
-  {
-    step: '14',
-    title: 'Status = ready',
-    service: 'files.status',
-    detail: 'The file flips to ready only after the full indexing pipeline succeeds.',
-    output: 'status=ready',
-  },
-  {
-    step: '15',
-    title: 'Agent can use the file',
-    service: 'app.services.agent.retrieval',
-    detail: 'The agent only retrieves files whose DB status is ready.',
-    output: 'search_bucket_documents() returns ready chunks only',
-  },
-];
-
-const PIPELINE_NODE_POSITIONS = [
-  { x: 40, y: 30 },
-  { x: 380, y: 30 },
-  { x: 720, y: 30 },
-  { x: 1060, y: 30 },
-  { x: 1060, y: 220 },
-  { x: 720, y: 220 },
-  { x: 380, y: 220 },
-  { x: 40, y: 220 },
-  { x: 40, y: 410 },
-  { x: 380, y: 410 },
-  { x: 720, y: 410 },
-  { x: 1060, y: 410 },
-  { x: 1060, y: 600 },
-  { x: 720, y: 600 },
-  { x: 380, y: 600 },
-];
-
-function buildPipelineNodes(theme) {
-  const isDark = theme === 'dark';
-  return PIPELINE_FLOW_STEPS.map((item, index) => ({
-    id: item.step,
-    position: PIPELINE_NODE_POSITIONS[index],
-    draggable: false,
-    selectable: false,
-    data: {
-      label: (
-        <div className="min-w-[220px]">
-          <div className={`mb-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold ${isDark ? 'bg-cyan-500/12 text-cyan-300' : 'bg-cyan-50 text-cyan-700'}`}>
-            {item.step}
-          </div>
-          <div className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.title}</div>
-          <div className={`mt-2 text-[11px] uppercase tracking-[0.18em] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{item.service}</div>
-        </div>
-      ),
-    },
-    style: {
-      width: 260,
-      borderRadius: 22,
-      border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(148,163,184,0.25)',
-      background: isDark ? 'rgba(15,23,42,0.9)' : 'rgba(255,255,255,0.95)',
-      boxShadow: isDark ? '0 18px 50px rgba(2,6,23,0.45)' : '0 18px 50px rgba(148,163,184,0.18)',
-      padding: '14px 16px',
-    },
-  }));
-}
-
-function buildPipelineStatusNodes(theme, statuses) {
-  const isDark = theme === 'dark';
-  const statusStyles = {
-    pending: {
-      border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(148,163,184,0.25)',
-      background: isDark ? 'rgba(15,23,42,0.9)' : 'rgba(255,255,255,0.95)',
-      badge: isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600',
-    },
-    active: {
-      border: '1px solid rgba(14,165,233,0.75)',
-      background: isDark ? 'rgba(8,47,73,0.72)' : 'rgba(224,242,254,0.98)',
-      badge: isDark ? 'bg-cyan-500/15 text-cyan-300' : 'bg-cyan-50 text-cyan-700',
-    },
-    completed: {
-      border: '1px solid rgba(16,185,129,0.7)',
-      background: isDark ? 'rgba(6,78,59,0.65)' : 'rgba(236,253,245,0.98)',
-      badge: isDark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-50 text-emerald-700',
-    },
-    failed: {
-      border: '1px solid rgba(248,113,113,0.75)',
-      background: isDark ? 'rgba(127,29,29,0.58)' : 'rgba(254,242,242,0.98)',
-      badge: isDark ? 'bg-red-500/15 text-red-300' : 'bg-red-50 text-red-700',
-    },
-    skipped: {
-      border: isDark ? '1px solid rgba(250,204,21,0.45)' : '1px solid rgba(234,179,8,0.45)',
-      background: isDark ? 'rgba(113,63,18,0.38)' : 'rgba(254,249,195,0.98)',
-      badge: isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700',
-    },
-  };
-
-  return PIPELINE_FLOW_STEPS.map((item, index) => {
-    const state = statuses[item.step] || { status: 'pending', note: 'Waiting' };
-    const style = statusStyles[state.status] || statusStyles.pending;
-    return {
-      id: item.step,
-      position: PIPELINE_NODE_POSITIONS[index],
-      draggable: false,
-      selectable: false,
-      data: {
-        label: (
-          <div className="min-w-[220px]">
-            <div className="flex items-start justify-between gap-3">
-              <div className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold ${isDark ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-700'}`}>
-                {item.step}
-              </div>
-              <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${style.badge}`}>
-                {state.status}
-              </span>
-            </div>
-            <div className={`mt-3 text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.title}</div>
-            <div className={`mt-2 text-[11px] uppercase tracking-[0.18em] ${isDark ? 'text-slate-300/85' : 'text-slate-500'}`}>{item.service}</div>
-            <div className={`mt-3 text-xs leading-5 ${isDark ? 'text-slate-200/85' : 'text-slate-600'}`}>{state.note}</div>
-          </div>
-        ),
-      },
-      style: {
-        width: 260,
-        borderRadius: 22,
-        border: style.border,
-        background: style.background,
-        boxShadow: isDark ? '0 18px 50px rgba(2,6,23,0.45)' : '0 18px 50px rgba(148,163,184,0.18)',
-        padding: '14px 16px',
-      },
-    };
-  });
-}
-
-const PIPELINE_EDGES = PIPELINE_FLOW_STEPS.slice(0, -1).map((item, index) => ({
-  id: `e-${item.step}-${PIPELINE_FLOW_STEPS[index + 1].step}`,
-  source: item.step,
-  target: PIPELINE_FLOW_STEPS[index + 1].step,
-  type: 'smoothstep',
-  animated: true,
-  markerEnd: { type: MarkerType.ArrowClosed },
-  style: { strokeWidth: 2.5, stroke: '#0ea5e9' },
-}));
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function hasImageBlocks(layout) {
-  return Boolean(
-    layout?.pages?.some((page) => page.blocks?.some((block) => block.type === 'image'))
-  );
-}
-
-function getLatestFailedEvent(events) {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index]?.status === 'failed') return events[index];
-  }
-  return null;
-}
-
-function buildTraceStepStatuses(file, events, layout, chunks) {
-  const failedEvent = getLatestFailedEvent(events);
-  const failureStage = failedEvent?.event_metadata?.stage || null;
-  const failureError = failedEvent?.event_metadata?.error || null;
-  const failureNote = failureError
-    ? `${failureStage || failedEvent?.event || 'pipeline_failed'}: ${failureError}`
-    : 'Pipeline failed before completion.';
-  const fileReady = file?.status === 'ready';
-  const fileFailed = file?.status === 'failed' || Boolean(failedEvent);
-  const hasLayout = Boolean(layout?.layout_json_path && layout?.layout);
-  const chunkCount = Array.isArray(chunks) ? chunks.length : 0;
-  const imageBlocksPresent = hasImageBlocks(layout?.layout || layout);
-
-  const hasEvent = (eventName, status) =>
-    events.some((event) => event.event === eventName && (!status || event.status === status));
-
-  const started = (eventName) => hasEvent(eventName, 'started');
-  const completed = (eventName) => hasEvent(eventName, 'completed');
-
-  const statusFor = (status, note) => ({ status, note });
-  const statuses = {
-    '1': file ? statusFor('completed', 'File reached the backend upload endpoint.') : statusFor('pending', 'Waiting for a file upload.'),
-    '2': failureStage === 'download'
-      ? statusFor('failed', failureNote)
-      : file?.r2_path
-        ? statusFor('completed', file.r2_path)
-        : statusFor(fileFailed ? 'failed' : 'pending', 'Raw object not stored yet.'),
-    '3': file?.id ? statusFor('completed', `File row ${String(file.id).slice(0, 8)} created.`) : statusFor(fileFailed ? 'failed' : 'pending', 'Database row not created yet.'),
-    '4': file?.status === 'processing'
-      ? statusFor('active', 'File is currently processing.')
-      : file?.status
-        ? statusFor(fileReady ? 'completed' : fileFailed ? 'failed' : 'completed', fileFailed ? failureNote : `Current status: ${file.status}`)
-        : statusFor('pending', 'Not processing yet.'),
-    '5': failureStage === 'docling'
-      ? statusFor('failed', failureNote)
-      : completed('docling_completed')
-      ? statusFor('completed', 'Docling extracted document blocks.')
-      : started('docling_started')
-        ? statusFor(fileFailed ? 'failed' : 'active', 'Docling is running.')
-        : statusFor(fileFailed ? 'failed' : 'pending', 'Docling has not started yet.'),
-    '6': failureStage === 'gemini'
-      ? statusFor('failed', failureNote)
-      : completed('gemini_completed')
-      ? statusFor('completed', 'Gemini finished visual extraction.')
-      : imageBlocksPresent && started('gemini_started')
-        ? statusFor(fileFailed ? 'failed' : 'active', 'Gemini is reading image blocks.')
-        : imageBlocksPresent && fileReady
-          ? statusFor('completed', 'Gemini results are present in the final layout.')
-          : !imageBlocksPresent && hasLayout
-            ? statusFor('skipped', 'No image blocks were present in this file.')
-            : statusFor(fileFailed ? 'failed' : 'pending', 'Waiting for visual extraction.'),
-    '7': failureStage === 'layout_build'
-      ? statusFor('failed', failureNote)
-      : hasLayout
-      ? statusFor('completed', `Layout has ${layout.layout.page_count || 0} pages.`)
-      : fileFailed
-        ? statusFor('failed', 'Layout was not built.')
-        : statusFor('pending', 'Layout JSON not available yet.'),
-    '8': failureStage === 'layout_upload'
-      ? statusFor('failed', failureNote)
-      : file?.layout_json_path
-      ? statusFor('completed', file.layout_json_path)
-      : fileFailed
-        ? statusFor('failed', 'Layout path was never written.')
-        : statusFor('pending', 'Layout JSON path pending.'),
-    '9': failureStage === 'chunking'
-      ? statusFor('failed', failureNote)
-      : completed('chunking_completed') || chunkCount > 0
-      ? statusFor('completed', `${chunkCount} chunk${chunkCount === 1 ? '' : 's'} prepared.`)
-      : started('chunking_started')
-        ? statusFor(fileFailed ? 'failed' : 'active', 'Chunker is building chunk records.')
-        : statusFor(fileFailed ? 'failed' : 'pending', 'Chunking has not started yet.'),
-    '10': failureStage === 'text_embeddings'
-      ? statusFor('failed', failureNote)
-      : completed('embedding_completed') && chunkCount > 0
-      ? statusFor('completed', 'Text embeddings completed.')
-      : started('embedding_started')
-        ? statusFor(fileFailed ? 'failed' : 'active', 'Embedding stage is running.')
-        : statusFor(fileFailed ? 'failed' : 'pending', 'Text embeddings pending.'),
-    '11': imageBlocksPresent
-      ? failureStage === 'image_embeddings'
-        ? statusFor('failed', failureNote)
-        : completed('embedding_completed')
-        ? statusFor('completed', 'Image embeddings completed.')
-        : started('embedding_started')
-          ? statusFor(fileFailed ? 'failed' : 'active', 'Image embedding stage is running.')
-          : statusFor(fileFailed ? 'failed' : 'pending', 'Image embeddings pending.')
-      : statusFor(hasLayout ? 'skipped' : 'pending', hasLayout ? 'No image vectors needed for this file.' : 'Waiting for layout.'),
-    '12': failureStage === 'qdrant_text_upsert' || failureStage === 'qdrant_image_upsert' || failureStage === 'vector_cleanup'
-      ? statusFor('failed', failureNote)
-      : completed('embedding_completed')
-      ? statusFor('completed', 'Vector payloads were sent to Qdrant.')
-      : started('embedding_started')
-        ? statusFor(fileFailed ? 'failed' : 'active', 'Waiting for vector writes to finish.')
-        : statusFor(fileFailed ? 'failed' : 'pending', 'Qdrant write not reached yet.'),
-    '13': failureStage === 'chunk_persist'
-      ? statusFor('failed', failureNote)
-      : chunkCount > 0
-      ? statusFor('completed', `${chunkCount} embedded chunk row${chunkCount === 1 ? '' : 's'} available.`)
-      : fileReady
-        ? statusFor('completed', 'File finished with no text chunks.')
-        : statusFor(fileFailed ? 'failed' : 'pending', 'Postgres chunk rows not available yet.'),
-    '14': fileReady
-      ? statusFor('completed', 'File is ready.')
-      : fileFailed
-        ? statusFor('failed', 'File ended in failed state.')
-        : file?.status === 'processing'
-          ? statusFor('active', 'Waiting for ready state.')
-          : statusFor('pending', 'Ready state not reached yet.'),
-    '15': fileReady
-      ? statusFor('completed', 'Agent can retrieve this file now.')
-      : fileFailed
-        ? statusFor('failed', 'Agent cannot use a failed file.')
-        : statusFor('pending', 'Agent access is blocked until ready.'),
-  };
-
-  return statuses;
-}
-
-function JsonPreview({ theme, title, data }) {
-  const isDark = theme === 'dark';
-  return (
-    <section className={`overflow-hidden rounded-[1.35rem] border ${isDark ? 'border-white/10 bg-slate-950/70' : 'border-slate-200 bg-white'}`}>
-      <div className={`border-b px-4 py-3 text-xs font-semibold uppercase tracking-[0.24em] ${isDark ? 'border-white/10 bg-white/[0.03] text-cyan-300' : 'border-slate-200 bg-slate-50 text-cyan-700'}`}>
-        {title}
-      </div>
-      <pre className={`max-h-[28rem] overflow-auto p-4 text-xs leading-6 ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-        <code>{JSON.stringify(data, null, 2)}</code>
-      </pre>
-    </section>
-  );
-}
-
-function slugifyFilenamePart(value, fallback = 'file') {
-  const text = String(value || fallback)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return text || fallback;
-}
-
-function downloadJsonFile(filename, data) {
-  if (typeof window === 'undefined') return;
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  window.URL.revokeObjectURL(url);
-}
-
-function TempPipelinePage({ theme, onToggleTheme }) {
-  const palette = themeOptions[theme];
-  const isDark = theme === 'dark';
-  const navigate = useNavigate();
-  const uploadRef = useRef(null);
-  const [buckets, setBuckets] = useState([]);
-  const [bucketFiles, setBucketFiles] = useState([]);
-  const [selectedBucketId, setSelectedBucketId] = useState('');
-  const [selectedFileId, setSelectedFileId] = useState('');
-  const [loadingBuckets, setLoadingBuckets] = useState(true);
-  const [loadingFiles, setLoadingFiles] = useState(false);
-  const [creatingBucket, setCreatingBucket] = useState(false);
-  const [uploadingFile, setUploadingFile] = useState(false);
-  const [polling, setPolling] = useState(false);
-  const [copyingBundle, setCopyingBundle] = useState(false);
-  const [downloadingBundle, setDownloadingBundle] = useState(false);
-  const [downloadingSeparate, setDownloadingSeparate] = useState(false);
-  const [traceError, setTraceError] = useState(null);
-  const [traceFile, setTraceFile] = useState(null);
-  const [traceEvents, setTraceEvents] = useState([]);
-  const [traceLayout, setTraceLayout] = useState(null);
-  const [traceChunks, setTraceChunks] = useState([]);
-
-  useEffect(() => {
-    const token = sessionStorage.getItem('access_token');
-    if (!token) {
-      navigate('/login');
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadBuckets() {
-      try {
-        const data = await dashboardApi.listBuckets();
-        if (cancelled) return;
-        const rows = Array.isArray(data) ? data : (data.buckets || []);
-        setBuckets(rows);
-        if (!selectedBucketId && rows[0]?.id) setSelectedBucketId(String(rows[0].id));
-      } catch (error) {
-        if (!cancelled) setTraceError(error.message);
-      } finally {
-        if (!cancelled) setLoadingBuckets(false);
-      }
-    }
-
-    loadBuckets();
-    return () => { cancelled = true; };
-  }, [navigate, selectedBucketId]);
-
-  useEffect(() => {
-    if (!selectedBucketId) {
-      setBucketFiles([]);
-      setSelectedFileId('');
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadBucketFiles(preferredFileId = null) {
-      setLoadingFiles(true);
-      try {
-        const data = await bucketApi.listFiles(selectedBucketId);
-        if (cancelled) return;
-        const rows = Array.isArray(data) ? data : (data.files || []);
-        setBucketFiles(rows);
-
-        const preferred =
-          rows.find((file) => String(file.id) === String(preferredFileId))
-          || rows.find((file) => String(file.id) === String(selectedFileId))
-          || rows[0]
-          || null;
-
-        setSelectedFileId(preferred ? String(preferred.id) : '');
-      } catch (error) {
-        if (!cancelled) setTraceError(error.message);
-      } finally {
-        if (!cancelled) setLoadingFiles(false);
-      }
-    }
-
-    loadBucketFiles();
-    return () => { cancelled = true; };
-  }, [selectedBucketId]);
-
-  async function createDemoBucket() {
-    setCreatingBucket(true);
-    setTraceError(null);
-    try {
-      const existing = buckets.find((bucket) => bucket.name === 'Pipeline Demo');
-      if (existing) {
-        setSelectedBucketId(String(existing.id));
-        return;
-      }
-      const bucket = await dashboardApi.createBucket(
-        'Pipeline Demo',
-        'Temporary bucket for upload tracing',
-        '#0ea5e9',
-        'folder',
-      );
-      setBuckets((prev) => [bucket, ...prev]);
-      setSelectedBucketId(String(bucket.id));
-    } catch (error) {
-      if (error.message === 'A bucket with this name already exists.') {
-        const refreshed = await dashboardApi.listBuckets();
-        const rows = Array.isArray(refreshed) ? refreshed : (refreshed.buckets || []);
-        setBuckets(rows);
-        const existing = rows.find((bucket) => bucket.name === 'Pipeline Demo');
-        if (existing) {
-          setSelectedBucketId(String(existing.id));
-          return;
-        }
-      }
-      setTraceError(error.message);
-    } finally {
-      setCreatingBucket(false);
-    }
-  }
-
-  async function refreshTrace(bucketId, fileId) {
-    const [file, events] = await Promise.all([
-      bucketApi.getFile(bucketId, fileId),
-      bucketApi.listFileEvents(bucketId, fileId),
-    ]);
-
-    setTraceFile(file);
-    const eventRows = events.events || [];
-    setTraceEvents(eventRows);
-
-    let layoutData = null;
-    if (file.layout_json_path || file.status === 'ready') {
-      try {
-        layoutData = await bucketApi.getFileLayout(bucketId, fileId);
-      } catch (_) {
-        layoutData = null;
-      }
-    }
-
-    let chunkRows = [];
-    if (file.status === 'ready' || file.status === 'failed') {
-      try {
-        const chunks = await bucketApi.listFileChunks(bucketId, fileId);
-        chunkRows = chunks.chunks || [];
-      } catch (_) {
-        chunkRows = [];
-      }
-    }
-
-    setTraceLayout(layoutData);
-    setTraceChunks(chunkRows);
-    return { file, events: eventRows };
-  }
-
-  async function pollTrace(bucketId, fileId) {
-    setPolling(true);
-    try {
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        const { file, events } = await refreshTrace(bucketId, fileId);
-        if (file.status === 'ready' || file.status === 'failed' || events.some((event) => event.status === 'failed')) break;
-        await sleep(2500);
-      }
-    } finally {
-      setPolling(false);
-    }
-  }
-
-  async function handleUploadInput(event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || !selectedBucketId) return;
-
-    setTraceError(null);
-    setTraceFile(null);
-    setTraceEvents([]);
-    setTraceLayout(null);
-    setTraceChunks([]);
-    setUploadingFile(true);
-
-    try {
-      const uploaded = await uploadFilesDirect(selectedBucketId, [file]);
-      const uploadedFile = Array.isArray(uploaded) ? uploaded[0] : null;
-      if (!uploadedFile?.id) throw new Error('Upload succeeded but no file id was returned.');
-      const uploadedFileId = String(uploadedFile.id);
-      setSelectedFileId(uploadedFileId);
-      setBucketFiles((prev) => [uploadedFile, ...prev.filter((row) => String(row.id) !== uploadedFileId)]);
-      await pollTrace(selectedBucketId, String(uploadedFile.id));
-      const refreshedFiles = await bucketApi.listFiles(selectedBucketId);
-      const rows = Array.isArray(refreshedFiles) ? refreshedFiles : (refreshedFiles.files || []);
-      setBucketFiles(rows);
-    } catch (error) {
-      setTraceError(error.message);
-    } finally {
-      setUploadingFile(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!selectedBucketId || !selectedFileId) {
-      setTraceFile(null);
-      setTraceEvents([]);
-      setTraceLayout(null);
-      setTraceChunks([]);
-      return;
-    }
-
-    if (uploadingFile) return;
-
-    let cancelled = false;
-
-    async function loadSelectedFile() {
-      setTraceError(null);
-      try {
-        const { file, events } = await refreshTrace(selectedBucketId, selectedFileId);
-        if (cancelled) return;
-        if (file.status === 'processing' && !events.some((event) => event.status === 'failed')) {
-          await pollTrace(selectedBucketId, selectedFileId);
-        }
-      } catch (error) {
-        if (!cancelled) setTraceError(error.message);
-      }
-    }
-
-    loadSelectedFile();
-    return () => { cancelled = true; };
-  }, [selectedBucketId, selectedFileId, uploadingFile]);
-
-  const stepStatuses = buildTraceStepStatuses(traceFile, traceEvents, traceLayout, traceChunks);
-  const nodes = buildPipelineStatusNodes(theme, stepStatuses);
-  const activeBucket = buckets.find((bucket) => String(bucket.id) === String(selectedBucketId));
-  const activeBucketFile = bucketFiles.find((file) => String(file.id) === String(selectedFileId));
-  const failedEvent = getLatestFailedEvent(traceEvents);
-  const failedStage = failedEvent?.event_metadata?.stage || 'unknown';
-  const failedMessage = failedEvent?.event_metadata?.error || 'Pipeline failed without an error message.';
-  const latestTraceRunId = [...traceEvents].reverse().find((event) => event?.event_metadata?.trace_run_id)?.event_metadata?.trace_run_id || null;
-  const processingSummary = traceFile ? {
-    file: traceFile,
-    current_trace_run_id: latestTraceRunId,
-    event_count: traceEvents.length,
-    chunk_count: traceChunks.length,
-    has_layout: Boolean(traceLayout?.layout),
-    last_failure: failedEvent ? failedEvent.event_metadata : null,
-  } : null;
-  const exportBaseName = traceFile
-    ? `${slugifyFilenamePart(traceFile.name, 'file')}-${String(traceFile.id).slice(0, 8)}`
-    : 'pipeline-file';
-  const bundleData = traceFile ? {
-    exported_at: new Date().toISOString(),
-    bucket: activeBucket || null,
-    file: traceFile,
-    summary: processingSummary,
-    events: traceEvents,
-    layout: traceLayout,
-    chunks: traceChunks,
-  } : null;
-
-  async function handleCopyBundle() {
-    if (!bundleData || !navigator?.clipboard) return;
-    setTraceError(null);
-    setCopyingBundle(true);
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(bundleData, null, 2));
-    } catch (error) {
-      setTraceError(error.message || 'Could not copy bundle JSON.');
-    } finally {
-      setCopyingBundle(false);
-    }
-  }
-
-  function handleDownloadBundle() {
-    if (!bundleData) return;
-    setTraceError(null);
-    setDownloadingBundle(true);
-    try {
-      downloadJsonFile(`${exportBaseName}-bundle.json`, bundleData);
-    } catch (error) {
-      setTraceError(error.message || 'Could not download bundle JSON.');
-    } finally {
-      setDownloadingBundle(false);
-    }
-  }
-
-  function handleDownloadSeparate() {
-    if (!traceFile) return;
-    setTraceError(null);
-    setDownloadingSeparate(true);
-    try {
-      downloadJsonFile(`${exportBaseName}-file.json`, traceFile);
-      downloadJsonFile(`${exportBaseName}-summary.json`, processingSummary);
-      downloadJsonFile(`${exportBaseName}-events.json`, traceEvents);
-      downloadJsonFile(`${exportBaseName}-layout.json`, traceLayout || { status: 'not_ready_yet' });
-      downloadJsonFile(`${exportBaseName}-chunks.json`, traceChunks);
-    } catch (error) {
-      setTraceError(error.message || 'Could not download separate JSON files.');
-    } finally {
-      setDownloadingSeparate(false);
-    }
-  }
-
-  return (
-    <main className={`min-h-[100dvh] transition-colors duration-300 ${palette.app}`}>
-      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
-        <input ref={uploadRef} type="file" className="hidden" onChange={handleUploadInput} />
-        <header className={`overflow-hidden rounded-[2rem] border px-6 py-6 sm:px-8 ${palette.card}`}>
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <p className={`text-xs font-semibold uppercase tracking-[0.35em] ${palette.accent}`}>Temporary Pipeline View</p>
-              <h1 className={`mt-3 text-3xl font-semibold tracking-tight sm:text-4xl ${palette.title}`}>
-                {'Upload -> RAG -> Ready -> Agent'}
-              </h1>
-              <p className={`mt-3 max-w-2xl text-sm leading-7 ${palette.text}`}>
-                Upload one real file here, watch the pipeline progress, and inspect the actual backend output: file metadata, event timeline, layout JSON, and chunks.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={onToggleTheme}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${palette.toggle}`}
-              >
-                {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-              </button>
-              <Link
-                to="/login"
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${palette.secondary}`}
-              >
-                Back
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        <section className={`rounded-[2rem] border px-5 py-6 sm:px-6 ${palette.card}`}>
-          <div className="mb-5">
-            <p className={`text-xs font-semibold uppercase tracking-[0.3em] ${palette.accent}`}>Upload</p>
-            <h2 className={`mt-2 text-2xl font-semibold ${palette.title}`}>Upload a file and trace its flow</h2>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
-            <label className="block">
-              <span className={`mb-2 block text-sm font-medium ${palette.title}`}>Bucket</span>
-              <select
-                value={selectedBucketId}
-                onChange={(event) => {
-                  setSelectedBucketId(event.target.value);
-                  setSelectedFileId('');
-                }}
-                disabled={loadingBuckets || creatingBucket || uploadingFile || polling}
-                className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${palette.input}`}
-              >
-                {buckets.length === 0 ? <option value="">No buckets yet</option> : null}
-                {buckets.map((bucket) => (
-                  <option key={bucket.id} value={bucket.id}>
-                    {bucket.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={createDemoBucket}
-              disabled={creatingBucket || uploadingFile || polling}
-              className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${palette.secondary}`}
-            >
-              {creatingBucket ? 'Creating bucket...' : 'Create Demo Bucket'}
-            </button>
-            <button
-              type="button"
-              onClick={() => uploadRef.current?.click()}
-              disabled={!selectedBucketId || loadingBuckets || uploadingFile || polling}
-              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${palette.primary}`}
-            >
-              {uploadingFile || polling ? 'Processing file...' : 'Upload File'}
-            </button>
-          </div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto] lg:items-end">
-            <label className="block">
-              <span className={`mb-2 block text-sm font-medium ${palette.title}`}>Existing file in bucket</span>
-              <select
-                value={selectedFileId}
-                onChange={(event) => setSelectedFileId(event.target.value)}
-                disabled={!selectedBucketId || loadingFiles || uploadingFile}
-                className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${palette.input}`}
-              >
-                {bucketFiles.length === 0 ? <option value="">No files in this bucket</option> : null}
-                {bucketFiles.map((file) => (
-                  <option key={file.id} value={file.id}>
-                    {file.name} [{file.status}]
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={handleCopyBundle}
-              disabled={!bundleData || copyingBundle}
-              className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${palette.secondary}`}
-            >
-              {copyingBundle ? 'Copying...' : 'Copy Bundle JSON'}
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadBundle}
-              disabled={!bundleData || downloadingBundle}
-              className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${palette.secondary}`}
-            >
-              {downloadingBundle ? 'Downloading...' : 'Download One JSON'}
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadSeparate}
-              disabled={!traceFile || downloadingSeparate}
-              className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${palette.secondary}`}
-            >
-              {downloadingSeparate ? 'Downloading...' : 'Download Separate JSONs'}
-            </button>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className={`rounded-[1.2rem] border p-4 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white'}`}>
-              <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${palette.accent}`}>Active bucket</p>
-              <p className={`mt-2 text-sm font-semibold ${palette.title}`}>{activeBucket?.name || 'None selected'}</p>
-            </div>
-            <div className={`rounded-[1.2rem] border p-4 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white'}`}>
-              <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${palette.accent}`}>Selected file</p>
-              <p className={`mt-2 text-sm font-semibold ${palette.title}`}>{traceFile?.name || activeBucketFile?.name || 'No file selected'}</p>
-            </div>
-            <div className={`rounded-[1.2rem] border p-4 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white'}`}>
-              <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${palette.accent}`}>State</p>
-              <p className={`mt-2 text-sm font-semibold ${palette.title}`}>
-                {traceFile?.status || (uploadingFile || polling ? 'processing' : 'idle')}
-              </p>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <div className={`rounded-[1.2rem] border p-4 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white'}`}>
-              <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${palette.accent}`}>Files in bucket</p>
-              <p className={`mt-2 text-sm font-semibold ${palette.title}`}>{bucketFiles.length}</p>
-            </div>
-            <div className={`rounded-[1.2rem] border p-4 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white'}`}>
-              <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${palette.accent}`}>Export name</p>
-              <p className={`mt-2 break-all text-sm font-semibold ${palette.title}`}>{traceFile ? exportBaseName : 'No file selected'}</p>
-            </div>
-          </div>
-          {traceError ? (
-            <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${palette.error}`}>
-              {traceError}
-            </div>
-          ) : null}
-          {failedEvent ? (
-            <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${palette.error}`}>
-              <div className="font-semibold">Pipeline failed at `{failedStage}`</div>
-              <div className="mt-1 break-words">{failedMessage}</div>
-            </div>
-          ) : null}
-        </section>
-
-        <section className={`rounded-[2rem] border px-5 py-6 sm:px-6 ${palette.card}`}>
-          <div className="mb-5">
-            <p className={`text-xs font-semibold uppercase tracking-[0.3em] ${palette.accent}`}>Diagram</p>
-            <h2 className={`mt-2 text-2xl font-semibold ${palette.title}`}>Live pipeline status</h2>
-          </div>
-          <div className={`overflow-hidden rounded-[1.6rem] border ${isDark ? 'border-white/10 bg-slate-950/60' : 'border-slate-200 bg-white'}`}>
-            <div style={{ height: '780px', width: '100%' }}>
-              <ReactFlow
-                nodes={nodes}
-                edges={PIPELINE_EDGES}
-                fitView
-                fitViewOptions={{ padding: 0.12 }}
-                proOptions={{ hideAttribution: true }}
-                nodesDraggable={false}
-                nodesConnectable={false}
-                elementsSelectable={false}
-                panOnDrag
-              >
-                <Background gap={24} size={1} color={isDark ? 'rgba(148,163,184,0.18)' : 'rgba(148,163,184,0.28)'} />
-                <MiniMap
-                  pannable
-                  zoomable
-                  nodeColor={isDark ? '#0ea5e9' : '#0284c7'}
-                  maskColor={isDark ? 'rgba(2,6,23,0.55)' : 'rgba(255,255,255,0.7)'}
-                  className={isDark ? '!bg-slate-900 !border !border-white/10' : '!bg-white !border !border-slate-200'}
-                />
-                <Controls className={isDark ? '!bg-slate-900 !border !border-white/10' : '!bg-white !border !border-slate-200'} />
-              </ReactFlow>
-            </div>
-          </div>
-        </section>
-
-        <section className={`rounded-[2rem] border px-5 py-6 sm:px-6 ${palette.card}`}>
-          <div className="mb-5">
-            <p className={`text-xs font-semibold uppercase tracking-[0.3em] ${palette.accent}`}>Timeline</p>
-            <h2 className={`mt-2 text-2xl font-semibold ${palette.title}`}>Real backend events</h2>
-          </div>
-          {traceEvents.length === 0 ? (
-            <div className={`rounded-[1.2rem] border p-4 text-sm ${isDark ? 'border-white/10 bg-white/[0.03] text-slate-300' : 'border-slate-200 bg-white text-slate-600'}`}>
-              Select a file from the bucket or upload a new one to see the actual event timeline from `investigation_events`.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {traceEvents.map((event, index) => (
-                <div
-                  key={`${event.id}-${index}`}
-                  className={`rounded-[1.2rem] border p-4 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white'}`}
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-semibold uppercase tracking-[0.18em] ${
-                        event.status === 'completed'
-                          ? isDark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-50 text-emerald-700'
-                          : event.status === 'failed'
-                            ? isDark ? 'bg-red-500/15 text-red-300' : 'bg-red-50 text-red-700'
-                            : isDark ? 'bg-cyan-500/15 text-cyan-300' : 'bg-cyan-50 text-cyan-700'
-                      }`}>
-                        {event.status}
-                      </span>
-                      <p className={`text-sm font-semibold ${palette.title}`}>{event.event}</p>
-                    </div>
-                    <p className={`text-xs ${palette.text}`}>{fmtTime(event.created_at)}</p>
-                  </div>
-                  <div className={`mt-3 flex flex-wrap gap-2 text-[11px] ${palette.text}`}>
-                    {event.event_metadata?.stage ? (
-                      <span className={`rounded-full border px-2.5 py-1 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-slate-50'}`}>
-                        stage: {event.event_metadata.stage}
-                      </span>
-                    ) : null}
-                    {event.event_metadata?.trace_run_id ? (
-                      <span className={`rounded-full border px-2.5 py-1 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-slate-50'}`}>
-                        trace: {String(event.event_metadata.trace_run_id).slice(0, 8)}
-                      </span>
-                    ) : null}
-                    {typeof event.event_metadata?.duration_ms === 'number' ? (
-                      <span className={`rounded-full border px-2.5 py-1 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-slate-50'}`}>
-                        duration: {event.event_metadata.duration_ms}ms
-                      </span>
-                    ) : null}
-                  </div>
-                  {event.event_metadata && Object.keys(event.event_metadata).length > 0 ? (
-                    <pre className={`mt-3 overflow-x-auto rounded-xl border p-3 text-xs leading-6 ${isDark ? 'border-white/10 bg-slate-950/65 text-slate-200' : 'border-slate-200 bg-slate-50 text-slate-800'}`}>
-                      <code>{JSON.stringify(event.event_metadata, null, 2)}</code>
-                    </pre>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className={`rounded-[2rem] border px-5 py-6 sm:px-6 ${palette.card}`}>
-          <div className="mb-5">
-            <p className={`text-xs font-semibold uppercase tracking-[0.3em] ${palette.accent}`}>Output</p>
-            <h2 className={`mt-2 text-2xl font-semibold ${palette.title}`}>File output artifacts</h2>
-          </div>
-          {traceFile ? (
-            <div className="grid gap-5 xl:grid-cols-2">
-              <JsonPreview theme={theme} title="File Metadata" data={traceFile} />
-              <JsonPreview theme={theme} title="Processing Summary" data={processingSummary} />
-              {failedEvent ? <JsonPreview theme={theme} title="Latest Failure" data={failedEvent} /> : null}
-              <JsonPreview theme={theme} title="Layout JSON" data={traceLayout || { status: 'not_ready_yet' }} />
-              <JsonPreview theme={theme} title="Chunks" data={traceChunks.length > 0 ? traceChunks : { status: 'no_chunks_or_not_ready_yet' }} />
-            </div>
-          ) : (
-            <div className={`rounded-[1.2rem] border p-4 text-sm ${isDark ? 'border-white/10 bg-white/[0.03] text-slate-300' : 'border-slate-200 bg-white text-slate-600'}`}>
-              Select a file from the bucket or upload a new one to see its metadata, layout JSON, and chunk output here.
-            </div>
-          )}
-        </section>
-
-        <section className={`rounded-[2rem] border px-5 py-6 sm:px-6 ${palette.card}`}>
-          <div className="mb-5">
-            <p className={`text-xs font-semibold uppercase tracking-[0.3em] ${palette.accent}`}>Step Order</p>
-            <h2 className={`mt-2 text-2xl font-semibold ${palette.title}`}>Full pipeline list</h2>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {PIPELINE_FLOW_STEPS.map((item) => (
-              <div
-                key={item.step}
-                className={`rounded-[1.2rem] border p-4 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${isDark ? 'bg-blue-500/14 text-blue-300' : 'bg-blue-50 text-blue-700'}`}>
-                    {item.step}
-                  </span>
-                  <div>
-                    <p className={`text-sm font-semibold ${palette.title}`}>{item.title}</p>
-                    <p className={`mt-1 text-xs ${palette.text}`}>{item.output}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
 
 // ---------- MCP Logs Page ----------
 
@@ -8629,27 +8079,27 @@ export default function App() {
   }, [theme]);
 
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
-  const publicTheme = 'light';
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<LandingPage theme={publicTheme} />} />
-        <Route path="/v2" element={<LandingPageV2 theme={publicTheme} />} />
+        <Route path="/" element={<LandingPage theme={theme} />} />
         <Route path="/connect/:tool" element={<ConnectGuide theme={theme} onToggleTheme={toggleTheme} />} />
-        <Route path="/login" element={<LoginPage theme={publicTheme} />} />
-        <Route path="/signup" element={<SignupPage theme={publicTheme} />} />
-        <Route path="/oauth/callback" element={<OAuthCallbackPage theme={publicTheme} />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage theme={publicTheme} />} />
-        <Route path="/confirm-email" element={<ConfirmEmailPage theme={publicTheme} />} />
-        <Route path="/verify-email" element={<VerifyEmailPage theme={publicTheme} />} />
+        <Route path="/login" element={<LoginPage theme={theme} />} />
+        <Route path="/signup" element={<SignupPage theme={theme} />} />
+        <Route path="/oauth/callback" element={<OAuthCallbackPage theme={theme} />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage theme={theme} />} />
+        <Route path="/confirm-email" element={<ConfirmEmailPage theme={theme} />} />
+        <Route path="/verify-email" element={<VerifyEmailPage theme={theme} />} />
         <Route path="/onboarding" element={<OnboardingPage theme={theme} onToggleTheme={toggleTheme} />} />
         <Route path="/dashboard" element={<DashboardRouter theme={theme} onToggleTheme={toggleTheme} />} />
         <Route path="/bucket/:bucketId" element={<BucketPage theme={theme} onToggleTheme={toggleTheme} />} />
-        <Route path="/temp-pipeline" element={<TempPipelinePage theme={theme} onToggleTheme={toggleTheme} />} />
         <Route path="/privacy-policy" element={<PrivacyPolicyPage theme={theme} onToggleTheme={toggleTheme} />} />
         <Route path="/terms" element={<TermsPage theme={theme} onToggleTheme={toggleTheme} />} />
         <Route path="/tokusho" element={<TokushoPage theme={theme} onToggleTheme={toggleTheme} />} />
+        <Route path="/about" element={<AboutPage theme={theme} onToggleTheme={toggleTheme} />} />
+        <Route path="/security" element={<SecurityPage theme={theme} onToggleTheme={toggleTheme} />} />
+        <Route path="/dpa" element={<DpaPage theme={theme} onToggleTheme={toggleTheme} />} />
         <Route path="/docs" element={<DocsPage theme={theme} onToggleTheme={toggleTheme} />} />
         <Route path="/admin" element={<AdminPage theme={theme} />} />
         <Route path="/enterprise-contact" element={<EnterpriseContactPage theme={theme} />} />
