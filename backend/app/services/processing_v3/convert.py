@@ -14,11 +14,21 @@ locally, no API calls — so the converter is effectively free at runtime.
 from __future__ import annotations
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 
 CONVERTIBLE_EXTS = {"xlsx", "xls", "epub", "zip"}
+
+# Below this many chars of real body content the conversion is treated as empty
+# (an empty archive, a blank sheet) and we fall through to a clean failure.
+_MIN_USEFUL_CHARS = 8
+
+# markitdown prefixes a zip's output with a header line like
+# "Content from the zip file `name`:" before each member. Strip it so an empty
+# archive reads as empty rather than as that placeholder string.
+_ZIP_HEADER_RE = re.compile(r"^Content from the zip file .*?:\s*", re.DOTALL)
 
 
 def convert_to_markdown(file_bytes: bytes, filename: str) -> bytes | None:
@@ -52,6 +62,27 @@ def convert_to_markdown(file_bytes: bytes, filename: str) -> bytes | None:
         if not text:
             logger.info("markitdown convert returned empty text file=%s ext=%s", filename, ext)
             return None
+
+        # Guard 1 — plain-text fallback. xlsx/xls/epub/zip are binary container
+        # formats; a real one never decodes cleanly as UTF-8. If markitdown
+        # handed back text byte-identical to the decoded input, it fell back to
+        # its plain-text converter (e.g. a .txt renamed .xlsx) rather than
+        # actually parsing the format. Treat that as unsupported.
+        try:
+            if text == file_bytes.decode("utf-8").strip():
+                logger.info("markitdown plain-text fallback file=%s ext=%s — unsupported", filename, ext)
+                return None
+        except (UnicodeDecodeError, ValueError):
+            pass  # genuine binary file — the expected, healthy path
+
+        # Guard 2 — empty container. Strip markitdown's zip header so an archive
+        # with no usable members reads as empty.
+        body = _ZIP_HEADER_RE.sub("", text, count=1).strip() if ext == "zip" else text
+        if len(body) < _MIN_USEFUL_CHARS:
+            logger.info("markitdown convert produced no usable content file=%s ext=%s len=%s",
+                        filename, ext, len(body))
+            return None
+
         return text.encode("utf-8", errors="replace")
     except Exception as exc:
         logger.warning("markitdown convert failed file=%s ext=%s: %s", filename, ext, exc)
