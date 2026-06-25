@@ -31,13 +31,14 @@ from app.services.notifications import create_notification
 logger = logging.getLogger(__name__)
 
 # Plans that can be bought self-serve. 'business' (Enterprise) is excluded.
-SELF_SERVE_PLANS = ("individual", "team")
+SELF_SERVE_PLANS = ("individual", "team", "mcp")
 
 
 def _plan_to_price() -> dict[str, str]:
     return {
         "individual": settings.stripe_price_individual,
         "team": settings.stripe_price_team,
+        "mcp": getattr(settings, "stripe_price_mcp", "") or "",
     }
 
 

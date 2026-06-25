@@ -29,6 +29,11 @@ class File(Base):
     page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     image_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     section_outline: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    # Stamped from the parent bucket at upload time so a file's tier is
+    # immutable even if the bucket's tier later changes.
+    processing_tier: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="full", server_default="full"
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_agent_written: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

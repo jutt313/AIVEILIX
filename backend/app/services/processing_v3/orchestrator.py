@@ -44,6 +44,7 @@ from sqlalchemy import delete, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
+from app.models.bucket import Bucket, Category
 from app.models.chunk import Chunk
 from app.models.error_log import ErrorLog
 from app.models.file import File
@@ -53,6 +54,8 @@ from app.services.notifications import create_notification
 from app.services.outline import clean_section_outline
 from app.services.storage.r2 import download_file, upload_json, build_layout_key
 from app.services.qdrant.file_indexer import (
+    TEXT_COLLECTION,
+    TEXT_COLLECTION_LITE,
     deprecate_file_vectors,
     ensure_collections,
     upsert_text_chunks,
@@ -76,6 +79,8 @@ from app.services.processing_v3.visual import get_visual_understanding_provider
 from app.services.processing_v3.embedding import embed_texts
 from app.services.processing_v3.dedup import dedupe_elements
 from app.services.processing_v3.reconcile import reconcile_names
+from app.services.processing_v3.category import classify_document
+from app.services.processing_v3.convert import convert_to_markdown
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -147,6 +152,19 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
 
     bucket_id = row.bucket_id
     filename = row.name
+    demo_upload_caps = await _demo_upload_caps(db, fid, bucket_id)
+
+    # Tier branch — "full" (default) keeps the existing pipeline; "lite"
+    # swaps visuals (lazy), embeddings (voyage-3-lite), and summary (light).
+    bucket_row = await db.get(Bucket, bucket_id)
+    tier = (getattr(bucket_row, "processing_tier", None) or "full").lower()
+    is_lite = tier == "lite"
+    text_collection = TEXT_COLLECTION_LITE if is_lite else TEXT_COLLECTION
+    # Stamp the file with its frozen tier so future lookups (lazy describe,
+    # retrieval) don't need to re-resolve from the bucket.
+    if getattr(row, "processing_tier", None) != tier:
+        await db.execute(update(File).where(File.id == fid).values(processing_tier=tier))
+        await db.flush()
 
     # 1. Cleanup previous processing state
     started = perf_counter()
@@ -169,10 +187,28 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
     await _trace(trace, "download_completed", "completed", "download",
                  {"bytes": len(file_bytes), "duration_ms": _ms(started)})
 
+    # 2b. Multi-format conversion (xlsx / xls / epub / zip → Markdown).
+    # Runs BEFORE detect_file_type so converted formats ride the existing
+    # FileType.TEXT rails. The original file stays untouched in R2; only the
+    # in-memory bytes used by processing are swapped. On conversion failure we
+    # fall through to detect_file_type and the existing "Unsupported file
+    # type" path marks the file failed cleanly.
+    converted = await asyncio.to_thread(convert_to_markdown, file_bytes, filename)
+    forced_text = converted is not None
+    if forced_text:
+        original_size = len(file_bytes)
+        file_bytes = converted
+        await _trace(trace, "convert_completed", "completed", "convert",
+                     {"format": (filename.rsplit('.', 1)[-1] or '').lower(),
+                      "in_bytes": original_size, "out_bytes": len(file_bytes)})
+
     # 3. Detect type + render pages
     started = perf_counter()
     try:
-        file_type = detect_file_type("application/octet-stream", filename, file_bytes)
+        if forced_text:
+            file_type = FileType.TEXT
+        else:
+            file_type = detect_file_type("application/octet-stream", filename, file_bytes)
         if file_type == FileType.TEXT:
             file_bytes = preprocess_text_bytes(file_bytes, filename)
             rendered: list[RenderedPage] = [RenderedPage(page_number=1, width=0, height=0, data=b"")]
@@ -184,6 +220,12 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
         raise PipelineStageError("render", "document produced no pages")
     await _trace(trace, "render_completed", "completed", "render",
                  {"pages": len(rendered), "file_type": file_type.value, "duration_ms": _ms(started)})
+
+    if demo_upload_caps and len(rendered) > demo_upload_caps["cap_file_pages"]:
+        raise PipelineStageError(
+            "demo_page_limit",
+            f"Demo upload page limit reached ({len(rendered)}/{demo_upload_caps['cap_file_pages']} pages).",
+        )
 
     # 3b. Enforce the owner's monthly page quota before the expensive OCR/visual stages.
     from app.services.quota import page_quota_status
@@ -215,15 +257,31 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
     pages_meta: list[PageMeta] = []
 
     started = perf_counter()
+    # Pre-assign page ids in order so downstream code keyed on page_number is stable.
     for rp in rendered:
-        page_id = str(uuid.uuid4())
-        page_ids[rp.page_number] = page_id
+        page_ids[rp.page_number] = str(uuid.uuid4())
+
+    # OCR + screenshot upload run per page over the network (Mistral + R2), so the
+    # original page-by-page loop spent most of its wall-clock waiting. Fan the pages
+    # out concurrently, bounded by a semaphore. Distinct page_number keys mean the
+    # shared dicts below are written without collisions on the single event loop.
+    ocr_semaphore = asyncio.Semaphore(settings.ocr_concurrency)
+
+    async def _process_page(rp) -> PageMeta:
+        page_id = page_ids[rp.page_number]
         if file_type == FileType.TEXT:
             page_ocr_status[rp.page_number] = "skipped"
-            screenshot_uri = None
-            raw_ocr_uri = None
-            ocr_status_label = "skipped_text"
-        else:
+            return PageMeta(
+                page_number=rp.page_number,
+                width=rp.width,
+                height=rp.height,
+                page_id=page_id,
+                screenshot_uri=None,
+                ocr_status="skipped_text",
+                raw_ocr_uri=None,
+            )
+
+        async with ocr_semaphore:
             try:
                 screenshot_uri = await storage.upload_page_screenshot(rp.data, file_id, rp.page_number)
             except Exception as exc:
@@ -254,7 +312,7 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
                 raw_ocr_uri = None
                 ocr_status_label = "skipped_native_text"
 
-        pages_meta.append(PageMeta(
+        return PageMeta(
             page_number=rp.page_number,
             width=rp.width,
             height=rp.height,
@@ -262,7 +320,10 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
             screenshot_uri=screenshot_uri,
             ocr_status=ocr_status_label,
             raw_ocr_uri=raw_ocr_uri,
-        ))
+        )
+
+    page_meta_unsorted = await asyncio.gather(*(_process_page(rp) for rp in rendered))
+    pages_meta = sorted(page_meta_unsorted, key=lambda pm: pm.page_number)
     await _trace(trace, "mistral_ocr_completed", "completed", "mistral_ocr",
                  {"ocr_pages": len(ocr_results), "duration_ms": _ms(started)})
 
@@ -281,6 +342,18 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
     visual_provider = get_visual_understanding_provider()
     if file_type == FileType.TEXT:
         logger.info("[v3] text file — visual element extraction skipped")
+    elif is_lite:
+        # Lite tier: detect + crop + upload regions, but skip the vision model.
+        # Each visual is stored pending_describe=True with a context_text built
+        # from the surrounding text on that page. The describe runs on first
+        # MCP fetch (services/mcp/tools.py:fetch_visual).
+        try:
+            visual_elements = await _extract_visuals(
+                file_id, file_type, file_bytes, rendered, text_elements,
+                page_ids, storage, visual_provider=None, lazy=True,
+            )
+        except Exception as exc:
+            logger.warning("[v3] lazy visual extraction failed (non-fatal): %s", exc)
     elif visual_provider is not None:
         try:
             visual_elements = await _extract_visuals(
@@ -325,9 +398,45 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
 
     # 8. Summary
     started = perf_counter()
-    summary_text = await summarise(filename, elements)
+    summary_text = await summarise(filename, elements, lite=is_lite)
     await _trace(trace, "summary_completed", "completed", "summary",
-                 {"chars": len(summary_text), "duration_ms": _ms(started)})
+                 {"chars": len(summary_text), "duration_ms": _ms(started), "lite": is_lite})
+
+    # 8b. Auto-category (lite tier today) — needed so the lite bucket UI can
+    # render a category chip on every file row. Failures here never block the
+    # file: category_id stays NULL and the UI falls back to file type.
+    if is_lite:
+        try:
+            cat_name = await classify_document(filename, summary_text)
+            category_id = await _find_or_create_category(db, bucket_id, cat_name)
+            if category_id is not None:
+                await db.execute(
+                    update(File).where(File.id == fid).values(category_id=category_id)
+                )
+                await db.flush()
+            await _trace(trace, "category_completed", "completed", "category",
+                         {"category": cat_name})
+        except Exception as exc:
+            logger.warning("[v3] auto-category failed for %s: %s", filename, exc)
+
+    image_count, section_outline = _compute_file_manifest(elements)
+    if demo_upload_caps and image_count > demo_upload_caps["cap_file_visuals"]:
+        raise PipelineStageError(
+            "demo_visual_limit",
+            f"Demo upload visual limit reached ({image_count}/{demo_upload_caps['cap_file_visuals']} visuals).",
+        )
+
+    # Enforce the owner's visual (image) quota now that the count is known.
+    from app.services.quota import image_quota_status
+    within_img, used_img, max_img, plan_nm = await image_quota_status(
+        db, row.user_id, adding_images=image_count, exclude_file_id=fid
+    )
+    if not within_img:
+        raise PipelineStageError(
+            "image_limit",
+            f"{plan_nm} plan visual limit reached ({used_img}/{max_img} images); "
+            f"this file adds {image_count}. Upgrade or remove files.",
+        )
 
     # 9. Export JSON → R2
     started = perf_counter()
@@ -345,19 +454,6 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
         await asyncio.to_thread(upload_json, json.dumps(export, ensure_ascii=False), layout_key)
     except Exception as exc:
         raise PipelineStageError("layout_upload", str(exc)) from exc
-    image_count, section_outline = _compute_file_manifest(elements)
-
-    # Enforce the owner's visual (image) quota now that the count is known.
-    from app.services.quota import image_quota_status
-    within_img, used_img, max_img, plan_nm = await image_quota_status(
-        db, row.user_id, adding_images=image_count, exclude_file_id=fid
-    )
-    if not within_img:
-        raise PipelineStageError(
-            "image_limit",
-            f"{plan_nm} plan visual limit reached ({used_img}/{max_img} images); "
-            f"this file adds {image_count}. Upgrade or remove files.",
-        )
 
     await db.execute(
         update(File).where(File.id == fid).values(
@@ -379,9 +475,11 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
     # 11. Embed (summary first, then chunks)
     started = perf_counter()
     summary_id = uuid.uuid4()
-    texts_to_embed = [summary_text] + [_embed_text(cr.text, cr.page_start) for cr in chunk_records]
+    texts_to_embed = [summary_text] + [
+        _embed_text(cr.get_embed_text(), cr.page_start) for cr in chunk_records
+    ]
     try:
-        vectors = await embed_texts(texts_to_embed)
+        vectors = await embed_texts(texts_to_embed, lite=is_lite)
     except Exception as exc:
         raise PipelineStageError("voyage_embed", str(exc)) from exc
     if len(vectors) != len(texts_to_embed):
@@ -428,7 +526,7 @@ async def _run_pipeline(db: AsyncSession, file_id: str, trace: TraceContext) -> 
         })
     try:
         await ensure_collections()
-        await upsert_text_chunks(qdrant_docs)
+        await upsert_text_chunks(qdrant_docs, collection_name=text_collection)
     except Exception as exc:
         raise PipelineStageError("qdrant_upsert", str(exc)) from exc
     await _trace(trace, "qdrant_upsert_completed", "completed", "qdrant_upsert",
@@ -477,12 +575,19 @@ async def _extract_visuals(
     page_ids: dict[int, str],
     storage,
     visual_provider,
+    lazy: bool = False,
 ) -> list[ElementRecord]:
     semaphore = asyncio.Semaphore(VISUAL_CONCURRENCY)
 
     async def _page_visuals(rp: RenderedPage) -> list[ElementRecord]:
         page_text = [e for e in text_elements if e.page_number == rp.page_number]
         text_bboxes = [e.bbox for e in page_text if e.bbox]
+        # For lite tier, pre-compute a compact "context_text" from the page's
+        # text so each lazy visual is still semantically searchable via the
+        # surrounding prose / caption before any vision-model describe runs.
+        context_text = None
+        if lazy:
+            context_text = _page_context_text(page_text)
 
         pdf_image_regions = None
         if file_type == FileType.PDF:
@@ -509,6 +614,8 @@ async def _extract_visuals(
             text_bboxes=text_bboxes or None,
             pdf_image_regions=pdf_image_regions,
             semaphore=semaphore,
+            lazy=lazy,
+            context_text=context_text,
         )
 
     page_results = await asyncio.gather(*(_page_visuals(rp) for rp in rendered))
@@ -516,6 +623,29 @@ async def _extract_visuals(
     for pr in page_results:
         out.extend(pr)
     return out
+
+
+def _page_context_text(page_text_elements: list[ElementRecord], max_chars: int = 1200) -> str:
+    """Concatenate page heading + nearby prose so a lazy visual is still
+    findable via semantic search even before its description is filled in.
+    Headings come first so the section name stays in the indexed text."""
+    headings: list[str] = []
+    body: list[str] = []
+    for e in page_text_elements:
+        content = (e.content or "").strip()
+        if not content:
+            continue
+        if e.type == "heading":
+            headings.append(content)
+        else:
+            body.append(content)
+    parts: list[str] = []
+    parts.extend(headings[:3])
+    parts.extend(body[:6])
+    joined = " ".join(parts).strip()
+    if len(joined) > max_chars:
+        joined = joined[: max_chars - 1].rsplit(" ", 1)[0] + "…"
+    return joined
 
 
 def _assign_sort_order(elements: list[ElementRecord]) -> list[ElementRecord]:
@@ -548,6 +678,77 @@ def _embed_text(content: str, page: int) -> str:
 
 def _ms(started: float) -> int:
     return int((perf_counter() - started) * 1000)
+
+
+_CATEGORY_PALETTE = [
+    "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
+    "#EC4899", "#14B8A6", "#F97316", "#6366F1", "#84CC16",
+]
+
+
+async def _find_or_create_category(
+    db: AsyncSession,
+    bucket_id: uuid.UUID,
+    name: str,
+) -> uuid.UUID | None:
+    """Locate (case-insensitive) or create a Category in this bucket. Returns
+    the Category id, or None if the name is empty / lookup failed."""
+    from sqlalchemy import func as _func, select as _select
+
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return None
+    try:
+        existing = (
+            await db.execute(
+                _select(Category.id).where(
+                    Category.bucket_id == bucket_id,
+                    _func.lower(Category.name) == cleaned.lower(),
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing
+
+        # Pick a stable colour based on the name so the same category always
+        # renders in the same chip colour across files in the bucket.
+        color = _CATEGORY_PALETTE[hash(cleaned.lower()) % len(_CATEGORY_PALETTE)]
+        cat = Category(bucket_id=bucket_id, name=cleaned, color=color)
+        db.add(cat)
+        await db.flush()
+        return cat.id
+    except Exception as exc:
+        logger.warning("category find-or-create failed bucket=%s name=%s: %s",
+                       bucket_id, cleaned, exc)
+        return None
+
+
+async def _demo_upload_caps(
+    db: AsyncSession,
+    file_id: uuid.UUID,
+    bucket_id: uuid.UUID,
+) -> dict[str, int] | None:
+    result = await db.execute(
+        text(
+            """
+            SELECT dl.cap_file_pages, dl.cap_file_visuals
+            FROM demo_links dl
+            JOIN demo_events de ON de.demo_link_id = dl.id
+            WHERE dl.bucket_id = CAST(:bucket_id AS uuid)
+              AND de.event_type = 'file_uploaded'
+              AND de.payload->>'file_id' = :file_id
+            LIMIT 1
+            """
+        ),
+        {"bucket_id": str(bucket_id), "file_id": str(file_id)},
+    )
+    row = result.mappings().first()
+    if row is None:
+        return None
+    return {
+        "cap_file_pages": int(row["cap_file_pages"]),
+        "cap_file_visuals": int(row["cap_file_visuals"]),
+    }
 
 
 # Visual elements with these types don't count as "images" the user would

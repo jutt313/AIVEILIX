@@ -130,7 +130,7 @@ def _fallback_summary(filename: str, elements: list[ElementRecord]) -> str:
     return "\n".join(body).strip()
 
 
-async def summarise(filename: str, elements: list[ElementRecord]) -> str:
+async def summarise(filename: str, elements: list[ElementRecord], lite: bool = False) -> str:
     """Return a summary string. Never raises — falls back on any failure.
 
     By default this uses the instant heading-based fallback so files become
@@ -138,8 +138,14 @@ async def summarise(filename: str, elements: list[ElementRecord]) -> str:
     chunks themselves carry all the real content for RAG; the doc-level summary
     is just a pinned overview point. Set settings.processing_v3_ai_summary=True
     to opt back into the slow LLM-generated summary.
+
+    lite=True forces the heading-based fallback (no LLM call) — the MCP plan's
+    serve-cost relies on this so a $12/mo bucket never pays for a Kimi or
+    Gemini summary call.
     """
     fallback = _fallback_summary(filename, elements)
+    if lite:
+        return fallback
     if not getattr(settings, "processing_v3_ai_summary", False):
         return fallback
 

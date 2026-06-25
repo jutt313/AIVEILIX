@@ -1182,6 +1182,12 @@ function UseCases({ p, theme }) {
 /* ─────────────────────────── PRICING ───────────────────────────── */
 const PRICING = [
   {
+    name: 'MCP', price: '$12', cadence: '/month', tagline: 'MCP-first — bring your own AI',
+    star: 'Lowest price — your AI answers, ours just remembers',
+    features: ['1 user', '5 buckets', '500 documents', 'Up to 10,000 pages', '3,000 visuals', '10 GB storage', 'Cited answers — exact page', 'Connect any AI (MCP) — 60 req/min', 'Email support'],
+    cta: 'Start MCP · $12/mo',
+  },
+  {
     name: 'Individual', price: '$15', cadence: '/month', tagline: 'For solo users',
     trial: '15-day free trial',
     star: 'Visual understanding — reads charts, diagrams & images',
@@ -1208,7 +1214,7 @@ function Pricing({ p, theme }) {
   const handlePlan = async (t) => {
     // Enterprise is always a sales conversation.
     if (t.enterprise) { navigate('/enterprise-contact'); return; }
-    const plan = t.name.toLowerCase(); // 'individual' | 'team'
+    const plan = t.name.toLowerCase(); // 'mcp' | 'individual' | 'team'
     // Not logged in → create an account first.
     if (!sessionStorage.getItem('access_token')) { navigate('/signup'); return; }
     // Logged in → go straight to Stripe Checkout.
@@ -1235,7 +1241,7 @@ function Pricing({ p, theme }) {
           </h2>
         </BlurFade>
 
-        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
+        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4 max-w-7xl mx-auto">
           {PRICING.map((t, i) => (
             <BlurFade key={t.name} delay={i * 0.08}>
               <div className={`group relative flex h-full flex-col rounded-2xl p-7 transition-all duration-300 ease-out hover:-translate-y-1 ${p.card} ${

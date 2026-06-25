@@ -131,6 +131,14 @@ async def enforce_chat_quota(db: AsyncSession, owner_user_id: uuid.UUID) -> Effe
     ep = await owner_effective_plan(db, owner_user_id)
     if ep.locked:
         _deny("Your free trial has ended. Choose a plan to keep chatting.")
+    # Plans with no in-app chat allowance (e.g. MCP) deny outright with a
+    # clearer message than the "0 used / 0 max" phrasing the generic path
+    # would produce.
+    if ep.limits.max_chat_messages == 0:
+        _deny(
+            f"The {ep.limits.name} plan doesn't include in-app chat — "
+            "answers run on your own AI via the MCP link."
+        )
     used = await db.scalar(
         select(func.count())
         .select_from(Message)

@@ -2,6 +2,8 @@
 
 # Secrets / local env
 .env
+.env.*
+!.env.example
 backend/.env
 frontend/.env.local
 frontend/.env.development.local
@@ -46,3 +48,27 @@ deploy/gcp/config.env
 backend/database/postgres/run/
 backend/database/valkey/run/
 .env
+
+# Local marketing / outreach assets — never commit or deploy
+formarketing/
+benchmark/
+formarketing/customer-tracker.html
+
+# Local scratch / test / planning dirs — never commit or deploy
+2026-05-24test/
+its for final test/
+Aiveilix-pipline/
+New Folder With Items/
+phase1_3_validation_output/
+
+# Local tool config / caches
+.claude/
+.firebase/
+
+# Local scratch planning notes — never commit or deploy
+aiveilix.md
+need_to_now.md
+relog.md
+new-agent.md
+new-agent-implementation.md
+TEAM_MEMBER_IMPLEMENTATION.md

@@ -24,6 +24,11 @@ class Bucket(Base):
     # Demo buckets back a public /try/:slug page. They are hidden from the normal
     # dashboard and never count against the owning (admin) account's plan quota.
     is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # "full" = standard pipeline (voyage-3-large, eager visuals, full summary).
+    # "lite" = MCP-plan lite pipeline (voyage-3-lite, lazy visuals, light summary).
+    processing_tier: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="full", server_default="full"
+    )
     storage_used: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -10,6 +10,8 @@ Prefix: ``/admin`` (mounted under ``/v1``).
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -24,7 +26,7 @@ from fastapi import (
     UploadFile,
 )
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import require_admin_session
@@ -32,22 +34,28 @@ from app.database import get_db
 from app.models.bucket import Bucket
 from app.models.conversation import Conversation, Message
 from app.models.demo import DemoEvent, DemoLead, DemoLink, DemoMeetingRequest, DemoSurvey
-from app.models.file import File
+from app.models.file import File, FileVersion
 from app.models.user import User
 from app.services.pipeline.upload import intake_upload
+from app.services.qdrant.file_indexer import deprecate_file_vectors
+from app.services.storage.r2 import delete_file as r2_delete_file
 
 router = APIRouter(prefix="/admin", tags=["admin-demo"])
+logger = logging.getLogger(__name__)
 
 _SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,60}[a-z0-9])?$")
 _CODE_RE = re.compile(r"^\d{4}$")
-_CAP_FIELDS = {
-    "cap_team_members",
-    "cap_threads",
-    "cap_messages",
-    "cap_files",
-    "cap_file_size_mb",
-    "cap_comebacks",
+_CAP_BOUNDS = {
+    "cap_team_members": (0, 1000),
+    "cap_threads": (0, 10000),
+    "cap_messages": (0, 100000),
+    "cap_files": (0, 1000),
+    "cap_file_size_mb": (1, 1024),
+    "cap_file_pages": (1, 10000),
+    "cap_file_visuals": (0, 10000),
+    "cap_comebacks": (1, 1000),
 }
+_CAP_FIELDS = tuple(_CAP_BOUNDS.keys())
 
 
 # ── request models ─────────────────────────────────────────────────────────────
@@ -58,6 +66,8 @@ class CapsModel(BaseModel):
     cap_messages: int = Field(default=100, ge=0, le=100000)
     cap_files: int = Field(default=1, ge=0, le=1000)
     cap_file_size_mb: int = Field(default=50, ge=1, le=1024)
+    cap_file_pages: int = Field(default=100, ge=1, le=10000)
+    cap_file_visuals: int = Field(default=100, ge=0, le=10000)
     cap_comebacks: int = Field(default=3, ge=1, le=1000)
 
 
@@ -180,6 +190,35 @@ async def _get_link(db: AsyncSession, link_id: str) -> DemoLink:
     if link is None:
         raise HTTPException(status_code=404, detail="Demo bucket not found.")
     return link
+
+
+async def _cleanup_demo_bucket_assets(db: AsyncSession, bucket_id: uuid.UUID) -> None:
+    file_rows = (
+        await db.execute(
+            select(File.id, File.r2_path, File.layout_json_path).where(File.bucket_id == bucket_id)
+        )
+    ).all()
+    file_ids = [row.id for row in file_rows]
+
+    storage_keys = {row.r2_path for row in file_rows if row.r2_path}
+    storage_keys.update(row.layout_json_path for row in file_rows if row.layout_json_path)
+    if file_ids:
+        version_keys = (
+            await db.execute(select(FileVersion.r2_path).where(FileVersion.file_id.in_(file_ids)))
+        ).scalars().all()
+        storage_keys.update(key for key in version_keys if key)
+
+    for fid in file_ids:
+        try:
+            await deprecate_file_vectors(str(fid))
+        except Exception as exc:
+            logger.warning("Demo bucket delete: vector cleanup failed file=%s: %s", fid, exc)
+
+    for key in sorted(storage_keys):
+        try:
+            await asyncio.to_thread(r2_delete_file, key)
+        except Exception as exc:
+            logger.warning("Demo bucket delete: R2 cleanup failed key=%s: %s", key, exc)
 
 
 # ── create / list / detail / edit ──────────────────────────────────────────────
@@ -306,13 +345,42 @@ async def update_demo_bucket(
         for key, value in body.caps.items():
             if key not in _CAP_FIELDS:
                 raise HTTPException(status_code=400, detail=f"Unknown cap field: {key}.")
-            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                raise HTTPException(status_code=400, detail=f"'{key}' must be a non-negative integer.")
+            min_value, max_value = _CAP_BOUNDS[key]
+            if not isinstance(value, int) or isinstance(value, bool) or value < min_value or value > max_value:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{key}' must be an integer between {min_value} and {max_value}.",
+                )
             setattr(link, key, value)
 
     await db.commit()
     await db.refresh(link)
     return await _link_summary(db, link)
+
+
+@router.delete("/demo-buckets/{link_id}")
+async def delete_demo_bucket(
+    link_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_session),
+):
+    link = await _get_link(db, link_id)
+    bucket_id = link.bucket_id
+    link_uuid = link.id
+
+    bucket = await db.get(Bucket, bucket_id)
+    if bucket is not None and not bucket.is_demo:
+        raise HTTPException(status_code=409, detail="Refusing to delete a non-demo bucket from the demo admin panel.")
+
+    await _cleanup_demo_bucket_assets(db, bucket_id)
+
+    if bucket is not None:
+        await db.execute(delete(Bucket).where(Bucket.id == bucket_id, Bucket.is_demo.is_(True)))
+    else:
+        await db.delete(link)
+    await db.commit()
+
+    return {"ok": True, "id": str(link_uuid), "bucket_id": str(bucket_id)}
 
 
 # ── prebuild files ─────────────────────────────────────────────────────────────
@@ -327,7 +395,7 @@ async def upload_demo_files(
 ):
     """Load the prebuild docs the visitor will explore. Reuses the normal pipeline.
     Not subject to the founder's plan quota (the bucket is ``is_demo``)."""
-    from app.services.processing_v3.orchestrator import process_file
+    from app.services.processing_v3.dispatch import schedule_file_processing
 
     link = await _get_link(db, link_id)
     out = []
@@ -335,7 +403,7 @@ async def upload_demo_files(
         file_row, trace_run_id = await intake_upload(
             db=db, bucket_id=link.bucket_id, user_id=admin.id, upload=upload
         )
-        background_tasks.add_task(process_file, str(file_row.id), trace_run_id, "upload")
+        await schedule_file_processing(str(file_row.id), trace_run_id, "upload")
         out.append({"id": str(file_row.id), "name": file_row.name, "status": file_row.status})
     return {"files": out}
 

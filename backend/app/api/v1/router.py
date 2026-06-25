@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     admin_demo,
     demo,
     enterprise,
+    internal,
 )
 
 router = APIRouter()
@@ -42,3 +43,4 @@ router.include_router(admin.router)
 router.include_router(admin_demo.router)
 router.include_router(demo.router)
 router.include_router(enterprise.router)
+router.include_router(internal.router)

@@ -2247,9 +2247,10 @@ function DocsPage({ theme, onToggleTheme }) {
                 Open a bucket and drop files into the upload zone on the left, or click to browse. You can upload one file or many at once.
               </p>
               <p>
-                <strong className={p.title}>Supported formats:</strong> PDF, Word (DOCX), plain text, CSV, Markdown,
-                and common image formats (PNG, JPG, WEBP). Scanned PDFs and images are also supported — AIveilix
-                reads the text and any charts or diagrams inside them.
+                <strong className={p.title}>Supported formats:</strong> PDF, Word (DOCX), PowerPoint (PPTX),
+                Excel (XLSX), EPub, ZIP archives, plain text, CSV, Markdown, and common image formats
+                (PNG, JPG, WEBP). Scanned PDFs and images are also supported — AIveilix reads the text
+                and any charts or diagrams inside them. ZIP archives are merged into one searchable document.
               </p>
               <p>Each file goes through three statuses in the file list:</p>
               <ul className="list-disc space-y-1 pl-6">
@@ -2972,6 +2973,34 @@ function fmtBucketStorage(storageBytes, storageGb = null) {
   if (gb >= 1) return `${gb.toFixed(2)} GB`;
   return `${(gb * 1024).toFixed(2)} MB`;
 }
+
+// File-picker hint list. The backend does NOT gate uploads by extension —
+// this only tells the OS picker which files to highlight. Covers natively-
+// parsed formats (PDF / DOCX / PPTX / images / text) plus the multi-format
+// intake conversions (xlsx/xls/epub/zip — see processing_v3/convert.py).
+const UPLOAD_ACCEPT = [
+  '.pdf', 'application/pdf',
+  '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.doc', 'application/msword',
+  '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.ppt', 'application/vnd.ms-powerpoint',
+  '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls', 'application/vnd.ms-excel',
+  '.epub', 'application/epub+zip',
+  '.zip', 'application/zip',
+  '.txt', 'text/plain',
+  '.md', 'text/markdown',
+  '.csv', 'text/csv',
+  '.tsv', 'text/tab-separated-values',
+  '.json', 'application/json',
+  '.html', '.htm', 'text/html',
+  '.xml', 'application/xml',
+  '.rtf', 'application/rtf',
+  '.png', 'image/png',
+  '.jpg', '.jpeg', 'image/jpeg',
+  '.webp', 'image/webp',
+  '.gif', 'image/gif',
+].join(',');
 
 const LIMIT_FIELD_LABELS = {
   max_users: 'Seats',
@@ -3738,10 +3767,12 @@ function ProfileDrawer({
 
   const planKey = billingPlan?.plan;
   const isEnterprise = planKey === 'business';
+  const isLitePlan = planKey === 'mcp';
   const isPaidPlan = !!billingPlan && !billingPlan.is_trial && !billingPlan.locked
-    && (planKey === 'individual' || planKey === 'team');
+    && (planKey === 'individual' || planKey === 'team' || planKey === 'mcp');
   const isIndividualPaid = isPaidPlan && planKey === 'individual';
   const isTeamPaid = isPaidPlan && planKey === 'team';
+  const isMcpPaid = isPaidPlan && planKey === 'mcp';
 
   // Load billing history when drawer opens
   useEffect(() => {
@@ -4104,8 +4135,16 @@ function ProfileDrawer({
                       const used = planUsage[field] || 0;
                       const limit = planLimits[field] || 0;
                       const pct = billingPlan?.percent_used?.[field] || 0;
+                      // MCP plan does NOT include in-app chat — render that tile
+                      // blurred + disabled with a small "not included" hint so users
+                      // see why it's there but can't act on it.
+                      const blurChat = isLitePlan && field === 'max_chat_messages';
                       return (
-                        <div key={field} className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b px-4 py-3 last:border-b-0 ${sectionBorder}`}>
+                        <div
+                          key={field}
+                          title={blurChat ? 'Not included in MCP plan — answers run on your own AI via the MCP link.' : undefined}
+                          className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b px-4 py-3 last:border-b-0 ${sectionBorder} ${blurChat ? 'pointer-events-none opacity-50 [filter:blur(2px)]' : ''}`}
+                        >
                           <div className="min-w-0">
                             <p className={`text-sm font-medium ${palette.title}`}>{LIMIT_FIELD_LABELS[field] || field}</p>
                             <div className={`mt-2 h-1.5 overflow-hidden rounded-full ${isDark ? 'bg-white/8' : 'bg-slate-200'}`}>
@@ -4113,7 +4152,7 @@ function ProfileDrawer({
                             </div>
                           </div>
                           <p className={`text-right text-sm ${helperText}`}>
-                            {fmtLimitValue(field, used)} / {fmtLimitValue(field, limit)}
+                            {blurChat ? 'Not included' : `${fmtLimitValue(field, used)} / ${fmtLimitValue(field, limit)}`}
                           </p>
                         </div>
                       );
@@ -4139,6 +4178,34 @@ function ProfileDrawer({
 
                 {isEnterprise ? (
                   <p className={`mt-5 text-sm ${helperText}`}>Enterprise account — billing and limits are managed by our team.</p>
+                ) : isMcpPaid ? (
+                  /* MCP paid → offer upgrade to Individual + manage + cancel */
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSubscribe('individual')}
+                      disabled={!!billingBusy}
+                      className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${palette.primary}`}
+                    >
+                      {billingBusy === 'individual' ? 'Redirecting...' : 'Upgrade to Individual · $15/mo'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleManageBilling}
+                      disabled={!!billingBusy}
+                      className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${isDark ? 'bg-white/8 text-slate-100 hover:bg-white/12' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}
+                    >
+                      {billingBusy === 'portal' ? 'Opening...' : 'Manage billing'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelSubscription}
+                      disabled={!!billingBusy}
+                      className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${isDark ? 'bg-white/8 text-slate-100 hover:bg-white/12' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}
+                    >
+                      {billingBusy === 'cancel' ? 'Cancelling...' : 'Cancel subscription'}
+                    </button>
+                  </div>
                 ) : isIndividualPaid ? (
                   /* Individual paid → offer upgrade to Pro (Team) + cancel */
                   <div className="mt-5 flex flex-wrap gap-3">
@@ -4180,8 +4247,16 @@ function ProfileDrawer({
                     </button>
                   </div>
                 ) : (
-                  /* Trial or locked → offer both plans */
+                  /* Trial or locked → offer all three self-serve plans */
                   <div className="mt-5 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSubscribe('mcp')}
+                      disabled={!!billingBusy}
+                      className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${isDark ? 'bg-white/8 text-slate-100 hover:bg-white/12' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}
+                    >
+                      {billingBusy === 'mcp' ? 'Redirecting...' : 'Start MCP · $12/mo'}
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleSubscribe('individual')}
@@ -5287,6 +5362,8 @@ function BucketPage({ theme }) {
   const [mcpTokens, setMcpTokens] = useState([]);
   const [mcpLoading, setMcpLoading] = useState(false);
   const [mcpError, setMcpError] = useState(null);
+  // Lite-bucket MCP copy feedback (small "copied" toast on the upload card)
+  const [mcpUrlCopied, setMcpUrlCopied] = useState(false);
   const [mcpToolDescs, setMcpToolDescs] = useState({});
   // mcpLogsTabs: [{ tokId, tokName, logs, total, loading, error, offset }]
   const [mcpLogsTabs, setMcpLogsTabs] = useState([]);
@@ -5322,6 +5399,14 @@ function BucketPage({ theme }) {
   const [scopeSaving, setScopeSaving] = useState(false);
   // Out-of-scope mention prompt: { files: [...], onConfirm: fn }
   const [scopeRequest, setScopeRequest] = useState(null);
+
+  // Lite buckets have no in-app chat — collapse the threads sidebar so the
+  // composer/threads UI doesn't even render. This runs whenever the tier flips.
+  useEffect(() => {
+    if (isLiteBucket) {
+      setLeftCollapsed(true);
+    }
+  }, [isLiteBucket]);
 
   // Load scope whenever active thread changes
   useEffect(() => {
@@ -6095,6 +6180,10 @@ function BucketPage({ theme }) {
   }
 
   const bucketName = bucket?.name || seedBucket?.name || `Bucket ${bucketId?.slice(0, 8) || ''}`;
+  // Lite buckets (MCP plan) drop in-app chat: the threads sidebar collapses
+  // by default and the composer is hidden. Answers run on the user's own AI
+  // via the MCP URL; we just expose grounded data tools.
+  const isLiteBucket = (bucket?.processing_tier || seedBucket?.processing_tier) === 'lite';
   const isDark = theme === 'dark';
   const bucketPageBg = isDark ? 'bg-[#020617] text-slate-100' : 'bg-[#f5f7fb] text-slate-900';
   const shell = isDark
@@ -6128,9 +6217,29 @@ function BucketPage({ theme }) {
 
   return (
     <main className={`min-h-[100dvh] ${bucketPageBg}`}>
-      <input ref={uploadRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
-      <input ref={directUploadRef} type="file" multiple className="hidden" onChange={handleDirectFileUpload} />
-      <input ref={replaceRef} type="file" className="hidden" onChange={handleReplaceFileInput} />
+      <input
+        ref={uploadRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFileSelect}
+        accept={UPLOAD_ACCEPT}
+      />
+      <input
+        ref={directUploadRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleDirectFileUpload}
+        accept={UPLOAD_ACCEPT}
+      />
+      <input
+        ref={replaceRef}
+        type="file"
+        className="hidden"
+        onChange={handleReplaceFileInput}
+        accept={UPLOAD_ACCEPT}
+      />
 
       {error && (
         <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-xl border border-red-400/30 bg-red-500/10 px-5 py-3 text-sm text-red-400 shadow-xl backdrop-blur">
@@ -6248,8 +6357,107 @@ function BucketPage({ theme }) {
           </button>
         )}
 
-        {/* Center — chat */}
+        {/* Center — chat (or, for lite buckets, the big upload card) */}
         <section className="flex h-[calc(100dvh-2.5rem)] min-w-0 flex-1 flex-col">
+          {isLiteBucket ? (
+            <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-8 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/10">
+              <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-6">
+                <div>
+                  <p className={`text-xs font-medium uppercase tracking-[0.2em] ${muted}`}>MCP plan</p>
+                  <h1 className={`mt-1 text-2xl font-semibold ${titleCls}`}>{bucketName}</h1>
+                  <p className={`mt-2 text-sm ${bodyCls}`}>
+                    Drop documents here. Your AI (Claude, ChatGPT, Cursor…) answers from them through the MCP link below — there is no in-app chat on this plan.
+                  </p>
+                </div>
+
+                {/* Big upload card */}
+                <button
+                  type="button"
+                  onClick={() => directUploadRef.current?.click()}
+                  disabled={directUploading}
+                  className={`flex w-full flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-16 text-center transition disabled:opacity-60 ${isDark ? 'border-white/15 bg-white/[0.02] hover:bg-white/[0.04]' : 'border-slate-300 bg-white hover:bg-slate-50'}`}
+                >
+                  <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></svg>
+                  <span className={`text-base font-semibold ${titleCls}`}>{directUploading ? 'Uploading…' : 'Upload a file'}</span>
+                  <span className={`text-xs ${muted}`}>PDF, DOCX, PPTX, XLSX, EPub, ZIP, images. Each file gets a category automatically once it’s indexed.</span>
+                </button>
+
+                {/* MCP URL copy */}
+                <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${line} ${subtle}`}>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-semibold ${titleCls}`}>MCP URL</p>
+                    <p className={`mt-0.5 truncate text-xs ${muted}`}>
+                      {bucket?.mcp_url || (bucket?.mcp_token ? `${window.location.origin.replace(/\/+$/, '')}/v1/mcp/bucket/${bucket.mcp_token}` : 'Open the token panel to generate one.')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const url = bucket?.mcp_url || (bucket?.mcp_token ? `${window.location.origin.replace(/\/+$/, '')}/v1/mcp/bucket/${bucket.mcp_token}` : '');
+                      if (!url) { openMcpModal(); return; }
+                      try {
+                        await navigator.clipboard.writeText(url);
+                        setMcpUrlCopied(true);
+                        setTimeout(() => setMcpUrlCopied(false), 1800);
+                      } catch (_) {
+                        openMcpModal();
+                      }
+                    }}
+                    className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${palette.primary}`}
+                  >
+                    {mcpUrlCopied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+
+                {/* File list (with category chips + status) */}
+                <div>
+                  <p className={`mb-2 text-sm font-semibold ${titleCls}`}>Documents ({filesPanel.length})</p>
+                  {filesPanel.length === 0 ? (
+                    <p className={`text-sm ${muted}`}>No files yet — drop one above to get started.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {filesPanel.map((file) => (
+                        <div key={file.id} className={`flex items-start gap-3 rounded-[0.9rem] border px-3 py-2.5 ${fileRowIdle}`}>
+                          <span className={`mt-0.5 ${bodyCls}`}><FileStackIcon /></span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className={`truncate text-sm font-semibold ${titleCls}`}>{file.name}</p>
+                              {file.category?.name && (
+                                <span
+                                  className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                                  style={{ backgroundColor: file.category.color || '#3B82F6' }}
+                                >
+                                  {file.category.name}
+                                </span>
+                              )}
+                              {file.status && file.status !== 'ready' && (
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${file.status === 'processing' ? 'bg-yellow-400/15 text-yellow-500' : file.status === 'failed' ? 'bg-red-400/15 text-red-400' : 'bg-green-400/15 text-green-500'}`}>
+                                  {file.status}
+                                </span>
+                              )}
+                            </div>
+                            <p className={`mt-0.5 text-xs ${muted}`}>
+                              {fmtMimeType(file.type, file.name)} · {fmtFileSize(file.size)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFile(file.id)}
+                            className={`shrink-0 rounded-full p-1 ${muted} transition hover:bg-black/5`}
+                            title="Delete file"
+                          >
+                            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current"><path d="M6 2h4a1 1 0 0 1 1 1H5a1 1 0 0 1 1-1ZM2 4h12v1H3.5l.9 9h7.2l.9-9H14v-1H2v1Zm4 3h1l.3 5H6.3L6 7Zm3 0h1l-.3 5H8.7L9 7Z" /></svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 pb-8 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/10 hover:[&::-webkit-scrollbar-thumb]:bg-black/20">
             <div className="mx-auto flex min-h-full max-w-3xl flex-col">
               {loading || loadingMsgs ? (
@@ -6684,6 +6892,8 @@ function BucketPage({ theme }) {
               </div>
             </div>
           </div>
+          </>
+          )}
         </section>
 
         {/* Right sidebar — files */}
@@ -6758,7 +6968,17 @@ function BucketPage({ theme }) {
                       <div className="flex items-start gap-2.5">
                         <span className={`mt-0.5 ${bodyCls}`}><FileStackIcon /></span>
                         <div className="min-w-0 flex-1">
-                          <p className={`truncate text-[13px] font-semibold ${titleCls}`}>{file.name}</p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className={`truncate text-[13px] font-semibold ${titleCls}`}>{file.name}</p>
+                            {file.category?.name && (
+                              <span
+                                className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white"
+                                style={{ backgroundColor: file.category.color || '#3B82F6' }}
+                              >
+                                {file.category.name}
+                              </span>
+                            )}
+                          </div>
                           <p className={`mt-0.5 text-xs ${muted}`}>
                             {fmtMimeType(file.type, file.name)} · {fmtFileSize(file.size)}
                             {file.status && file.status !== 'ready' && (

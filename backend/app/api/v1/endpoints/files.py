@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_user_context
 from app.database import get_db
-from app.models.bucket import Bucket
+from app.models.bucket import Bucket, Category
 from app.models.chunk import Chunk
 from app.models.file import File, FileVersion
 from app.models.investigation_event import InvestigationEvent
@@ -138,7 +138,7 @@ async def upload_files(
     db: AsyncSession = Depends(get_db),
     ctx: UserContext = Depends(get_user_context),
 ):
-    from app.services.processing_v3.orchestrator import process_file
+    from app.services.processing_v3.dispatch import schedule_file_processing
 
     bucket = await _require_bucket_for_action(db, bucket_id, ctx, "can_upload_files")
     user_id = ctx.owner_user_id
@@ -156,7 +156,7 @@ async def upload_files(
             user_id=user_id,
             upload=upload,
         )
-        background_tasks.add_task(process_file, str(file_row.id), trace_run_id, "upload")
+        await schedule_file_processing(str(file_row.id), trace_run_id, "upload")
         await create_notification(
             db,
             str(user_id),
@@ -184,16 +184,22 @@ async def list_files(
 ):
     await _require_bucket_for_action(db, bucket_id, ctx)
 
+    # Join Category so the bucket UI can render a category chip without an
+    # extra round-trip per file.
     result = await db.execute(
-        select(File)
+        select(File, Category)
+        .outerjoin(Category, File.category_id == Category.id)
         .where(File.bucket_id == bucket_id)
         .order_by(File.created_at.desc())
     )
-    rows = result.scalars().all()
-    return FileListResponse(
-        files=[FileResponse.model_validate(r) for r in rows],
-        total=len(rows),
-    )
+    rows = result.all()
+    files: list[FileResponse] = []
+    for f, cat in rows:
+        resp = FileResponse.model_validate(f)
+        if cat is not None:
+            resp.category = {"id": cat.id, "name": cat.name, "color": cat.color}
+        files.append(resp)
+    return FileListResponse(files=files, total=len(files))
 
 
 # ── file detail ──────────────────────────────────────────────────────────────
@@ -318,6 +324,9 @@ _MIME_BY_EXT = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xls": "application/vnd.ms-excel",
+    "epub": "application/epub+zip",
+    "zip": "application/zip",
     "csv": "text/csv",
     "txt": "text/plain",
     "md": "text/markdown",
@@ -432,7 +441,7 @@ async def retry_file(
     db: AsyncSession = Depends(get_db),
     ctx: UserContext = Depends(get_user_context),
 ):
-    from app.services.processing_v3.orchestrator import process_file
+    from app.services.processing_v3.dispatch import schedule_file_processing
 
     await _require_bucket_for_action(db, bucket_id, ctx, "can_upload_files")
     user_id = ctx.owner_user_id
@@ -475,7 +484,7 @@ async def retry_file(
     )
     await db.commit()
 
-    background_tasks.add_task(process_file, str(file_id), trace_run_id, "retry")
+    await schedule_file_processing(str(file_id), trace_run_id, "retry")
 
     return RetryResponse(
         message="Processing re-triggered successfully",
@@ -499,7 +508,7 @@ async def replace_file(
     db: AsyncSession = Depends(get_db),
     ctx: UserContext = Depends(get_user_context),
 ):
-    from app.services.processing_v3.orchestrator import process_file
+    from app.services.processing_v3.dispatch import schedule_file_processing
 
     await _require_bucket_for_action(db, bucket_id, ctx, "can_upload_files")
     user_id = ctx.owner_user_id
@@ -568,6 +577,6 @@ async def replace_file(
     await db.commit()
     await db.refresh(row)
 
-    background_tasks.add_task(process_file, str(file_id), trace_run_id, "replace")
+    await schedule_file_processing(str(file_id), trace_run_id, "replace")
 
     return FileResponse.model_validate(row)

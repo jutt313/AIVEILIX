@@ -410,6 +410,7 @@ export const adminApi = {
   createDemoBucket: (payload, session) => adminSessionRequest('POST', '/admin/demo-buckets', payload, session),
   getDemoBucket: (id, session) => adminSessionRequest('GET', `/admin/demo-buckets/${id}`, null, session),
   updateDemoBucket: (id, payload, session) => adminSessionRequest('PATCH', `/admin/demo-buckets/${id}`, payload, session),
+  deleteDemoBucket: (id, session) => adminSessionRequest('DELETE', `/admin/demo-buckets/${id}`, null, session),
   uploadDemoFiles: (id, files, session) => {
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f));

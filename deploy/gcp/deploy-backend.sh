@@ -26,16 +26,19 @@ IMAGE="${BACKEND_IMAGE:-$REGION-docker.pkg.dev/$PROJECT_ID/$ARTIFACT_REPO/$BACKE
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 RUN_SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
+# IAM grants are one-time provisioning. On routine code deploys they are already
+# in place, and the deploying account may not have project-IAM-admin rights — so
+# a failure here is a warning, not a hard stop.
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member "serviceAccount:$RUN_SERVICE_ACCOUNT" \
   --role roles/secretmanager.secretAccessor \
   --condition=None \
-  --quiet >/dev/null
+  --quiet >/dev/null || echo "[deploy] WARN: could not set roles/secretmanager.secretAccessor (assuming already granted)"
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member "serviceAccount:$RUN_SERVICE_ACCOUNT" \
   --role roles/cloudsql.client \
   --condition=None \
-  --quiet >/dev/null
+  --quiet >/dev/null || echo "[deploy] WARN: could not set roles/cloudsql.client (assuming already granted)"
 
 if [ -n "${BACKEND_IMAGE:-}" ]; then
   echo "Using existing backend image: $IMAGE"
@@ -84,6 +87,7 @@ gcloud run deploy "$BACKEND_SERVICE" \
   --timeout "$CLOUD_RUN_TIMEOUT" \
   --min-instances "$CLOUD_RUN_MIN_INSTANCES" \
   --max-instances "$CLOUD_RUN_MAX_INSTANCES" \
+  --cpu-boost \
   --labels "$LABELS" \
   --quiet
 

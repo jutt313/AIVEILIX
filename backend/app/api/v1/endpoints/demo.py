@@ -407,7 +407,7 @@ async def upload(
     session: DemoSession = Depends(get_demo_session),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.processing_v3.orchestrator import process_file
+    from app.services.processing_v3.dispatch import schedule_file_processing
 
     # Count cap first → 409 opens the pop-up.
     await check_cap(db, session.demo_link, "files")
@@ -435,7 +435,7 @@ async def upload(
         payload={"file_id": str(file_row.id), "name": file_row.name, "size": len(data)},
         commit=True,
     )
-    background_tasks.add_task(process_file, str(file_row.id), trace_run_id, "upload")
+    await schedule_file_processing(str(file_row.id), trace_run_id, "upload")
     return {"id": str(file_row.id), "name": file_row.name, "status": file_row.status}
 
 

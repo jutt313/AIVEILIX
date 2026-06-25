@@ -295,6 +295,7 @@ async def get_bucket(db: AsyncSession, user_id: str, bucket_id: str) -> dict:
         "description": bucket.description,
         "color": bucket.color,
         "icon": bucket.icon,
+        "processing_tier": getattr(bucket, "processing_tier", None) or "full",
         "storage_used": storage_used,
         "storage_gb": round(storage_used / (1024 ** 3), 2),
         "file_count": file_count,
@@ -325,6 +326,7 @@ async def list_buckets(db: AsyncSession, user_id: str) -> list:
             "description": b.description,
             "color": b.color,
             "icon": b.icon,
+            "processing_tier": getattr(b, "processing_tier", None) or "full",
             "storage_used": storage_used,
             "storage_gb": round(storage_used / (1024 ** 3), 2),
             "file_count": file_count,
@@ -334,7 +336,15 @@ async def list_buckets(db: AsyncSession, user_id: str) -> list:
     return out
 
 
-async def create_bucket(db: AsyncSession, user_id: str, name: str, description: str | None, color: str, icon: str) -> dict:
+async def create_bucket(
+    db: AsyncSession,
+    user_id: str,
+    name: str,
+    description: str | None,
+    color: str,
+    icon: str,
+    processing_tier: str = "full",
+) -> dict:
     uid = uuid.UUID(user_id)
     mcp_token = secrets.token_urlsafe(32)
     bucket = Bucket(
@@ -344,6 +354,7 @@ async def create_bucket(db: AsyncSession, user_id: str, name: str, description: 
         color=color,
         icon=icon,
         mcp_token=mcp_token,
+        processing_tier=processing_tier,
     )
     db.add(bucket)
     try:
@@ -368,6 +379,7 @@ async def create_bucket(db: AsyncSession, user_id: str, name: str, description: 
         "description": bucket.description,
         "color": bucket.color,
         "icon": bucket.icon,
+        "processing_tier": getattr(bucket, "processing_tier", None) or "full",
         "storage_gb": 0,
         "file_count": 0,
         "updated_at": bucket.updated_at.isoformat(),

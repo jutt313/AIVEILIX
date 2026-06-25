@@ -211,8 +211,13 @@ def _normalise_type(ext: str, content_type: str) -> str:
         "doc": "doc",
         "pptx": "pptx",
         "ppt": "ppt",
-        "xlsx": "xlsx",
-        "xls": "xls",
+        # Multi-format intake (converted to Markdown at processing time —
+        # see processing_v3/convert.py). Labels here only affect the row's
+        # display/download Content-Type, not the conversion path.
+        "xlsx": "spreadsheet",
+        "xls": "spreadsheet",
+        "epub": "ebook",
+        "zip": "archive",
         "txt": "txt",
         "md": "md",
         "markdown": "md",

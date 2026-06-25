@@ -30,6 +30,10 @@ python-multipart==0.0.19
 # Cloudflare R2 (S3-compatible)
 boto3==1.35.85
 
+# Cloud Tasks — dedicated processing worker dispatch (optional; only used when
+# PROCESSING_QUEUE + PROCESSING_WORKER_URL are configured)
+google-cloud-tasks==2.16.4
+
 # Vector DB
 qdrant-client==1.17.1
 llama-index-core==0.14.20
@@ -41,6 +45,10 @@ PyMuPDF==1.25.1
 Pillow==11.1.0
 numpy==2.2.1
 tenacity==9.0.0
+
+# Multi-format intake — convert XLSX / EPub / ZIP to Markdown so they ride the
+# existing FileType.TEXT rails. Pure Python, runs locally, no API calls.
+markitdown[xlsx]==0.1.6
 
 # Embeddings — document RAG uses Voyage; conversation memory falls back to hash
 # embeddings when local BGE is not installed. Do not install FlagEmbedding or

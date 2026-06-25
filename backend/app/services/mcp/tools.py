@@ -41,11 +41,12 @@ logger = logging.getLogger(__name__)
 
 async def fetch_files_list(db: AsyncSession, bucket_id: uuid.UUID) -> list[dict]:
     result = await db.execute(
-        select(File)
+        select(File, Category.name, Category.color)
+        .outerjoin(Category, File.category_id == Category.id)
         .where(File.bucket_id == bucket_id, File.status == "ready")
         .order_by(File.created_at.desc())
     )
-    files = result.scalars().all()
+    rows = result.all()
     return [
         {
             "file_id": str(f.id),
@@ -56,9 +57,13 @@ async def fetch_files_list(db: AsyncSession, bucket_id: uuid.UUID) -> list[dict]
             "image_count": f.image_count,
             "status": f.status,
             "is_agent_written": f.is_agent_written,
+            "category": (
+                {"name": cat_name, "color": cat_color}
+                if cat_name else None
+            ),
             "created_at": f.created_at.isoformat(),
         }
-        for f in files
+        for f, cat_name, cat_color in rows
     ]
 
 
@@ -875,6 +880,8 @@ def _enumerate_visuals(layout: dict) -> list[dict]:
                 "asset_uri": meta.get("asset_uri") or elem.get("image_uri"),
                 "bbox": elem.get("bbox"),
                 "confidence": elem.get("confidence"),
+                "pending_describe": bool(meta.get("pending_describe")),
+                "context_text": (meta.get("context_text") or "").strip(),
             }
             # Surface ingestion-cleanup signals when present.
             if meta.get("name_conflict"):
@@ -988,9 +995,19 @@ async def fetch_visual(
     Return the single visual element at the given 1-based index, together
     with the surrounding section/heading on its page so the agent can
     describe *what* it is and *where* it sits in the document.
+
+    For lite-tier files, this is also the trigger for the lazy describe step:
+    if the visual has `pending_describe=True`, run Gemini Flash-lite on the
+    crop, persist the description back into the layout JSON, and re-embed
+    the visual into the lite Qdrant collection so subsequent semantic
+    searches hit it.
     """
     result = await db.execute(
-        select(File.id, File.name, File.page_count, File.section_outline, File.layout_json_path)
+        select(
+            File.id, File.name, File.page_count, File.section_outline,
+            File.layout_json_path, File.bucket_id, File.user_id,
+            File.processing_tier,
+        )
         .where(File.id == file_id, File.bucket_id == bucket_id, File.status == "ready")
     )
     row = result.one_or_none()
@@ -1027,6 +1044,29 @@ async def fetch_visual(
 
     target = visuals[index - 1]
 
+    # Lazy describe (lite tier): if the visual hasn't been described yet, do
+    # it now and persist back. Failures are non-fatal — the placeholder is
+    # still returned so the agent can fall back to context_text.
+    if target.get("pending_describe"):
+        try:
+            described = await _describe_pending_visual(
+                db=db,
+                file_id=file_id,
+                bucket_id=row.bucket_id,
+                user_id=row.user_id,
+                layout=layout,
+                layout_path=row.layout_json_path,
+                element_id=target.get("element_id"),
+            )
+            if described is not None:
+                # Re-enumerate so the returned visual reflects the new
+                # description + cleared pending flag.
+                visuals = _enumerate_visuals(layout)
+                target = visuals[index - 1]
+        except Exception as exc:
+            logger.warning("lazy describe failed file=%s elem=%s: %s",
+                           file_id, target.get("element_id"), exc)
+
     # Locate the nearest preceding heading from section_outline so the agent
     # gets context like "this image sits under the 'Water' section".
     outline = row.section_outline or []
@@ -1046,6 +1086,196 @@ async def fetch_visual(
         "enclosing_section": enclosing_section,
         "visual": target,
     }
+
+
+# ── lazy-describe-on-fetch (lite tier) ────────────────────────────────────────
+
+def _element_lock_key(element_id: str) -> int:
+    """Stable signed-int advisory-lock key for a visual element id."""
+    raw = int.from_bytes(uuid.UUID(str(element_id)).bytes[:8], "big", signed=False)
+    return raw - 2**64 if raw >= 2**63 else raw
+
+
+async def _describe_pending_visual(
+    *,
+    db: AsyncSession,
+    file_id: uuid.UUID,
+    bucket_id: uuid.UUID,
+    user_id: uuid.UUID,
+    layout: dict,
+    layout_path: str,
+    element_id: str | None,
+) -> dict | None:
+    """Lazy describe + save-back. Idempotent under concurrency via advisory lock
+    keyed on element_id. Returns the updated element dict (or None on failure)."""
+    from sqlalchemy import text as sql_text
+
+    from app.services.processing_v3.visual import GeminiVisualUnderstandingAdapter
+    from app.services.processing_v3.embedding import embed_texts
+    from app.services.qdrant.file_indexer import (
+        TEXT_COLLECTION_LITE, ensure_collections, upsert_text_chunks,
+    )
+    from app.services.quota import image_quota_status
+    from app.services.storage.r2 import download_file, upload_json
+    from app.config import settings as _settings
+
+    if not element_id:
+        return None
+    if not _settings.gemini_api_key:
+        logger.info("lazy describe skipped: no Gemini key configured")
+        return None
+
+    # Cost guard: stop if the owner is already at the visual quota cap.
+    try:
+        within_img, _, _, _ = await image_quota_status(db, user_id, adding_images=1)
+        if not within_img:
+            logger.info("lazy describe skipped: visual quota exhausted (file=%s)", file_id)
+            return None
+    except Exception:
+        pass
+
+    lock_key = _element_lock_key(element_id)
+    acquired = await db.scalar(
+        sql_text("SELECT pg_try_advisory_lock(:k) AS got"), {"k": lock_key}
+    )
+    if not acquired:
+        # Another concurrent fetch is describing this visual — just bail.
+        return None
+
+    try:
+        # Locate the element in the layout. Guard: it may have already been
+        # described between the read above and the lock acquisition.
+        elem = _find_layout_element(layout, str(element_id))
+        if elem is None:
+            return None
+        meta = elem.setdefault("metadata", {})
+        if not meta.get("pending_describe"):
+            return elem  # already done — idempotent
+
+        asset_uri = meta.get("asset_uri") or elem.get("image_uri")
+        if not asset_uri:
+            return None
+
+        try:
+            crop_bytes = await asyncio.to_thread(download_file, asset_uri)
+        except Exception as exc:
+            logger.warning("lazy describe: R2 download failed asset=%s: %s", asset_uri, exc)
+            return None
+
+        adapter = GeminiVisualUnderstandingAdapter(
+            api_key=_settings.gemini_api_key,
+            model=_settings.gemini_visual_model,
+        )
+        understanding = await adapter.understand(crop_bytes)
+
+        asset_type = str(understanding.get("asset_type") or "unknown")
+        summary = str(understanding.get("summary") or "").strip()
+        visible_text = str(understanding.get("visible_text") or "").strip()
+        try:
+            confidence = float(understanding.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        page_number = int(elem.get("page_number") or 0) or int(
+            _find_layout_page(layout, elem) or 0
+        )
+        content = summary or elem.get("content") or f"Visual element on page {page_number}"
+
+        # Mutate the layout JSON element in-place so the cached layout is fresh.
+        elem["content"] = content
+        elem["type"] = _asset_type_to_elem_type(asset_type, fallback=elem.get("type") or "image")
+        elem["confidence"] = confidence
+        meta["asset_type"] = asset_type
+        meta["visible_text"] = visible_text
+        meta["confidence"] = confidence
+        meta["pending_describe"] = False
+        if understanding.get("provider"):
+            meta["provider"] = understanding["provider"]
+        if understanding.get("model"):
+            meta["model"] = understanding["model"]
+
+        # Persist the updated layout back to R2 + refresh the in-process cache.
+        try:
+            import json as _json
+            await asyncio.to_thread(
+                upload_json, _json.dumps(layout, ensure_ascii=False), layout_path
+            )
+            _LAYOUT_CACHE[layout_path] = layout
+        except Exception as exc:
+            logger.warning("lazy describe: layout JSON save failed file=%s: %s", file_id, exc)
+
+        # Re-embed: write a per-visual point into the lite collection so
+        # subsequent semantic searches surface it. Deterministic UUID keyed on
+        # element_id makes the upsert idempotent under concurrent fetches.
+        try:
+            context_text = meta.get("context_text") or ""
+            embed_input = "\n".join(
+                p for p in (content, visible_text, context_text) if p
+            ).strip()
+            if embed_input:
+                point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"lite-visual:{element_id}"))
+                vec = (await embed_texts([f"[Page {page_number}] {embed_input}"], lite=True))[0]
+                await ensure_collections()
+                await upsert_text_chunks(
+                    [{
+                        "id": point_id,
+                        "file_id": str(file_id),
+                        "bucket_id": str(bucket_id),
+                        "page": page_number or 1,
+                        "content": content,
+                        "block_id": "lazy_visual",
+                        "is_summary": False,
+                        "nearby_image_id": str(element_id),
+                        "image_description": content,
+                        "image_text_inside": visible_text,
+                        "chunk_index": -1,
+                        "dense": vec,
+                        "sparse": None,
+                        "status": "active",
+                    }],
+                    collection_name=TEXT_COLLECTION_LITE,
+                )
+        except Exception as exc:
+            logger.warning("lazy describe: lite reembed failed file=%s: %s", file_id, exc)
+
+        return elem
+    finally:
+        try:
+            await db.execute(sql_text("SELECT pg_advisory_unlock(:k)"), {"k": lock_key})
+        except Exception:
+            pass
+
+
+def _find_layout_element(layout: dict, element_id: str) -> dict | None:
+    for page_obj in layout.get("pages", []):
+        for elem in page_obj.get("elements", []):
+            if str(elem.get("id")) == element_id:
+                return elem
+    return None
+
+
+def _find_layout_page(layout: dict, target: dict) -> int | None:
+    for page_obj in layout.get("pages", []):
+        if target in page_obj.get("elements", []):
+            return int(page_obj.get("page") or 0)
+    return None
+
+
+_ASSET_TYPE_TO_ELEM_TYPE_LAZY = {
+    "photo": "image",
+    "product_photo": "product_image",
+    "before_after": "before_after_image",
+    "review_screenshot": "review_screenshot",
+    "logo": "logo",
+    "icon": "icon",
+    "button": "cta_button",
+    "chart": "chart",
+    "text_block": "text",
+}
+
+
+def _asset_type_to_elem_type(asset_type: str, fallback: str = "image") -> str:
+    return _ASSET_TYPE_TO_ELEM_TYPE_LAZY.get(asset_type, fallback)
 
 
 async def _fetch_images_in_page_range(

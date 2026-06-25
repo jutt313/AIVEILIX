@@ -39,9 +39,11 @@ from app.services.pipeline.retry import with_retry
 logger = logging.getLogger(__name__)
 
 TEXT_COLLECTION = "text_chunks"
+TEXT_COLLECTION_LITE = "text_chunks_lite"
 IMAGE_COLLECTION = "image_chunks"
 
-TEXT_DENSE_DIM = 1024   # BGE-M3
+TEXT_DENSE_DIM = 1024   # voyage-3-large
+TEXT_LITE_DIM = 512     # voyage-3-lite
 IMAGE_DENSE_DIM = 512   # CLIP ViT-B-32
 
 
@@ -89,6 +91,18 @@ async def ensure_collections() -> None:
         )
         logger.info("Created Qdrant collection: %s", TEXT_COLLECTION)
 
+    if TEXT_COLLECTION_LITE not in existing:
+        await client.create_collection(
+            collection_name=TEXT_COLLECTION_LITE,
+            vectors_config=VectorParams(size=TEXT_LITE_DIM, distance=Distance.COSINE),
+            sparse_vectors_config={
+                "text_sparse": SparseVectorParams(
+                    index=SparseIndexParams(on_disk=False)
+                )
+            },
+        )
+        logger.info("Created Qdrant collection: %s", TEXT_COLLECTION_LITE)
+
     if IMAGE_COLLECTION not in existing:
         await client.create_collection(
             collection_name=IMAGE_COLLECTION,
@@ -98,6 +112,7 @@ async def ensure_collections() -> None:
 
     # Always ensure payload indexes exist — idempotent, duplicates silently ignored
     await _ensure_payload_indexes(client, TEXT_COLLECTION, _TEXT_PAYLOAD_INDEXES)
+    await _ensure_payload_indexes(client, TEXT_COLLECTION_LITE, _TEXT_PAYLOAD_INDEXES)
     await _ensure_payload_indexes(client, IMAGE_COLLECTION, _IMAGE_PAYLOAD_INDEXES)
 
 
@@ -121,7 +136,10 @@ async def _ensure_payload_indexes(
 
 
 @with_retry("qdrant_text_upsert")
-async def upsert_text_chunks(chunks_with_embeddings: list[dict[str, Any]]) -> None:
+async def upsert_text_chunks(
+    chunks_with_embeddings: list[dict[str, Any]],
+    collection_name: str = TEXT_COLLECTION,
+) -> None:
     """
     chunks_with_embeddings: list of dicts:
         {
@@ -179,10 +197,10 @@ async def upsert_text_chunks(chunks_with_embeddings: list[dict[str, Any]]) -> No
         )
         points.append(point)
 
-    result = await client.upsert(collection_name=TEXT_COLLECTION, points=points, wait=True)
+    result = await client.upsert(collection_name=collection_name, points=points, wait=True)
     if result.status != UpdateStatus.COMPLETED:
         raise RuntimeError(f"Qdrant text upsert returned status: {result.status}")
-    logger.info("Qdrant: upserted %d text chunks", len(points))
+    logger.info("Qdrant: upserted %d text chunks into %s", len(points), collection_name)
 
 
 @with_retry("qdrant_image_upsert")
@@ -229,16 +247,29 @@ async def upsert_image_chunks(image_chunks: list[dict[str, Any]]) -> None:
     logger.info("Qdrant: upserted %d image chunks", len(points))
 
 
-async def deprecate_file_vectors(file_id: str) -> None:
-    """Mark all existing vectors for a file as deprecated before reprocessing."""
+async def deprecate_file_vectors(
+    file_id: str,
+    collections: list[str] | None = None,
+) -> None:
+    """Mark all existing vectors for a file as deprecated before reprocessing.
+
+    Pass ``collections`` to scope the deprecation (e.g. only the lite text
+    collection). Defaults to every text + image collection so a reprocess
+    catches vectors regardless of which tier produced them originally.
+    """
     client = get_async_qdrant_client()
     file_filter = Filter(
         must=[FieldCondition(key="file_id", match=MatchValue(value=str(file_id)))]
     )
-    for collection in [TEXT_COLLECTION, IMAGE_COLLECTION]:
-        await client.set_payload(
-            collection_name=collection,
-            payload={"status": "deprecated"},
-            points=file_filter,
-        )
+    targets = collections or [TEXT_COLLECTION, TEXT_COLLECTION_LITE, IMAGE_COLLECTION]
+    for collection in targets:
+        try:
+            await client.set_payload(
+                collection_name=collection,
+                payload={"status": "deprecated"},
+                points=file_filter,
+            )
+        except Exception as exc:
+            # Collection may not exist yet on a fresh deployment — that's fine.
+            logger.debug("Skipping deprecate on %s: %s", collection, exc)
     logger.info("Deprecated Qdrant vectors for file %s", file_id)

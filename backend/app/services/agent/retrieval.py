@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.bucket import Bucket
 from app.models.chunk import Chunk
 from app.models.file import File
 from app.models.summary import Summary
@@ -31,7 +32,11 @@ from app.services.agent.llamaindex_retrieval import (
     search_bucket_documents_with_llamaindex,
 )
 from app.services.processing_v3.embedding import embed_query as _voyage_embed_query
-from app.services.qdrant.file_indexer import IMAGE_COLLECTION, TEXT_COLLECTION
+from app.services.qdrant.file_indexer import (
+    IMAGE_COLLECTION,
+    TEXT_COLLECTION,
+    TEXT_COLLECTION_LITE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,33 +82,56 @@ class QueryEmbedding:
 
 import time as _time
 
-_QUERY_EMBED_CACHE: dict[str, tuple[float, QueryEmbedding]] = {}
+_QUERY_EMBED_CACHE: dict[tuple[str, bool], tuple[float, QueryEmbedding]] = {}
 _QUERY_EMBED_CACHE_TTL = 60.0  # seconds
 _QUERY_EMBED_CACHE_MAX = 64
 
+# Per-bucket tier cache so the hot retrieval path doesn't repeat the SELECT.
+_BUCKET_TIER_CACHE: dict[uuid.UUID, tuple[float, str]] = {}
+_BUCKET_TIER_TTL = 60.0
 
-async def _embed_query_text(query: str) -> QueryEmbedding:
+
+async def _bucket_processing_tier(db: AsyncSession, bucket_id: uuid.UUID) -> str:
+    """Return 'lite' or 'full' for the bucket, cached for ~60s."""
+    now = _time.monotonic()
+    cached = _BUCKET_TIER_CACHE.get(bucket_id)
+    if cached and (now - cached[0]) < _BUCKET_TIER_TTL:
+        return cached[1]
+    tier = await db.scalar(
+        select(Bucket.processing_tier).where(Bucket.id == bucket_id)
+    )
+    tier = (tier or "full").lower()
+    _BUCKET_TIER_CACHE[bucket_id] = (now, tier)
+    return tier
+
+
+def _text_collection_for(tier: str) -> str:
+    return TEXT_COLLECTION_LITE if tier == "lite" else TEXT_COLLECTION
+
+
+async def _embed_query_text(query: str, lite: bool = False) -> QueryEmbedding:
     """
-    Embed a query with Voyage voyage-3-large — the same model pipeline v3 uses to
-    embed document chunks. Dense-only: pipeline v3 produces no sparse vectors, so
-    retrieval runs the dense Qdrant path (see _search_with_text below).
+    Embed a query with Voyage. Default voyage-3-large (1024-dim) matches the
+    standard `text_chunks` collection. lite=True swaps to voyage-3-lite
+    (512-dim) for the MCP/lite tier's `text_chunks_lite` collection.
 
     A tiny TTL cache dedupes repeat embeds inside a single turn (e.g. when both
     `search_bucket_documents` and `search_bucket_documents_for_files` run).
     """
     now = _time.monotonic()
-    cached = _QUERY_EMBED_CACHE.get(query)
+    cache_key = (query, lite)
+    cached = _QUERY_EMBED_CACHE.get(cache_key)
     if cached and (now - cached[0]) < _QUERY_EMBED_CACHE_TTL:
         return cached[1]
 
-    dense = await _voyage_embed_query(query)
+    dense = await _voyage_embed_query(query, lite=lite)
     result = QueryEmbedding(dense=[float(value) for value in dense], sparse=None)
 
     if len(_QUERY_EMBED_CACHE) >= _QUERY_EMBED_CACHE_MAX:
         # Drop the oldest entry — cheap eviction
         oldest_key = min(_QUERY_EMBED_CACHE, key=lambda k: _QUERY_EMBED_CACHE[k][0])
         _QUERY_EMBED_CACHE.pop(oldest_key, None)
-    _QUERY_EMBED_CACHE[query] = (now, result)
+    _QUERY_EMBED_CACHE[cache_key] = (now, result)
     return result
 
 
@@ -242,10 +270,11 @@ async def _dense_bucket_search(
     query_embedding: QueryEmbedding,
     limit: int,
     allowed_file_ids: list[uuid.UUID] | None = None,
+    collection_name: str = TEXT_COLLECTION,
 ) -> list:
     client = get_async_qdrant_client()
     response = await client.query_points(
-        collection_name=TEXT_COLLECTION,
+        collection_name=collection_name,
         query=query_embedding.dense,
         using="",
         query_filter=Filter(must=_build_bucket_must(bucket_id, allowed_file_ids)),
@@ -261,12 +290,13 @@ async def _hybrid_bucket_search(
     query_embedding: QueryEmbedding,
     limit: int,
     allowed_file_ids: list[uuid.UUID] | None = None,
+    collection_name: str = TEXT_COLLECTION,
 ) -> list:
     client = get_async_qdrant_client()
     prefetch_limit = max(limit * 8, 24)
     must = _build_bucket_must(bucket_id, allowed_file_ids)
     response = await client.query_points(
-        collection_name=TEXT_COLLECTION,
+        collection_name=collection_name,
         prefetch=[
             Prefetch(query=query_embedding.dense, using="", filter=Filter(must=must), limit=prefetch_limit),
             Prefetch(query=query_embedding.sparse, using="text_sparse", filter=Filter(must=must), limit=prefetch_limit),
@@ -459,6 +489,7 @@ async def search_bucket_images(
 
 async def _expand_with_context(
     results: list[RetrievedDocumentChunk],
+    collection_name: str = TEXT_COLLECTION,
 ) -> list[RetrievedDocumentChunk]:
     """
     For each non-summary chunk with a known chunk_index, fetch its ±window neighbors
@@ -495,7 +526,7 @@ async def _expand_with_context(
             continue
         try:
             scroll_result, _ = await client.scroll(
-                collection_name=TEXT_COLLECTION,
+                collection_name=collection_name,
                 scroll_filter=Filter(
                     must=[
                         FieldCondition(key="file_id", match=MatchValue(value=str(fid))),
@@ -575,13 +606,21 @@ async def _search_with_text(
     bucket_id: uuid.UUID,
     limit: int,
     allowed_file_ids: list[uuid.UUID] | None = None,
+    tier: str = "full",
 ) -> list:
     """Embed query_text and run hybrid/dense search. Returns [] on any error."""
     try:
-        emb = await _embed_query_text(query_text)
+        emb = await _embed_query_text(query_text, lite=(tier == "lite"))
+        collection = _text_collection_for(tier)
         if emb.sparse is not None:
-            return await _hybrid_bucket_search(bucket_id=bucket_id, query_embedding=emb, limit=limit, allowed_file_ids=allowed_file_ids)
-        return await _dense_bucket_search(bucket_id=bucket_id, query_embedding=emb, limit=limit, allowed_file_ids=allowed_file_ids)
+            return await _hybrid_bucket_search(
+                bucket_id=bucket_id, query_embedding=emb, limit=limit,
+                allowed_file_ids=allowed_file_ids, collection_name=collection,
+            )
+        return await _dense_bucket_search(
+            bucket_id=bucket_id, query_embedding=emb, limit=limit,
+            allowed_file_ids=allowed_file_ids, collection_name=collection,
+        )
     except Exception:
         return []
 
@@ -623,21 +662,26 @@ async def search_bucket_documents(
     # When a thread scope is set but empty, return nothing (user picked no files).
     if allowed_file_ids is not None and len(allowed_file_ids) == 0:
         return []
-    # ── Kick off parallel tasks immediately ────────────────────────────────────
-    # Image search and query expansion start now, in parallel with embedding + Qdrant.
+
+    # Image search runs in parallel with everything else, on both the fast and
+    # escalated path.
     image_task: asyncio.Task = asyncio.ensure_future(
         search_bucket_images(db, bucket_id, query, limit=3)
     )
-    rep_task: asyncio.Task = asyncio.ensure_future(
-        _generate_query_rephrasings(query)
-    )
+
+    # ── Tier routing ───────────────────────────────────────────────────────────
+    tier = await _bucket_processing_tier(db, bucket_id)
+    is_lite = tier == "lite"
+    text_collection = _text_collection_for(tier)
 
     # ── Main query embedding ───────────────────────────────────────────────────
-    query_embedding = await _embed_query_text(query)
+    query_embedding = await _embed_query_text(query, lite=is_lite)
 
     # ── LlamaIndex path ────────────────────────────────────────────────────────
     # Skip LlamaIndex when a scope is set; native path supports file filtering.
-    if allowed_file_ids is None and settings.llamaindex_enabled and llamaindex_available():
+    # Skip LlamaIndex for lite buckets — its bootstrap targets the 1024-dim
+    # collection, so it would query the wrong dimension/index.
+    if not is_lite and allowed_file_ids is None and settings.llamaindex_enabled and llamaindex_available():
         try:
             llama_results = await search_bucket_documents_with_llamaindex(
                 db,
@@ -651,78 +695,102 @@ async def search_bucket_documents(
             )
             if llama_results:
                 results = await _prioritize_file_summaries(db, llama_results, limit=candidate_limit)
-                results = await _expand_with_context(results)
+                results = await _expand_with_context(results, collection_name=text_collection)
                 if settings.reranker_enabled:
                     from app.services.agent.reranker import rerank_chunks
 
                     results = await rerank_chunks(query, results, limit=limit)
                 image_results = await image_task
-                rep_task.cancel()
                 return _merge_image_results(results, image_results)
         except Exception:
             pass
 
-    # ── Multi-query: native Qdrant path ────────────────────────────────────────
-    search_limit = max(limit, candidate_limit)
-    try:
-        main_points = (
-            await _hybrid_bucket_search(bucket_id=bucket_id, query_embedding=query_embedding, limit=search_limit, allowed_file_ids=allowed_file_ids)
-            if query_embedding.sparse is not None
-            else await _dense_bucket_search(bucket_id=bucket_id, query_embedding=query_embedding, limit=search_limit, allowed_file_ids=allowed_file_ids)
-        )
-    except Exception:
+    # ── Helpers shared by the fast and escalated paths ─────────────────────────
+    async def _run_main_search(search_limit: int) -> list:
         try:
-            main_points = await _dense_bucket_search(
-                bucket_id=bucket_id, query_embedding=query_embedding, limit=search_limit, allowed_file_ids=allowed_file_ids,
+            if query_embedding.sparse is not None:
+                return await _hybrid_bucket_search(
+                    bucket_id=bucket_id, query_embedding=query_embedding,
+                    limit=search_limit, allowed_file_ids=allowed_file_ids,
+                    collection_name=text_collection,
+                )
+            return await _dense_bucket_search(
+                bucket_id=bucket_id, query_embedding=query_embedding,
+                limit=search_limit, allowed_file_ids=allowed_file_ids,
+                collection_name=text_collection,
             )
         except Exception:
-            main_points = []
+            try:
+                return await _dense_bucket_search(
+                    bucket_id=bucket_id, query_embedding=query_embedding,
+                    limit=search_limit, allowed_file_ids=allowed_file_ids,
+                    collection_name=text_collection,
+                )
+            except Exception:
+                return []
 
-    # Wait for rephrasings, then search with each in parallel
-    rephrasings = await rep_task
+    async def _assemble(points: list) -> list[RetrievedDocumentChunk]:
+        file_ids: set[uuid.UUID] = set()
+        for point in points:
+            fid = (point.payload or {}).get("file_id")
+            if fid:
+                try:
+                    file_ids.add(uuid.UUID(str(fid)))
+                except Exception:
+                    pass
+        file_names = await _resolve_file_names(db, file_ids)
+        built: list[RetrievedDocumentChunk] = []
+        for point in points:
+            chunk = _build_chunk_from_point(point, file_names)
+            if chunk is not None:
+                built.append(chunk)
+            if len(built) >= candidate_limit:
+                break
+        # 1. Summaries to top  2. Neighbor expansion  3. Cross-encoder rerank
+        built = await _prioritize_file_summaries(db, built, limit=limit)
+        built = await _expand_with_context(built, collection_name=text_collection)
+        if settings.reranker_enabled:
+            from app.services.agent.reranker import rerank_chunks
+
+            built = await rerank_chunks(query, built, limit=limit)
+        return built
+
+    # ── Fast pass ──────────────────────────────────────────────────────────────
+    # Most questions are answered straight from the documents. Do the cheap thing
+    # first — one dense search over a small candidate set — and return immediately
+    # when the result is confident. This skips the query-rephrasing LLM call and
+    # the wide multi-query sweep for the common, easy case.
+    if settings.retrieval_adaptive_enabled:
+        fast_limit = max(limit, settings.retrieval_fast_candidate_limit)
+        fast_points = await _run_main_search(fast_limit)
+        fast_results = await _assemble(fast_points)
+        if high_confidence_bucket_match(fast_results):
+            image_results = await image_task
+            return _merge_image_results(fast_results, image_results)
+
+    # ── Escalation (also the path when adaptive retrieval is disabled) ──────────
+    # The fast pass was weak — search harder. Widen the candidate net and add LLM
+    # query rephrasings, fusing all hits with reciprocal-rank fusion before the
+    # rerank. Nothing is capped away: a weak match triggers *more* retrieval.
+    search_limit = max(limit, candidate_limit)
+    point_lists = [await _run_main_search(search_limit)]
+
+    rephrasings = await _generate_query_rephrasings(query)
     if rephrasings:
         extra_searches = await asyncio.gather(
-            *[_search_with_text(r, bucket_id, search_limit, allowed_file_ids=allowed_file_ids) for r in rephrasings],
+            *[_search_with_text(r, bucket_id, search_limit, allowed_file_ids=allowed_file_ids, tier=tier) for r in rephrasings],
             return_exceptions=True,
         )
-        valid_extras = [p for p in extra_searches if isinstance(p, list)]
-        if valid_extras:
-            main_points = _rrf_merge([main_points] + valid_extras, limit=search_limit)
+        point_lists.extend(p for p in extra_searches if isinstance(p, list))
 
-    # ── Build RetrievedDocumentChunk objects ───────────────────────────────────
-    file_ids: set[uuid.UUID] = set()
-    for point in main_points:
-        fid = (point.payload or {}).get("file_id")
-        if fid:
-            try:
-                file_ids.add(uuid.UUID(str(fid)))
-            except Exception:
-                pass
-
-    file_names = await _resolve_file_names(db, file_ids)
-    results: list[RetrievedDocumentChunk] = []
-    for point in main_points:
-        chunk = _build_chunk_from_point(point, file_names)
-        if chunk is not None:
-            results.append(chunk)
-        if len(results) >= candidate_limit:
-            break
-
-    # ── Post-processing pipeline ───────────────────────────────────────────────
-    # 1. Summaries to top
-    results = await _prioritize_file_summaries(db, results, limit=limit)
-    # 2. Expand each chunk with its neighbors
-    results = await _expand_with_context(results)
-    # 3. Cross-encoder rerank (summaries stay pinned, regular chunks re-scored)
-    if settings.reranker_enabled:
-        from app.services.agent.reranker import rerank_chunks
-
-        results = await rerank_chunks(query, results, limit=limit)
-    # 4. Merge best image hits
+    merged_points = (
+        _rrf_merge(point_lists, limit=search_limit)
+        if len(point_lists) > 1
+        else point_lists[0]
+    )
+    results = await _assemble(merged_points)
     image_results = await image_task
-    results = _merge_image_results(results, image_results)
-
-    return results
+    return _merge_image_results(results, image_results)
 
 
 def _merge_image_results(
@@ -778,7 +846,10 @@ async def search_bucket_documents_for_files(
     if not file_ids:
         return []
 
-    query_embedding = await _embed_query_text(query)
+    tier = await _bucket_processing_tier(db, bucket_id)
+    is_lite = tier == "lite"
+    text_collection = _text_collection_for(tier)
+    query_embedding = await _embed_query_text(query, lite=is_lite)
     file_id_strings = [str(fid) for fid in file_ids]
 
     must_conditions = [
@@ -792,7 +863,7 @@ async def search_bucket_documents_for_files(
         if query_embedding.sparse is not None:
             prefetch_limit = max(limit * 8, 24)
             response = await client.query_points(
-                collection_name=TEXT_COLLECTION,
+                collection_name=text_collection,
                 prefetch=[
                     Prefetch(
                         query=query_embedding.dense,
@@ -813,7 +884,7 @@ async def search_bucket_documents_for_files(
             )
         else:
             response = await client.query_points(
-                collection_name=TEXT_COLLECTION,
+                collection_name=text_collection,
                 query=query_embedding.dense,
                 using="",
                 query_filter=Filter(must=must_conditions),

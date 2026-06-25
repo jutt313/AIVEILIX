@@ -21,11 +21,18 @@ class FileUploadResponse(BaseModel):
 
 # ---------- File Detail ----------
 
+class CategoryRef(BaseModel):
+    id: uuid.UUID
+    name: str
+    color: str
+
+
 class FileResponse(BaseModel):
     id: uuid.UUID
     bucket_id: uuid.UUID
     user_id: uuid.UUID
     category_id: uuid.UUID | None
+    category: CategoryRef | None = None
     name: str
     type: str
     size: int

@@ -332,6 +332,17 @@ async def mcp_bucket_endpoint(token: str, request: Request):
             return JSONResponse(status_code=401, content=_error(None, -32001, "Invalid or revoked MCP token."))
 
         allowed = set(mcp_token.allowed_tools or [])
+
+        # Lite buckets do NOT expose `query` (server-side LLM synthesis). The
+        # plan economics rely on letting the user's own AI answer; we just
+        # provide grounded data. `search` + every read tool remain available.
+        from app.models.bucket import Bucket as _Bucket
+
+        bucket_row = await db.get(_Bucket, mcp_token.bucket_id)
+        tier = (getattr(bucket_row, "processing_tier", None) or "full").lower()
+        if tier == "lite":
+            allowed.discard("query")
+
         return await _process_request(
             request,
             kind="bucket",

@@ -59,6 +59,16 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         max_storage_bytes=15 * _GB, max_chat_messages=1_800, mcp_rate_per_min=60,
         max_images=1_200, max_file_size_bytes=5 * _GB,
     ),
+    # MCP plan — cheap, MCP-first; no in-app chat. Lite processing tier.
+    "mcp": PlanLimits(
+        name="MCP", price_usd=12,
+        max_users=1, max_buckets=5, max_documents=500, max_pages=10_000,
+        max_storage_bytes=10 * _GB,
+        max_chat_messages=0,          # no in-app chat
+        mcp_rate_per_min=60,
+        max_images=3_000,             # visuals cap (lazy-described)
+        max_file_size_bytes=100 * _MB,
+    ),
     # Enterprise base — generous defaults; real per-customer numbers come from
     # the account's limits_override (set in the admin panel).
     "business": PlanLimits(
@@ -170,3 +180,8 @@ def get_plan_limits(plan: str | None) -> PlanLimits:
     """Base limits for a plan key (no trial/override logic). Falls back to Individual."""
     key = normalize_plan_key(plan)
     return PLAN_LIMITS.get(key, PLAN_LIMITS[DEFAULT_PAID_PLAN])
+
+
+def plan_is_lite(plan_key: str | None) -> bool:
+    """Single source of truth: is this plan key on the lite processing tier?"""
+    return normalize_plan_key(plan_key) == "mcp"

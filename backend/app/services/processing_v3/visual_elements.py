@@ -409,11 +409,13 @@ async def extract_visual_elements(
     page_number: int,
     screenshot_data: bytes,
     storage: R2StorageAdapter,
-    visual_provider: VisualUnderstandingProvider,
+    visual_provider: VisualUnderstandingProvider | None,
     sort_order_start: int = 0,
     text_bboxes: list[list[float]] | None = None,
     pdf_image_regions: list[tuple[int, int, int, int]] | None = None,
     semaphore: asyncio.Semaphore | None = None,
+    lazy: bool = False,
+    context_text: str | None = None,
 ) -> list[ElementRecord]:
     if pdf_image_regions:
         regions = pdf_image_regions
@@ -432,6 +434,44 @@ async def extract_visual_elements(
             crop = crop_region(screenshot_data, x, y, w, h)
             asset_name = f"image_{i + 1}.png"
             asset_uri = await storage.upload_page_asset(crop, doc_id, page_number, asset_name)
+        except Exception as exc:
+            logger.warning("visual_element_failed doc_id=%s page=%s region=%s error=%s", doc_id, page_number, i, exc)
+            return None
+
+        # Lite/lazy tier: skip the vision model. Persist a placeholder element
+        # marked pending_describe=True. The describe runs on first fetch via
+        # the MCP get_visual tool (services/mcp/tools.py:fetch_visual) which
+        # back-fills description + re-embeds the chunk into the lite collection.
+        if lazy or visual_provider is None:
+            ctx_text = (context_text or "").strip()
+            content = ctx_text or f"Visual element on page {page_number} (pending description)"
+            meta: dict = {
+                "asset_uri": asset_uri,
+                "asset_type": "unknown",
+                "visible_text": "",
+                "confidence": 0.0,
+                "pending_describe": True,
+                "context_text": ctx_text,
+            }
+            logger.info(
+                "visual_element_lazy doc_id=%s page=%s index=%s ctx_len=%s",
+                doc_id, page_number, i, len(ctx_text),
+            )
+            return ElementRecord(
+                id=str(uuid.uuid4()),
+                doc_id=doc_id,
+                page_id=page_id,
+                page_number=page_number,
+                type="image",
+                content=content,
+                bbox=[float(x), float(y), float(w), float(h)],
+                source="visual_understanding",
+                confidence=0.0,
+                metadata=meta,
+                sort_order=sort_order_start + i,
+            )
+
+        try:
             understanding = await visual_provider.understand(crop)
         except Exception as exc:
             logger.warning("visual_element_failed doc_id=%s page=%s region=%s error=%s", doc_id, page_number, i, exc)

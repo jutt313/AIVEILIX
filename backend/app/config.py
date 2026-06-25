@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # RAG improvements (can be toggled per environment)
     reranker_enabled: bool = True          # Voyage rerank-2.5 after Qdrant retrieval
     query_expansion_enabled: bool = True   # LLM multi-query expansion before retrieval
+    # Adaptive retrieval: try a cheap, narrow search first; only escalate to the
+    # wide multi-query sweep (rephrasings + 200 candidates) when the fast pass is
+    # not confident. Easy questions answer fast; weak matches search harder.
+    retrieval_adaptive_enabled: bool = True
+    retrieval_fast_candidate_limit: int = 40  # candidate set size for the fast pass
     # Image search is disabled: pipeline v3 indexes visual elements as text chunks
     # (no separate CLIP image_chunks collection).
     image_search_enabled: bool = False
@@ -102,7 +107,29 @@ class Settings(BaseSettings):
     # Pipeline v3 — API-based document processing
     mistral_api_key: str = ""        # Mistral OCR
     voyage_api_key: str = ""         # Voyage embeddings + rerank
+    # MCP/lite tier uses voyage-3-lite (512-dim) instead of voyage-3-large (1024-dim).
+    voyage_lite_model: str = "voyage-3-lite"
+    # Token overlap added between consecutive chunks' embedded text only
+    # (display content stays clean). Improves retrieval recall across cuts.
+    lite_chunk_overlap_tokens: int = 40
     # (visual understanding uses gemini_visual_model above)
+
+    # Pipeline v3 — parallelism / throughput
+    # Files in a batch process concurrently (each is mostly network I/O), and the
+    # heavy per-page / per-batch steps fan out instead of running one at a time.
+    file_processing_concurrency: int = 8   # max files processed at once, in-process
+    ocr_concurrency: int = 12              # max concurrent Mistral OCR calls per file
+    embed_concurrency: int = 4             # max concurrent Voyage embed batches per file
+
+    # Dedicated processing worker (optional — Phase 3). When both the queue and the
+    # worker URL are set, uploads enqueue one Cloud Tasks HTTP task per file to a
+    # separate Cloud Run worker (true horizontal parallelism, dedicated CPU, scales
+    # to zero). When unset, files process in-process via the concurrency above.
+    processing_queue: str = ""             # Cloud Tasks queue id, e.g. "file-processing"
+    processing_worker_url: str = ""        # base URL of the worker service
+    processing_secret: str = ""            # shared secret guarding the internal endpoint
+    gcp_project: str = ""                  # project id for Cloud Tasks
+    gcp_region: str = "us-central1"        # Cloud Tasks queue location
 
     # Pipeline v3 — ingestion cleanup (runs before summary/export/chunking)
     ingest_dedup_enabled: bool = True            # collapse near-identical elements before export/chunk
@@ -117,6 +144,7 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_individual: str = ""   # recurring price ID for Individual ($15/mo)
     stripe_price_team: str = ""         # recurring price ID for Team ($49/mo)
+    stripe_price_mcp: str = ""          # recurring price ID for MCP ($12/mo)
 
     # Frontend
     frontend_url: str = "http://localhost:5173"

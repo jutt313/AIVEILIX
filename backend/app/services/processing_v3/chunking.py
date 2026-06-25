@@ -32,6 +32,14 @@ class ChunkRecord:
     text: str
     chunk_type: str
     metadata: dict = field(default_factory=dict)
+    # Text used for embedding ONLY. Defaults to `text`. When chunk overlap is
+    # applied (see _apply_chunk_overlap below) this carries the chunk's
+    # displayed text with the last ~OVERLAP_TOKENS of the previous chunk
+    # prepended, so retrieval recall improves without polluting citations.
+    embed_text: str | None = None
+
+    def get_embed_text(self) -> str:
+        return self.embed_text or self.text
 
 
 # ── Step 09: structured export JSON ───────────────────────────────────────────
@@ -105,6 +113,7 @@ def build_export_json(
 # _FRAGMENT_TOKENS are merged into a neighbour.
 _TARGET_MAX_TOKENS = 400      # split sections that grow beyond this
 _FRAGMENT_TOKENS = 60         # anything below this is merged into a neighbour
+_OVERLAP_TOKENS = 40          # ~1 sentence prepended to embedded text only
 
 
 def _count_tokens(text: str) -> int:
@@ -405,4 +414,43 @@ def build_chunks(elements: list[ElementRecord], pages: list[PageMeta]) -> list[C
             raw_chunks.extend(_section_to_chunks(section))
 
     # Merge fragments so no tiny chunk survives.
-    return _merge_fragments(raw_chunks, pages_order)
+    merged = _merge_fragments(raw_chunks, pages_order)
+    # Add overlap (~OVERLAP_TOKENS) to the EMBED text only, so retrieval recall
+    # improves but citation text stays clean.
+    _apply_chunk_overlap(merged)
+    return merged
+
+
+def _tail_tokens(text: str, n_tokens: int = _OVERLAP_TOKENS) -> str:
+    """Return roughly the last `n_tokens` tokens of `text`, trying to start
+    at a sentence/word boundary so the prepended snippet reads naturally."""
+    if not text or n_tokens <= 0:
+        return ""
+    # ~4 chars/token — match _count_tokens.
+    approx_chars = n_tokens * 4
+    if len(text) <= approx_chars:
+        return text.strip()
+    tail = text[-approx_chars:]
+    # Prefer the snippet starting at the last sentence boundary inside `tail`.
+    for sep in (". ", "! ", "? ", "\n"):
+        idx = tail.find(sep)
+        if 0 <= idx < len(tail) - 2:
+            return tail[idx + len(sep):].strip()
+    # Fall back: start at the next word boundary.
+    space = tail.find(" ")
+    if space >= 0:
+        return tail[space + 1:].strip()
+    return tail.strip()
+
+
+def _apply_chunk_overlap(chunks: list[ChunkRecord]) -> None:
+    """Prepend the tail of the previous chunk (same file, in order) into each
+    chunk's `embed_text`. Display `text` and `element_ids` are left untouched
+    so page citations and DB rows stay exact."""
+    prev_text: str | None = None
+    for chunk in chunks:
+        if prev_text:
+            tail = _tail_tokens(prev_text)
+            if tail:
+                chunk.embed_text = f"{tail}\n{chunk.text}"
+        prev_text = chunk.text

@@ -46,6 +46,8 @@ class DemoLink(Base):
     cap_messages: Mapped[int] = mapped_column(Integer, nullable=False, default=100)    # total across bucket
     cap_files: Mapped[int] = mapped_column(Integer, nullable=False, default=1)         # visitor-uploaded files
     cap_file_size_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    cap_file_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=100)   # per visitor-uploaded file
+    cap_file_visuals: Mapped[int] = mapped_column(Integer, nullable=False, default=100) # per visitor-uploaded file
     cap_comebacks: Mapped[int] = mapped_column(Integer, nullable=False, default=3)     # per lead (by email)
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

@@ -233,7 +233,7 @@ async def complete_upload(
     db: AsyncSession = Depends(get_db),
     ctx: UserContext = Depends(get_user_context),
 ):
-    from app.services.processing_v3.orchestrator import process_file
+    from app.services.processing_v3.dispatch import schedule_file_processing
 
     bucket = await _require_bucket_for_action(db, bucket_id, ctx, "can_upload_files")
     session = await _load_session(db, bucket_id, upload_id, ctx)
@@ -308,7 +308,7 @@ async def complete_upload(
         commit=True,
     )
 
-    background_tasks.add_task(process_file, str(file_row.id), trace_run_id, "upload")
+    await schedule_file_processing(str(file_row.id), trace_run_id, "upload")
 
     return FileUploadResponse.model_validate(file_row)
 

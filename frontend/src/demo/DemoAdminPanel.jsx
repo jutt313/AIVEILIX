@@ -5,17 +5,34 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { adminApi } from '../api/auth';
 
 const CAP_FIELDS = [
-  ['cap_team_members', 'Team members'],
-  ['cap_threads', 'Chats'],
-  ['cap_messages', 'Messages'],
-  ['cap_files', 'Visitor files'],
-  ['cap_file_size_mb', 'File size (MB)'],
-  ['cap_comebacks', 'Visits / lead'],
+  { key: 'cap_team_members', label: 'Team members', min: 0, max: 1000 },
+  { key: 'cap_threads', label: 'Chats', min: 0, max: 10000 },
+  { key: 'cap_messages', label: 'Messages', min: 0, max: 100000 },
+  { key: 'cap_files', label: 'Visitor files', min: 0, max: 1000 },
+  { key: 'cap_file_size_mb', label: 'File size (MB)', min: 1, max: 1024 },
+  { key: 'cap_file_pages', label: 'Pages / file', min: 1, max: 10000 },
+  { key: 'cap_file_visuals', label: 'Visuals / file', min: 0, max: 10000 },
+  { key: 'cap_comebacks', label: 'Visits / lead', min: 1, max: 1000 },
 ];
-const DEFAULT_CAPS = { cap_team_members: 3, cap_threads: 10, cap_messages: 100, cap_files: 1, cap_file_size_mb: 50, cap_comebacks: 3 };
+const DEFAULT_CAPS = {
+  cap_team_members: 3,
+  cap_threads: 10,
+  cap_messages: 100,
+  cap_files: 1,
+  cap_file_size_mb: 50,
+  cap_file_pages: 100,
+  cap_file_visuals: 100,
+  cap_comebacks: 3,
+};
 
 function slugify(s) {
   return (s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+}
+
+function parseCapValue(value, min, max) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return min;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 const STATE_PILL = {
@@ -192,11 +209,11 @@ function CreateForm({ dark, input, sub, label, onCreate }) {
       <div className="mt-3">
         <span className={`text-xs ${label}`}>Caps</span>
         <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {CAP_FIELDS.map(([key, name]) => (
+          {CAP_FIELDS.map(({ key, label: capLabel, min, max }) => (
             <label key={key} className="block">
-              <span className={`text-[11px] ${label}`}>{name}</span>
-              <input type="number" min="0" className={`mt-0.5 ${input}`} value={caps[key]}
-                onChange={(e) => setCaps({ ...caps, [key]: Math.max(0, parseInt(e.target.value || '0', 10)) })} />
+              <span className={`text-[11px] ${label}`}>{capLabel}</span>
+              <input type="number" min={min} max={max} className={`mt-0.5 ${input}`} value={caps[key]}
+                onChange={(e) => setCaps({ ...caps, [key]: parseCapValue(e.target.value, min, max) })} />
             </label>
           ))}
         </div>
@@ -216,6 +233,7 @@ function BucketCard({ bucket, dark, sub, label, ghost, input, session, expanded,
   const [code, setCode] = useState(bucket.access_code);
   const [active, setActive] = useState(bucket.is_active);
   const [savingCfg, setSavingCfg] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [activity, setActivity] = useState(null);
   const [showActivity, setShowActivity] = useState(false);
@@ -239,6 +257,18 @@ function BucketCard({ bucket, dark, sub, label, ghost, input, session, expanded,
       const d = await adminApi.getDemoBucket(bucket.id, session); setDetail(d);
     } catch (e) { onError(e.message); }
     finally { setSavingCfg(false); }
+  };
+
+  const deleteBucket = async () => {
+    const confirmed = window.confirm(`Delete demo bucket "${bucket.company_name}"?\n\nThis removes its demo link, leads, chats, files, and activity. This cannot be undone.`);
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await adminApi.deleteDemoBucket(bucket.id, session);
+      onFlash('Demo bucket deleted.');
+      onChanged();
+    } catch (e) { onError(e.message); }
+    finally { setDeleting(false); }
   };
 
   const upload = async (fileList) => {
@@ -301,17 +331,22 @@ function BucketCard({ bucket, dark, sub, label, ghost, input, session, expanded,
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {CAP_FIELDS.map(([key, name]) => (
+            {CAP_FIELDS.map(({ key, label: capLabel, min, max }) => (
               <label key={key} className="block">
-                <span className={`text-[11px] ${label}`}>{name}</span>
-                <input type="number" min="0" className={`mt-0.5 ${input}`} value={caps[key] ?? 0}
-                  onChange={(e) => setCaps({ ...caps, [key]: Math.max(0, parseInt(e.target.value || '0', 10)) })} />
+                <span className={`text-[11px] ${label}`}>{capLabel}</span>
+                <input type="number" min={min} max={max} className={`mt-0.5 ${input}`} value={caps[key] ?? min}
+                  onChange={(e) => setCaps({ ...caps, [key]: parseCapValue(e.target.value, min, max) })} />
               </label>
             ))}
           </div>
-          <button onClick={saveConfig} disabled={savingCfg} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
-            {savingCfg ? 'Saving…' : 'Save caps & code'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={saveConfig} disabled={savingCfg} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
+              {savingCfg ? 'Saving…' : 'Save caps & code'}
+            </button>
+            <button onClick={deleteBucket} disabled={deleting} className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50">
+              {deleting ? 'Deleting…' : 'Delete demo bucket'}
+            </button>
+          </div>
 
           {/* prebuild files */}
           <div>

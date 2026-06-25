@@ -7,6 +7,7 @@ from app.api.v1.deps import get_current_user, get_user_context
 from app.services.dashboard import get_bucket, list_buckets, create_bucket, delete_all_buckets, delete_bucket as delete_bucket_service, update_bucket as update_bucket_service
 from app.services.team.permissions import UserContext, get_accessible_bucket_ids, require_owner
 from app.services.quota import enforce_bucket_quota
+from app.services.plans import plan_is_lite
 
 router = APIRouter(prefix="/buckets", tags=["buckets"])
 
@@ -44,8 +45,12 @@ async def create_bucket_endpoint(
     ctx: UserContext = Depends(get_user_context),
 ):
     require_owner(ctx)
-    await enforce_bucket_quota(db, ctx.owner_user_id)
-    return await create_bucket(db, str(ctx.user_id), body.name, body.description, body.color, body.icon)
+    ep = await enforce_bucket_quota(db, ctx.owner_user_id)
+    tier = "lite" if plan_is_lite(ep.plan) else "full"
+    return await create_bucket(
+        db, str(ctx.user_id), body.name, body.description, body.color, body.icon,
+        processing_tier=tier,
+    )
 
 
 @router.delete("/all")
