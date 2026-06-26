@@ -5400,6 +5400,13 @@ function BucketPage({ theme }) {
   // Out-of-scope mention prompt: { files: [...], onConfirm: fn }
   const [scopeRequest, setScopeRequest] = useState(null);
 
+  // Lite buckets (MCP plan) drop in-app chat: the threads sidebar collapses
+  // by default and the composer is hidden. Answers run on the user's own AI
+  // via the MCP URL; we just expose grounded data tools. Declared up here (not
+  // lower in the component) so the effect below can list it as a dependency
+  // without a temporal-dead-zone crash on first mount.
+  const isLiteBucket = (bucket?.processing_tier || seedBucket?.processing_tier) === 'lite';
+
   // Lite buckets have no in-app chat — collapse the threads sidebar so the
   // composer/threads UI doesn't even render. This runs whenever the tier flips.
   useEffect(() => {
@@ -6180,10 +6187,8 @@ function BucketPage({ theme }) {
   }
 
   const bucketName = bucket?.name || seedBucket?.name || `Bucket ${bucketId?.slice(0, 8) || ''}`;
-  // Lite buckets (MCP plan) drop in-app chat: the threads sidebar collapses
-  // by default and the composer is hidden. Answers run on the user's own AI
-  // via the MCP URL; we just expose grounded data tools.
-  const isLiteBucket = (bucket?.processing_tier || seedBucket?.processing_tier) === 'lite';
+  // isLiteBucket is declared earlier (above the sidebar-collapse effect) to
+  // avoid a temporal-dead-zone crash; reuse it here.
   const isDark = theme === 'dark';
   const bucketPageBg = isDark ? 'bg-[#020617] text-slate-100' : 'bg-[#f5f7fb] text-slate-900';
   const shell = isDark
